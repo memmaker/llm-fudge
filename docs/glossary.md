@@ -1,0 +1,17 @@
+Glossary
+- World: The deterministic instance of a game session, identified by a seed and containing all characters, state, and the turn/phase data.
+- Phase: The current lifecycle stage within a turn (e.g., setup, action, resolution).
+- Turn: A single cycle of game activity, incremented as the narrative progresses.
+- Character: An actor in the world (player, NPC, monster). Contains stats, health, and inventory.
+- NPC: Non-player character; a character controlled by the GM (LLM).
+- Monster: A character representing a foe in combat or conflict.
+- Item: An object that can be equipped or used by a character.
+- Die/Roll: A dice-based randomization mechanism used by rules (e.g., 4d6).
+- RNG: Random Number Generator; seeded to produce deterministic results per World seed.
+- LLM: Large Language Model that acts as the DM/Narrator.
+- DM: Dungeon Master; the entity guiding narrative, here implemented by the LLM via structured rules tools.
+- Rules library: The Go package that maintains deterministic state and enforces rule transitions.
+- Rule: A constraint or operation from the fudge-based mechanics; implemented as library calls.
+- Action: A unit of work the rules library can perform; e.g., a skill check.
+- Serialization: JSON-based representation used for debugging, persistence, or inter-process communication.
+- Tooling: The internal API surface that exposes rules capabilities to the LLM without relying on shell commands.
