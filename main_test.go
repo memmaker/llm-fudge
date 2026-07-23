@@ -29,8 +29,8 @@ func TestExecuteActionUsesWorldChecks(t *testing.T) {
 	)
 
 	result, err := executeAction(w, hero.ID, goblin.ID, llm.ToolCall{Function: llm.ToolCallFunction{
-		Name:      "unopposed_skill_check",
-		Arguments: `{"skill":"athletics","difficulty":1}`,
+		Name:      "unopposed_check",
+		Arguments: `{"trait_type":"skill","trait_slug":"athletics","difficulty":1}`,
 	}})
 	if err != nil {
 		t.Fatalf("execute action: %v", err)

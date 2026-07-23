@@ -274,8 +274,8 @@ func actionTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "query_setting", Description: "Query available attributes, skills, species, gifts, and faults in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an unopposed check against a difficulty using a chosen trait.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"trait_type", "trait_slug", "difficulty"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve an opposed check between two actors using independently chosen traits.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
 	}
@@ -480,45 +480,67 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		return loadAdventureTool(w, args.Name)
 	case "query_setting":
 		return querySetting(w)
-	case "unopposed_skill_check":
+	case "unopposed_check":
 		var args struct {
-			Skill      string `json:"skill"`
-			Difficulty int    `json:"difficulty"`
+			TraitType             string `json:"trait_type"`
+			TraitSlug             string `json:"trait_slug"`
+			Difficulty            int    `json:"difficulty"`
+			SituationalModifier   int    `json:"situational_modifier"`
+			AddOne                bool   `json:"add_one"`
+			Reroll                bool   `json:"reroll"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse unopposed skill check: %w", err)
+			return "", fmt.Errorf("parse unopposed check: %w", err)
 		}
-		if args.Skill == "" {
-			return "", fmt.Errorf("unopposed skill check requires skill")
+		if args.TraitType == "" || args.TraitSlug == "" {
+			return "", fmt.Errorf("unopposed check requires trait_type and trait_slug")
 		}
-		success, total, roll, err := w.UnopposedSkillCheck(heroID, args.Skill, args.Difficulty)
+		success, total, roll, critSuccess, critFailure, err := w.UnopposedCheckEx(heroID, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
 		if err != nil {
 			return "", err
 		}
 		hero, _ := w.Character(heroID)
-		return fmt.Sprintf("%s rolled %d + %d = %d against %d: success=%t", hero.Name, roll, hero.Skills[strings.ToLower(args.Skill)], total, args.Difficulty, success), nil
-	case "opposed_skill_check":
+		var critStr string
+		if critSuccess {
+			critStr = " (CRITICAL SUCCESS!)"
+		} else if critFailure {
+			critStr = " (CRITICAL FAILURE!)"
+		}
+		return fmt.Sprintf("%s rolled %+d (total %d against %d): %s%s", hero.Name, roll, total, args.Difficulty, map[bool]string{true: "success", false: "failure"}[success], critStr), nil
+	case "opposed_check":
 		var args struct {
-			ActorSkill string `json:"actorSkill"`
-			OppID      string `json:"oppID"`
-			OppSkill   string `json:"oppSkill"`
+			ActorTraitType      string `json:"actor_trait_type"`
+			ActorTraitSlug      string `json:"actor_trait_slug"`
+			ActorModifier       int    `json:"actor_modifier"`
+			OpponentID          string `json:"opponent_id"`
+			OpponentTraitType   string `json:"opponent_trait_type"`
+			OpponentTraitSlug   string `json:"opponent_trait_slug"`
+			OpponentModifier    int    `json:"opponent_modifier"`
+			AddOne              bool   `json:"add_one"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse opposed skill check: %w", err)
+			return "", fmt.Errorf("parse opposed check: %w", err)
 		}
-		if args.ActorSkill == "" || args.OppSkill == "" {
-			return "", fmt.Errorf("opposed skill check requires actorSkill and oppSkill")
+		if args.ActorTraitType == "" || args.ActorTraitSlug == "" || args.OpponentID == "" || args.OpponentTraitType == "" || args.OpponentTraitSlug == "" {
+			return "", fmt.Errorf("opposed check requires all trait and opponent parameters")
 		}
-		if args.OppID == "" {
-			args.OppID = goblinID
+		if args.OpponentID == "" {
+			args.OpponentID = goblinID
 		}
-		wins, actorTotal, opponentTotal, margin, err := w.OpposedSkillCheck(heroID, args.ActorSkill, args.OppID, args.OppSkill)
+		wins, actorTotal, opponentTotal, margin, actorCrit, opponentCrit, err := w.OpposedCheckEx(heroID, args.ActorTraitType, args.ActorTraitSlug, args.ActorModifier, args.OpponentID, args.OpponentTraitType, args.OpponentTraitSlug, args.OpponentModifier, args.AddOne)
 		if err != nil {
 			return "", err
 		}
 		hero, _ := w.Character(heroID)
-		opponent, _ := w.Character(args.OppID)
-		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %d): success=%t", hero.Name, actorTotal, opponent.Name, opponentTotal, margin, wins), nil
+		opponent, _ := w.Character(args.OpponentID)
+		var critStr string
+		if actorCrit {
+			critStr += " (actor critical!)"
+		}
+		if opponentCrit {
+			critStr += " (opponent critical!)"
+		}
+		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %+d): %s%s", hero.Name, actorTotal, opponent.Name, opponentTotal, margin, map[bool]string{true: "actor wins", false: "tie or loss"}[wins], critStr), nil
 	case "write_setting_file":
 		var args struct {
 			Filename string `json:"filename"`
