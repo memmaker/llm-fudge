@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/peterh/liner v1.2.2 // indirect

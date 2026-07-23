@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 
 	"fudge/rules"
 
+	"github.com/chzyer/readline"
 	"github.com/memmaker/gollum/llm"
 	"golang.org/x/term"
 )
@@ -21,17 +21,23 @@ import (
 func main() {
 	w := &rules.World{Characters: make(map[string]*rules.Character)}
 
-	reader := bufio.NewReader(os.Stdin)
+	// Setup readline instance with history and line editing
+	rl, err := readline.New("You: ")
+	if err != nil {
+		fmt.Println("Error initializing readline:", err)
+		return
+	}
+	defer rl.Close()
 
 	// Setup phase: LLM guides through setting, character, and adventure selection
-	adventure := runSetupPhase(w, reader)
+	adventure := runSetupPhase(w, rl)
 	if adventure == "" {
 		fmt.Println("Setup cancelled.")
 		return
 	}
 
 	// Game phase: LLM acts as DM
-	runGamePhase(w, reader, adventure)
+	runGamePhase(w, rl, adventure)
 }
 
 const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure.
@@ -52,7 +58,7 @@ Follow these steps:
 
 Be enthusiastic and encouraging during setup!`
 
-func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
+func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -118,12 +124,11 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 		}
 
 		// Get player input for next turn
-		fmt.Print("\nYou: ")
-		input, err := reader.ReadString('\n')
+		fmt.Print("\n")
+		input, err := readlineInput(rl, "You: ")
 		if err != nil {
 			return ""
 		}
-		input = strings.TrimSpace(input)
 		if input == "quit" || input == "exit" {
 			return ""
 		}
@@ -133,7 +138,7 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 	}
 }
 
-func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string) {
+func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string) {
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -154,13 +159,11 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 		}
 
 		// Get player input
-		fmt.Print("You: ")
-		line, err := reader.ReadString('\n')
+		line, err := readlineInput(rl, "You: ")
 		if err != nil {
 			fmt.Println("Error reading input; exiting.")
 			return
 		}
-		line = strings.TrimSpace(line)
 		if line == "quit" || line == "exit" {
 			fmt.Println("Session ended.")
 			return
@@ -719,6 +722,11 @@ func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
 			frame++
 		}
 	}
+}
+
+func readlineInput(rl *readline.Instance, prompt string) (string, error) {
+	rl.SetPrompt(prompt)
+	return rl.Readline()
 }
 
 func terminalWidth() int {
