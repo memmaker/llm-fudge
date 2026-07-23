@@ -98,7 +98,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) string {
 			return ""
 		}
 
-		if choice != "↳ Type your answer" {
+		if choice != typeYourAnswer {
 			if _, err := loadSettingTool(w, choice); err != nil {
 				fmt.Println("Error loading setting:", err)
 				return ""
@@ -126,15 +126,14 @@ func setupSetting(w *rules.World, rl *readline.Instance) string {
 		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s", description)},
 	}
 
-	response, err := chatWithSpinner(client, model, messages, actionTools())
+	fmt.Println()
+	response, err := streamChat(client, model, messages, actionTools())
 	if err != nil {
-		fmt.Println("LLM error:", err)
+		fmt.Println("\nLLM error:", err)
 		return ""
 	}
 
-	if response.Message.Content != "" {
-		fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-	}
+	fmt.Println()
 
 	// Process tool calls to save the setting
 	for _, toolCall := range response.Message.ToolCalls {
@@ -169,7 +168,7 @@ func setupAdventure(w *rules.World, rl *readline.Instance, settingName string) s
 			return ""
 		}
 
-		if choice != "↳ Type your answer" {
+		if choice != typeYourAnswer {
 			adventureContent, err := loadAdventureTool(w, choice)
 			if err != nil {
 				fmt.Println("Error loading adventure:", err)
@@ -198,18 +197,15 @@ func setupAdventure(w *rules.World, rl *readline.Instance, settingName string) s
 		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", settingName, scenario)},
 	}
 
-	response, err := chatWithSpinner(client, model, messages, nil)
+	fmt.Println()
+	response, err := streamChat(client, model, messages, nil)
 	if err != nil {
-		fmt.Println("LLM error:", err)
+		fmt.Println("\nLLM error:", err)
 		return ""
 	}
 
-	if response.Message.Content != "" {
-		fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-		return response.Message.Content
-	}
-
-	return ""
+	fmt.Println()
+	return response.Message.Content
 }
 
 func setupCharacter(w *rules.World, rl *readline.Instance, settingName string, adventureContent string) {
@@ -223,9 +219,19 @@ The setting is: %s
 Available traits:
 %s
 
-Guide them through character creation. Ask about their character concept, then help them select species, attributes, skills, gifts, and faults from the available options. Use the create_character tool when they're ready.
+IMPORTANT FLOW:
+1. Start by asking about their character concept/idea (brief description)
+2. Guide them through selecting: species, then 2-3 attributes (top ones for their concept), then 1-2 skills, optional gifts, optional faults
+3. Use the user_choice tool to present options for each selection - list the 3-4 most relevant options
+4. After collecting all selections, use the create_character tool with:
+   - name: their chosen name (if not provided, suggest one based on their concept)
+   - species: the selected species
+   - attributes: map of selected attributes with values (use 2-3, values 1-3)
+   - skills: map of selected skills with values (use 1-2, values 1-2)
+   - gifts: array of selected gifts (can be empty)
+   - faults: array of selected faults (can be empty)
 
-Be brief, helpful, and focused on creating a character that fits the adventure.`, adventureContent, settingName, formatAvailableTraits(w))
+Be brief, conversational, and focused. After each selection, immediately continue to the next step without waiting for manual input. Once you have all information, create the character immediately.`, adventureContent, settingName, formatAvailableTraits(w))
 
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
@@ -235,25 +241,23 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: characterPrompt},
-		{Role: llm.RoleUser, Content: "Let's create my character."},
+		{Role: llm.RoleUser, Content: "I'm ready to create my character. Let's start!"},
 	}
 
 	rl.SetPrompt("You: ")
 	for {
-		response, err := chatWithSpinner(client, model, messages, actionTools())
+		fmt.Println()
+		response, err := streamChat(client, model, messages, actionTools())
 		if err != nil {
-			fmt.Println("LLM error:", err)
+			fmt.Println("\nLLM error:", err)
 			return
 		}
 
 		messages = append(messages, response.Message)
 
-		if response.Message.Content != "" {
-			fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-		}
-
 		// Process tool calls
 		for len(response.Message.ToolCalls) > 0 {
+			fmt.Println()
 			for _, toolCall := range response.Message.ToolCalls {
 				result, err := executeAction(w, "", "", toolCall)
 				if err != nil {
@@ -269,14 +273,13 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 
 			writeCharsheet(w)
 
-			response, err = chatWithSpinner(client, model, messages, actionTools())
+			fmt.Println()
+			response, err = streamChat(client, model, messages, actionTools())
 			if err != nil {
-				fmt.Println("LLM error:", err)
+				fmt.Println("\nLLM error:", err)
 				return
 			}
-			if response.Message.Content != "" {
-				fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-			}
+			fmt.Println()
 			messages = append(messages, response.Message)
 		}
 
@@ -413,18 +416,18 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		}
 
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: line})
-		response, err := chatWithSpinner(client, model, messages, actionTools())
+		fmt.Println()
+		response, err := streamChat(client, model, messages, actionTools())
 		if err != nil {
-			fmt.Println("LLM error:", err)
+			fmt.Println("\nLLM error:", err)
 			continue
 		}
 
 		messages = append(messages, response.Message)
 
-		// Print any narration before tool execution
+		// Print narration in box after stream completes
 		if response.Message.Content != "" {
-			narration = []string{response.Message.Content}
-			printNarration(narration)
+			fmt.Printf("\n\n--- DM Narration ---\n%s\n--------------------\n", response.Message.Content)
 		}
 
 		// Process tool calls if any
@@ -446,14 +449,11 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 			writeCharsheet(w)
 
 			// Get final narration from LLM
-			finalResponse, err := chatWithSpinner(client, model, messages, nil)
+			fmt.Println()
+			finalResponse, err := streamChat(client, model, messages, nil)
 			if err != nil {
-				fmt.Println("LLM error:", err)
+				fmt.Println("\nLLM error:", err)
 				continue
-			}
-			if finalResponse.Message.Content != "" {
-				narration = []string{finalResponse.Message.Content}
-				printNarration(narration)
 			}
 			messages = append(messages, finalResponse.Message)
 		}
@@ -462,20 +462,30 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 
 const llmRequestTimeout = time.Minute
 
-func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+func streamChat(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
 	defer cancel()
-	return client.Chat(ctx, llm.Request{Model: model, Messages: messages, Tools: tools})
+
+	messageChan, err := client.Stream(ctx, llm.Request{Model: model, Messages: messages, Tools: tools})
+	if err != nil {
+		return llm.Response{}, err
+	}
+
+	var accumulatedMessage llm.Message
+	accumulatedMessage.Role = llm.RoleAssistant
+
+	for msg := range messageChan {
+		accumulatedMessage.Content += msg.Content
+		if msg.Content != "" {
+			fmt.Print(msg.Content)
+		}
+		if len(msg.ToolCalls) > 0 {
+			accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, msg.ToolCalls...)
+		}
+	}
+
+	return llm.Response{Message: accumulatedMessage}, nil
 }
-
-func chatWithSpinner(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	done := make(chan struct{})
-	go showLoadingSpinner(llmRequestTimeout, done)
-	defer func() { close(done) }()
-
-	return chatWithTimeout(client, model, messages, tools)
-}
-
 
 func printNarration(log []string) {
 	const maxLines = 12
@@ -571,8 +581,10 @@ func wrapLine(line string, width int) []string {
 	return wrapped
 }
 
+const typeYourAnswer = "[Type your answer]"
+
 func showChoiceMenu(options []string) (string, error) {
-	allOptions := append(options, "↳ Type your answer")
+	allOptions := append(options, typeYourAnswer)
 	selected := 0
 
 	rl, err := readline.New("")
