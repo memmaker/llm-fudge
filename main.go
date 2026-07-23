@@ -156,9 +156,10 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 	var narration []string
 
 	for {
-		// Print narration
+		// Print narration from previous response
 		if len(narration) > 0 {
 			printNarration(narration)
+			narration = nil
 		}
 
 		// Get player input
@@ -184,6 +185,12 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		}
 
 		messages = append(messages, response.Message)
+
+		// Print any narration before tool execution
+		if response.Message.Content != "" {
+			narration = []string{response.Message.Content}
+			printNarration(narration)
+		}
 
 		// Process tool calls if any
 		if len(response.Message.ToolCalls) > 0 {
@@ -211,10 +218,9 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 			}
 			if finalResponse.Message.Content != "" {
 				narration = []string{finalResponse.Message.Content}
+				printNarration(narration)
 			}
 			messages = append(messages, finalResponse.Message)
-		} else if response.Message.Content != "" {
-			narration = []string{response.Message.Content}
 		}
 	}
 }
@@ -742,6 +748,9 @@ func showChoiceMenu(options []string) (string, error) {
 	}
 	defer rl.Close()
 
+	hideCursor()
+	defer showCursor()
+
 	for {
 		clearScreen()
 		fmt.Println()
@@ -832,4 +841,12 @@ func readKey() (string, error) {
 
 func clearScreen() {
 	fmt.Print("\033[H\033[2J")
+}
+
+func hideCursor() {
+	fmt.Print("\033[?25l")
+}
+
+func showCursor() {
+	fmt.Print("\033[?25h")
 }
