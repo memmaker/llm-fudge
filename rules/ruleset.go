@@ -114,65 +114,32 @@ func LoadRuleset(path string) (*Ruleset, error) {
 }
 
 func loadAttributes(r *Ruleset, path string) error {
-	records, err := readRecFile(path)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		data := record.ToMap("|")
+	return loadDefinitions(path, "attribute", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
-		if slug == "" {
-			return fmt.Errorf("attribute missing slug in %s", path)
-		}
-		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid attribute slug: %s", data["slug"])
-		}
 		r.Attributes[slug] = &Attribute{
 			Slug:        slug,
 			DisplayName: data["display_name"],
 			Description: data["description"],
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func loadSkills(r *Ruleset, path string) error {
-	records, err := readRecFile(path)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		data := record.ToMap("|")
+	return loadDefinitions(path, "skill", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
-		if slug == "" {
-			return fmt.Errorf("skill missing slug in %s", path)
-		}
-		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid skill slug: %s", data["slug"])
-		}
 		r.Skills[slug] = &Skill{
 			Slug:        slug,
 			DisplayName: data["display_name"],
 			Description: data["description"],
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func loadSpecies(r *Ruleset, path string) error {
-	records, err := readRecFile(path)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		data := record.ToMap("|")
+	return loadDefinitions(path, "species", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
-		if slug == "" {
-			return fmt.Errorf("species missing slug in %s", path)
-		}
-		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid species slug: %s", data["slug"])
-		}
 		scale := data.GetIntOrDefault("scale", 0)
 		if scale < -10 || scale > 10 {
 			return fmt.Errorf("species %s scale must be between -10 and 10, got %d", slug, scale)
@@ -183,57 +150,47 @@ func loadSpecies(r *Ruleset, path string) error {
 			Description: data["description"],
 			Scale:       scale,
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func loadGifts(r *Ruleset, path string) error {
-	records, err := readRecFile(path)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		data := record.ToMap("|")
+	return loadDefinitions(path, "gift", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
-		if slug == "" {
-			return fmt.Errorf("gift missing slug in %s", path)
-		}
-		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid gift slug: %s", data["slug"])
-		}
 		r.Gifts[slug] = &Gift{
 			Slug:        slug,
 			DisplayName: data["display_name"],
 			Description: data["description"],
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func loadFaults(r *Ruleset, path string) error {
-	records, err := readRecFile(path)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		data := record.ToMap("|")
+	return loadDefinitions(path, "fault", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
-		if slug == "" {
-			return fmt.Errorf("fault missing slug in %s", path)
-		}
-		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid fault slug: %s", data["slug"])
-		}
 		r.Faults[slug] = &Fault{
 			Slug:        slug,
 			DisplayName: data["display_name"],
 			Description: data["description"],
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func loadPowers(r *Ruleset, path string) error {
+	return loadDefinitions(path, "power", func(data recfile.DataMap) error {
+		slug := strings.ToLower(data["slug"])
+		r.Powers[slug] = &Power{
+			Slug:        slug,
+			DisplayName: data["display_name"],
+			Description: data["description"],
+		}
+		return nil
+	})
+}
+
+func loadDefinitions(path string, typeName string, populate func(recfile.DataMap) error) error {
 	records, err := readRecFile(path)
 	if err != nil {
 		return err
@@ -242,15 +199,13 @@ func loadPowers(r *Ruleset, path string) error {
 		data := record.ToMap("|")
 		slug := strings.ToLower(data["slug"])
 		if slug == "" {
-			return fmt.Errorf("power missing slug in %s", path)
+			return fmt.Errorf("%s missing slug in %s", typeName, path)
 		}
 		if !slugPattern.MatchString(slug) {
-			return fmt.Errorf("invalid power slug: %s", data["slug"])
+			return fmt.Errorf("invalid %s slug: %s", typeName, data["slug"])
 		}
-		r.Powers[slug] = &Power{
-			Slug:        slug,
-			DisplayName: data["display_name"],
-			Description: data["description"],
+		if err := populate(data); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -348,39 +303,39 @@ func (r *Ruleset) WriteFile(filename string, mode string, content []byte) error 
 		return err
 	}
 
-	// Reload the affected file
-	switch filename {
-	case attributesFile:
-		r.Attributes = make(map[string]*Attribute)
-		if err := loadAttributes(r, filePath); err != nil {
-			return err
-		}
-	case skillsFile:
-		r.Skills = make(map[string]*Skill)
-		if err := loadSkills(r, filePath); err != nil {
-			return err
-		}
-	case speciesFile:
-		r.Species = make(map[string]*Species)
-		if err := loadSpecies(r, filePath); err != nil {
-			return err
-		}
-	case giftsFile:
-		r.Gifts = make(map[string]*Gift)
-		if err := loadGifts(r, filePath); err != nil {
-			return err
-		}
-	case faultsFile:
-		r.Faults = make(map[string]*Fault)
-		if err := loadFaults(r, filePath); err != nil {
-			return err
-		}
-	case powersFile:
-		r.Powers = make(map[string]*Power)
-		if err := loadPowers(r, filePath); err != nil {
-			return err
-		}
+	return r.reloadFile(filename, filePath)
+}
+
+func (r *Ruleset) reloadFile(filename string, filePath string) error {
+	loaders := map[string]func(string) error{
+		attributesFile: func(path string) error {
+			r.Attributes = make(map[string]*Attribute)
+			return loadAttributes(r, path)
+		},
+		skillsFile: func(path string) error {
+			r.Skills = make(map[string]*Skill)
+			return loadSkills(r, path)
+		},
+		speciesFile: func(path string) error {
+			r.Species = make(map[string]*Species)
+			return loadSpecies(r, path)
+		},
+		giftsFile: func(path string) error {
+			r.Gifts = make(map[string]*Gift)
+			return loadGifts(r, path)
+		},
+		faultsFile: func(path string) error {
+			r.Faults = make(map[string]*Fault)
+			return loadFaults(r, path)
+		},
+		powersFile: func(path string) error {
+			r.Powers = make(map[string]*Power)
+			return loadPowers(r, path)
+		},
 	}
 
+	if loader, ok := loaders[filename]; ok {
+		return loader(filePath)
+	}
 	return nil
 }

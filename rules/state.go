@@ -128,6 +128,8 @@ type CharacterRequest struct {
 	Location    string         `json:"location"`
 	Attributes  map[string]int `json:"attributes"`
 	Skills      map[string]int `json:"skills"`
+	Gifts       []string       `json:"gifts"`
+	Faults      []string       `json:"faults"`
 }
 
 // CreateCharacterValidated validates and creates a character according to the ruleset
@@ -191,6 +193,24 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	if loc == "" {
 		loc = "default"
 	}
+	// validate and populate gifts
+	gifts := make([]string, 0, len(req.Gifts))
+	for _, giftSlug := range req.Gifts {
+		giftKey := strings.ToLower(giftSlug)
+		if _, ok := w.Ruleset.Gifts[giftKey]; !ok {
+			return nil, fmt.Errorf("unknown gift: %s", giftSlug)
+		}
+		gifts = append(gifts, giftKey)
+	}
+	// validate and populate faults
+	faults := make([]string, 0, len(req.Faults))
+	for _, faultSlug := range req.Faults {
+		faultKey := strings.ToLower(faultSlug)
+		if _, ok := w.Ruleset.Faults[faultKey]; !ok {
+			return nil, fmt.Errorf("unknown fault: %s", faultSlug)
+		}
+		faults = append(faults, faultKey)
+	}
 	// description can be empty
 	ch := &Character{
 		ID:          id,
@@ -198,8 +218,8 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 		Species:     specKey,
 		Attributes:  attrs,
 		Skills:      skills,
-		Gifts:       nil,
-		Faults:      nil,
+		Gifts:       gifts,
+		Faults:      faults,
 		FudgePoints: 0,
 		Wounds:      WoundState{},
 		Inventory:   make(map[string]int),

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,76 @@ func TestUnopposedSkillCheckRejectsUnknownCharacter(t *testing.T) {
 	_, _, _, err := world.UnopposedSkillCheck("missing", "Athletics", 0)
 	if err == nil {
 		t.Fatal("expected missing character error")
+	}
+}
+
+func TestCreateCharacterRejectsDuplicateSlug(t *testing.T) {
+	world := newTestWorld(t, 1)
+
+	req1 := CharacterRequest{
+		Name:    "Hero",
+		Species: "human",
+	}
+	ch1, err := world.CreateCharacterValidated(req1)
+	if err != nil {
+		t.Fatalf("first character creation failed: %v", err)
+	}
+	if ch1.ID != "hero" {
+		t.Fatalf("expected slug 'hero', got %q", ch1.ID)
+	}
+
+	if !world.Ruleset.Frozen {
+		t.Fatal("ruleset should be frozen after first character")
+	}
+
+	req2 := CharacterRequest{
+		Slug:    "hero",
+		Name:    "AnotherHero",
+		Species: "human",
+	}
+	_, err = world.CreateCharacterValidated(req2)
+	if err == nil {
+		t.Fatal("expected error when creating character with duplicate slug")
+	}
+	if !strings.Contains(err.Error(), "frozen") && !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateCharacterValidatesGiftsAndFaults(t *testing.T) {
+	world := newTestWorld(t, 2)
+
+	req := CharacterRequest{
+		Name:    "Hero",
+		Species: "human",
+		Gifts:   []string{"night-eyes"},
+		Faults:  []string{"hot-headed"},
+	}
+	ch, err := world.CreateCharacterValidated(req)
+	if err != nil {
+		t.Fatalf("character creation failed: %v", err)
+	}
+	if len(ch.Gifts) != 1 || ch.Gifts[0] != "night-eyes" {
+		t.Fatalf("gifts not set correctly: %v", ch.Gifts)
+	}
+	if len(ch.Faults) != 1 || ch.Faults[0] != "hot-headed" {
+		t.Fatalf("faults not set correctly: %v", ch.Faults)
+	}
+}
+
+func TestCreateCharacterRejectsInvalidGiftOrFault(t *testing.T) {
+	world := newTestWorld(t, 3)
+
+	req := CharacterRequest{
+		Name:    "Hero",
+		Species: "human",
+		Gifts:   []string{"invalid-gift"},
+	}
+	_, err := world.CreateCharacterValidated(req)
+	if err == nil {
+		t.Fatal("expected error for invalid gift")
+	}
+	if !strings.Contains(err.Error(), "gift") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

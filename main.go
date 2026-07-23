@@ -127,7 +127,7 @@ func actionTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_ruleset_file", Description: "Write one recognized ruleset file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}}, "required": []string{"name", "species"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
 	}
 }
 
@@ -200,6 +200,8 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 			Location    string         `json:"location"`
 			Attributes  map[string]int `json:"attributes"`
 			Skills      map[string]int `json:"skills"`
+			Gifts       []string       `json:"gifts"`
+			Faults      []string       `json:"faults"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &req); err != nil {
 			return "", fmt.Errorf("parse create_character: %w", err)
