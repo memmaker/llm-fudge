@@ -1,10 +1,13 @@
 module fudge
 
-go 1.21
+go 1.25.0
 
-require github.com/memmaker/gollum v0.0.0-20260722131223-5745b1fa58dc
+require github.com/memmaker/gollum v0.0.0-20260723101348-428a7766e249
 
 require (
-	golang.org/x/sys v0.29.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/peterh/liner v1.2.2 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.28.0 // indirect
 )
