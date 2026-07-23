@@ -78,6 +78,11 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 
 		messages = append(messages, response.Message)
 
+		// Print any narration before tool execution
+		if response.Message.Content != "" {
+			fmt.Println("\nDM:", wrapText(response.Message.Content, terminalWidth()-5))
+		}
+
 		// Keep processing tool calls until we get narration
 		for len(response.Message.ToolCalls) > 0 {
 			for _, toolCall := range response.Message.ToolCalls {
@@ -107,12 +112,10 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 				fmt.Println("LLM error:", err)
 				return ""
 			}
+			if response.Message.Content != "" {
+				fmt.Println("\nDM:", wrapText(response.Message.Content, terminalWidth()-5))
+			}
 			messages = append(messages, response.Message)
-		}
-
-		// Print final narration
-		if response.Message.Content != "" {
-			fmt.Println("\nDM:", wrapText(response.Message.Content, terminalWidth()-5))
 		}
 
 		// Check if setup is complete
