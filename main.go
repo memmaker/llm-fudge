@@ -64,7 +64,7 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 	adventure := ""
 
 	for {
-		response, err := chatWithTimeout(client, model, messages, actionTools())
+		response, err := chatWithSpinner(client, model, messages, actionTools())
 		if err != nil {
 			fmt.Println("LLM error:", err)
 			return ""
@@ -96,7 +96,7 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 			writeCharsheet(w)
 
 			// Get follow-up response after tool calls
-			response, err = chatWithTimeout(client, model, messages, actionTools())
+			response, err = chatWithSpinner(client, model, messages, actionTools())
 			if err != nil {
 				fmt.Println("LLM error:", err)
 				return ""
@@ -104,9 +104,12 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 			messages = append(messages, response.Message)
 		}
 
-		// Print final narration
+		// Print final narration (filtered for meta text)
 		if response.Message.Content != "" {
-			fmt.Println("\nDM:", response.Message.Content)
+			cleaned := filterMetaText(response.Message.Content)
+			if cleaned != "" {
+				fmt.Println("\nDM:", wrapText(cleaned, terminalWidth()-5))
+			}
 		}
 
 		// Check if setup is complete
@@ -168,7 +171,7 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 		}
 
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: line})
-		response, err := chatWithTimeout(client, model, messages, actionTools())
+		response, err := chatWithSpinner(client, model, messages, actionTools())
 		if err != nil {
 			fmt.Println("LLM error:", err)
 			continue
@@ -195,22 +198,30 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 			writeCharsheet(w)
 
 			// Get final narration from LLM
-			finalResponse, err := chatWithTimeout(client, model, messages, nil)
+			finalResponse, err := chatWithSpinner(client, model, messages, nil)
 			if err != nil {
 				fmt.Println("LLM error:", err)
 				continue
 			}
 			if finalResponse.Message.Content != "" {
-				narration = []string{finalResponse.Message.Content}
+				cleaned := filterMetaText(finalResponse.Message.Content)
+				if cleaned != "" {
+					narration = []string{cleaned}
+				}
 			}
 			messages = append(messages, finalResponse.Message)
 		} else if response.Message.Content != "" {
-			narration = []string{response.Message.Content}
+			cleaned := filterMetaText(response.Message.Content)
+			if cleaned != "" {
+				narration = []string{cleaned}
+			}
 		}
 	}
 }
 
 const dmPrompt = `You are the dungeon master for a Fudge RPG. Trivial character actions don't need any skill checks. If the player's action warrants a skill check (action needing some skill, complex action, uncertain outcomes, opposed actions), call exactly one available tool to resolve it. Then narrate the outcome briefly using the tool result. Do not use dice or randomness yourself.
+
+IMPORTANT: Only provide game narration and story content. Do NOT include meta-commentary, instructions to the player about what to do next, or commentary about your role as DM. Just tell the story.
 
 When creating a character:
 1. First call query_setting to see what attributes, skills, species, gifts, and faults are available in the current setting
@@ -271,6 +282,14 @@ func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, t
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
 	defer cancel()
 	return client.Chat(ctx, llm.Request{Model: model, Messages: messages, Tools: tools})
+}
+
+func chatWithSpinner(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	done := make(chan struct{})
+	go showLoadingSpinner(llmRequestTimeout, done)
+	defer func() { close(done) }()
+
+	return chatWithTimeout(client, model, messages, tools)
 }
 
 func actionTools() []llm.Tool {
@@ -671,9 +690,62 @@ func printNarration(log []string) {
 	}
 	fmt.Println("--- DM Narration ---")
 	for i := start; i < len(log); i++ {
-		fmt.Println(wrapText(log[i], terminalWidth()))
+		wrapped := wrapText(log[i], terminalWidth()-4)
+		fmt.Println(wrapped)
 	}
 	fmt.Println("--------------------")
+}
+
+func filterMetaText(narration string) string {
+	lines := strings.Split(narration, "\n")
+	var filtered []string
+	metaPatterns := []string{
+		"Returning control",
+		"go ahead and",
+		"I'm here to",
+		"Have fun",
+		"Let me know",
+		"What would you like",
+		"What do you do",
+		"What happens next",
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		isMetaText := false
+		for _, pattern := range metaPatterns {
+			if strings.Contains(strings.ToLower(trimmed), strings.ToLower(pattern)) {
+				isMetaText = true
+				break
+			}
+		}
+		if !isMetaText {
+			filtered = append(filtered, line)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+
+func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
+	brailleChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	frame := 0
+	for {
+		select {
+		case <-done:
+			fmt.Print("\r    \r")
+			return
+		case <-ticker.C:
+			fmt.Printf("\r%s  ", brailleChars[frame%len(brailleChars)])
+			frame++
+		}
+	}
 }
 
 func terminalWidth() int {

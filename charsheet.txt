@@ -1,14 +1,21 @@
-[1m[36m─── CHARACTER SHEET: Hero [36m───[0m
+[1m[36m─── CHARACTER SHEET: Cat [36m───[0m
 [36m◆ Location:[0m default
 
 [1m▸ Attributes[0m
+    [32mAgility[0m Fair(+0)[0m
+    [32mPerception[0m Good(+1)[0m
     [32mStrength[0m Fair(+0)[0m
 
 [1m▸ Skills[0m
-    [31mFight[0m Poor(-2)[0m
+    [32mAthletics[0m Fair(+0)[0m
+    [32mFight[0m Fair(+0)[0m
+    [32mStealth[0m Good(+1)[0m
 
 [1m▸ Wounds[0m
-  ○ Scratch | ○ Hurt | ○ Very Hurt | ○ Incap. | ○ Near Death | [31m◉[0m Dead
+  ○ Scratch | ○ Hurt | ○ Very Hurt | ○ Incap. | ○ Near Death | ○ Dead
+
+[1m▸ Gifts[0m
+  [32m✓[0m night-eyes
 
 [1m▸ Fudge Points:[0m [31m0[0m
 [1m▸ Coins:[0m 0
