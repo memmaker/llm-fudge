@@ -459,6 +459,22 @@ func sortedFaultKeys(m map[string]*rules.Fault) []string {
 	return keys
 }
 
+func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, map[string]interface{}, error) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonArgs), &raw); err != nil {
+		return nil, nil, fmt.Errorf("parse arguments: %w", err)
+	}
+	charID, ok := raw["character_id"].(string)
+	if !ok {
+		return nil, nil, fmt.Errorf("character_id required")
+	}
+	ch, err := w.Character(charID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ch, raw, nil
+}
+
 func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
 	case "list_settings":
@@ -592,47 +608,37 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		}
 		return fmt.Sprintf("created character %s", ch.ID), nil
 	case "apply_damage":
-		var args struct {
-			CharacterID  string `json:"character_id"`
-			DamagePoints int    `json:"damage_points"`
-		}
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse apply_damage: %w", err)
-		}
-		ch, err := w.Character(args.CharacterID)
+		ch, raw, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
 			return "", err
 		}
-		if args.DamagePoints < 0 {
+		dp, ok := raw["damage_points"].(float64)
+		if !ok {
+			return "", fmt.Errorf("damage_points required")
+		}
+		damagePoints := int(dp)
+		if damagePoints < 0 {
 			return "", fmt.Errorf("damage points must be non-negative")
 		}
-		result := ch.Wounds.ApplyDamage(args.DamagePoints)
+		result := ch.Wounds.ApplyDamage(damagePoints)
 		return fmt.Sprintf("%s takes damage: %s (scratches: %d, penalty: %+d)", ch.Name, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
 	case "heal":
-		var args struct {
-			CharacterID string `json:"character_id"`
-			Levels      int    `json:"levels"`
-		}
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse heal: %w", err)
-		}
-		ch, err := w.Character(args.CharacterID)
+		ch, raw, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
 			return "", err
 		}
-		if args.Levels <= 0 {
+		levels, ok := raw["levels"].(float64)
+		if !ok {
+			return "", fmt.Errorf("levels required")
+		}
+		lvl := int(levels)
+		if lvl <= 0 {
 			return "", fmt.Errorf("levels to heal must be positive")
 		}
-		result := ch.Wounds.Heal(args.Levels)
+		result := ch.Wounds.Heal(lvl)
 		return fmt.Sprintf("%s: %s (now at %s, penalty: %+d)", ch.Name, result, ch.Wounds.Level, ch.Wounds.Penalty()), nil
 	case "declare_dead":
-		var args struct {
-			CharacterID string `json:"character_id"`
-		}
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse declare_dead: %w", err)
-		}
-		ch, err := w.Character(args.CharacterID)
+		ch, _, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
 			return "", err
 		}
