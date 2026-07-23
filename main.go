@@ -248,7 +248,7 @@ func actionTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "query_setting", Description: "Query available attributes, skills, species, gifts, and faults in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with multiple choice options using an interactive menu. A 'Type your answer' fallback is ALWAYS included automatically—do NOT add it yourself. User navigates with arrow keys and selects with Enter.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with multiple choice options using an interactive menu. REQUIREMENTS: (1) You MUST write a clear prompt/question before calling this tool—the menu will appear directly after your text. (2) A 'Type your answer' fallback is ALWAYS included automatically—do NOT add it yourself. (3) User navigates with arrow keys and selects with Enter.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an unopposed check against a difficulty using a chosen trait.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"trait_type", "trait_slug", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve an opposed check between two actors using independently chosen traits.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
@@ -754,11 +754,20 @@ func showChoiceMenu(options []string) (string, error) {
 	hideCursor()
 	defer showCursor()
 
+	fmt.Println()
+	firstDraw := true
+
 	for {
-		clearScreen()
-		fmt.Println()
-		fmt.Println("  Choose an option (↑↓ to navigate, Enter to select):")
-		fmt.Println()
+		if firstDraw {
+			fmt.Println("  Choose an option (↑↓ to navigate, Enter to select):")
+			fmt.Println()
+		} else {
+			// Move cursor up to menu start and clear it
+			linesToClear := len(allOptions) + 3
+			fmt.Printf("\033[%dA\033[J", linesToClear)
+			fmt.Println("  Choose an option (↑↓ to navigate, Enter to select):")
+			fmt.Println()
+		}
 
 		for i, opt := range allOptions {
 			if i == selected {
@@ -768,6 +777,8 @@ func showChoiceMenu(options []string) (string, error) {
 			}
 		}
 		fmt.Println()
+
+		firstDraw = false
 
 		key, err := readKey()
 		if err != nil {
