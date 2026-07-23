@@ -42,14 +42,14 @@ func TestExecuteActionUsesWorldChecks(t *testing.T) {
 
 func TestActionToolsIncludeCreateCharacter(t *testing.T) {
 	tools := actionTools()
-	if len(tools) != 9 {
-		t.Fatalf("got %d tools, want 9", len(tools))
+	if len(tools) != 12 {
+		t.Fatalf("got %d tools, want 12", len(tools))
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range tools {
 		toolNames[tool.Function.Name] = true
 	}
-	expectedTools := []string{"list_settings", "load_setting", "list_adventures", "load_adventure", "query_setting", "create_character"}
+	expectedTools := []string{"list_settings", "load_setting", "list_adventures", "load_adventure", "query_setting", "create_character", "apply_damage", "heal", "declare_dead"}
 	for _, expected := range expectedTools {
 		if !toolNames[expected] {
 			t.Fatalf("%s tool not found in action tools", expected)
@@ -260,5 +260,121 @@ func TestWrapTextRespectsWidthAndParagraphs(t *testing.T) {
 		if len([]rune(line)) > 7 {
 			t.Fatalf("line exceeds width: %q", line)
 		}
+	}
+}
+
+func TestApplyDamageMutation(t *testing.T) {
+	path := t.TempDir()
+	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\n")
+	writeFile(t, filepath.Join(path, "skills.rec"), "slug: fight\n")
+	writeFile(t, filepath.Join(path, "species.rec"), "slug: human\ndisplay_name: Human\nscale: 0\n")
+	w, err := rules.NewWorld(20, path)
+	if err != nil {
+		t.Fatalf("create world: %v", err)
+	}
+
+	args := `{"slug":"hero","name":"Hero","species":"human"}`
+	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	if err != nil {
+		t.Fatalf("character creation failed: %v", err)
+	}
+
+	damageArgs := `{"character_id":"hero","damage_points":5}`
+	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
+	if err != nil {
+		t.Fatalf("apply_damage failed: %v", err)
+	}
+	if !strings.Contains(result, "Hero") || !strings.Contains(result, "Very Hurt") {
+		t.Fatalf("unexpected damage result: %q", result)
+	}
+
+	ch, _ := w.Character("hero")
+	if ch.Wounds.Level != rules.VeryHurt || ch.Wounds.Penalty() != -2 {
+		t.Fatalf("wound state incorrect: level=%s penalty=%d", ch.Wounds.Level, ch.Wounds.Penalty())
+	}
+}
+
+func TestHealMutation(t *testing.T) {
+	path := t.TempDir()
+	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\n")
+	writeFile(t, filepath.Join(path, "skills.rec"), "slug: fight\n")
+	writeFile(t, filepath.Join(path, "species.rec"), "slug: human\ndisplay_name: Human\nscale: 0\n")
+	w, err := rules.NewWorld(21, path)
+	if err != nil {
+		t.Fatalf("create world: %v", err)
+	}
+
+	args := `{"slug":"hero","name":"Hero","species":"human"}`
+	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	if err != nil {
+		t.Fatalf("character creation failed: %v", err)
+	}
+
+	// Apply damage
+	damageArgs := `{"character_id":"hero","damage_points":5}`
+	executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
+
+	// Heal
+	healArgs := `{"character_id":"hero","levels":1}`
+	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
+	if err != nil {
+		t.Fatalf("heal failed: %v", err)
+	}
+	if !strings.Contains(result, "Healed") {
+		t.Fatalf("unexpected heal result: %q", result)
+	}
+
+	ch, _ := w.Character("hero")
+	if ch.Wounds.Level != rules.Hurt {
+		t.Fatalf("wound level should be Hurt after healing 1 level, got %s", ch.Wounds.Level)
+	}
+}
+
+func TestDeclarDeadMutation(t *testing.T) {
+	path := t.TempDir()
+	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\n")
+	writeFile(t, filepath.Join(path, "skills.rec"), "slug: fight\n")
+	writeFile(t, filepath.Join(path, "species.rec"), "slug: human\ndisplay_name: Human\nscale: 0\n")
+	w, err := rules.NewWorld(22, path)
+	if err != nil {
+		t.Fatalf("create world: %v", err)
+	}
+
+	args := `{"slug":"hero","name":"Hero","species":"human"}`
+	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	if err != nil {
+		t.Fatalf("character creation failed: %v", err)
+	}
+
+	// Declare dead
+	deadArgs := `{"character_id":"hero"}`
+	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "declare_dead", Arguments: deadArgs}})
+	if err != nil {
+		t.Fatalf("declare_dead failed: %v", err)
+	}
+	if !strings.Contains(result, "declared dead") {
+		t.Fatalf("unexpected declare_dead result: %q", result)
+	}
+
+	ch, _ := w.Character("hero")
+	if ch.Wounds.Level != rules.Dead {
+		t.Fatalf("wound level should be Dead, got %s", ch.Wounds.Level)
+	}
+
+	// Dead character cannot act
+	checkArgs := `{"trait_type":"skill","trait_slug":"fight","difficulty":1}`
+	_, err = executeAction(w, "hero", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "unopposed_check", Arguments: checkArgs}})
+	if err == nil || !strings.Contains(err.Error(), "incapacitated") {
+		t.Fatalf("dead character should not be able to act: %v", err)
+	}
+
+	// Dead character cannot be healed
+	healArgs := `{"character_id":"hero","levels":1}`
+	result, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
+	if err != nil {
+		t.Fatalf("heal should not error, but return failure: %v", err)
+	}
+	if !strings.Contains(result, "Cannot heal") {
+		t.Fatalf("should not be able to heal dead: %q", result)
 	}
 }

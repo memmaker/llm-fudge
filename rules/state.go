@@ -301,15 +301,34 @@ func (w *WoundState) CanAct() bool {
 }
 
 func (w *WoundState) ApplyDamage(dp int) string {
-	w.Scratches = 0
-	w.Level = Undamaged
+	if w.Level == Dead {
+		return "Dead (cannot be damaged)"
+	}
 
 	if dp <= 0 {
-		return "Undamaged"
+		return w.Level.String()
 	}
+
+	// Handle scratch accumulation for Undamaged/Scratch levels
+	if w.Level == Undamaged || w.Level == Scratch {
+		if dp <= 2 {
+			// Accumulate scratches (up to 3)
+			w.Scratches++
+			if w.Scratches >= 3 {
+				w.Scratches = 0
+				w.Level = Hurt
+				return "Hurt"
+			}
+			w.Level = Scratch
+			return "Scratch"
+		}
+	}
+
+	// Direct damage mapping for higher levels
+	w.Scratches = 0
 	if dp <= 2 {
-		w.Scratches = 1
 		w.Level = Scratch
+		w.Scratches = 1
 		return "Scratch"
 	}
 	if dp <= 4 {
@@ -329,6 +348,10 @@ func (w *WoundState) ApplyDamage(dp int) string {
 }
 
 func (w *WoundState) Heal(levels int) string {
+	if w.Level == Dead {
+		return "Cannot heal the dead"
+	}
+
 	for i := 0; i < levels; i++ {
 		switch w.Level {
 		case NearDeath:
@@ -350,4 +373,9 @@ func (w *WoundState) Heal(levels int) string {
 		}
 	}
 	return "Healed"
+}
+
+func (w *WoundState) DeclareDead() {
+	w.Level = Dead
+	w.Scratches = 0
 }

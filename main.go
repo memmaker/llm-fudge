@@ -278,6 +278,9 @@ func actionTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve an opposed check between two actors using independently chosen traits.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "apply_damage", Description: "Apply damage to a character, accumulating scratches and escalating wound levels.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "damage_points": map[string]any{"type": "integer"}}, "required": []string{"character_id", "damage_points"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "heal", Description: "Heal a character by reducing wound levels. Cannot heal the dead.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "levels": map[string]any{"type": "integer"}}, "required": []string{"character_id", "levels"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "declare_dead", Description: "Permanently declare a character dead. Dead characters cannot act or be healed.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}}, "required": []string{"character_id"}}}},
 	}
 }
 
@@ -588,6 +591,53 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 			return "", err
 		}
 		return fmt.Sprintf("created character %s", ch.ID), nil
+	case "apply_damage":
+		var args struct {
+			CharacterID  string `json:"character_id"`
+			DamagePoints int    `json:"damage_points"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse apply_damage: %w", err)
+		}
+		ch, err := w.Character(args.CharacterID)
+		if err != nil {
+			return "", err
+		}
+		if args.DamagePoints < 0 {
+			return "", fmt.Errorf("damage points must be non-negative")
+		}
+		result := ch.Wounds.ApplyDamage(args.DamagePoints)
+		return fmt.Sprintf("%s takes damage: %s (scratches: %d, penalty: %+d)", ch.Name, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
+	case "heal":
+		var args struct {
+			CharacterID string `json:"character_id"`
+			Levels      int    `json:"levels"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse heal: %w", err)
+		}
+		ch, err := w.Character(args.CharacterID)
+		if err != nil {
+			return "", err
+		}
+		if args.Levels <= 0 {
+			return "", fmt.Errorf("levels to heal must be positive")
+		}
+		result := ch.Wounds.Heal(args.Levels)
+		return fmt.Sprintf("%s: %s (now at %s, penalty: %+d)", ch.Name, result, ch.Wounds.Level, ch.Wounds.Penalty()), nil
+	case "declare_dead":
+		var args struct {
+			CharacterID string `json:"character_id"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse declare_dead: %w", err)
+		}
+		ch, err := w.Character(args.CharacterID)
+		if err != nil {
+			return "", err
+		}
+		ch.Wounds.DeclareDead()
+		return fmt.Sprintf("%s has been declared dead (death is permanent)", ch.Name), nil
 	default:
 		return "", fmt.Errorf("unknown action tool %q", call.Function.Name)
 	}
