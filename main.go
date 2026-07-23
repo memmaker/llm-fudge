@@ -72,9 +72,6 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 
 		messages = append(messages, response.Message)
 
-		// Debug: log response details
-		fmt.Fprintf(os.Stderr, "[DEBUG] Response: %d tool calls, content: %q\n", len(response.Message.ToolCalls), response.Message.Content)
-
 		// Process tool calls
 		for _, toolCall := range response.Message.ToolCalls {
 			result, err := executeAction(w, "", "", toolCall)
@@ -97,8 +94,6 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 		// Print DM response
 		if response.Message.Content != "" {
 			fmt.Println("\nDM:", response.Message.Content)
-		} else if len(response.Message.ToolCalls) == 0 {
-			fmt.Println("\n[No response from DM]")
 		}
 
 		// Check if setup is complete
