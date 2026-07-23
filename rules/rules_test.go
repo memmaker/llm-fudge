@@ -1,15 +1,47 @@
 package rules
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
+
+func newTestWorld(t *testing.T, seed int64) *World {
+	t.Helper()
+	w, err := NewWorld(seed, filepath.Join("..", "rulesets", "example"))
+	if err != nil {
+		t.Fatalf("NewWorld returned error: %v", err)
+	}
+	return w
+}
 
 func TestSkillChecksAreDeterministic(t *testing.T) {
-	first := NewWorld(42)
-	first.CreateCharacter("hero", "Hero", nil, map[string]int{"athletics": 2})
-	first.CreateCharacter("goblin", "Goblin", nil, map[string]int{"athletics": 1})
+	first := newTestWorld(t, 42)
+	first.CreateCharacter(
+		"hero",
+		"Hero",
+		map[string]int{"strength": 1, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 2, "stealth": 1, "fight": 1},
+	)
+	first.CreateCharacter(
+		"goblin",
+		"Goblin",
+		map[string]int{"strength": 0, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 1, "stealth": 0, "fight": 1},
+	)
 
-	second := NewWorld(42)
-	second.CreateCharacter("hero", "Hero", nil, map[string]int{"athletics": 2})
-	second.CreateCharacter("goblin", "Goblin", nil, map[string]int{"athletics": 1})
+	second := newTestWorld(t, 42)
+	second.CreateCharacter(
+		"hero",
+		"Hero",
+		map[string]int{"strength": 1, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 2, "stealth": 1, "fight": 1},
+	)
+	second.CreateCharacter(
+		"goblin",
+		"Goblin",
+		map[string]int{"strength": 0, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 1, "stealth": 0, "fight": 1},
+	)
 
 	firstWin, firstTotal, firstRoll, err := first.UnopposedSkillCheck("hero", "Athletics", 1)
 	if err != nil {
@@ -37,7 +69,8 @@ func TestSkillChecksAreDeterministic(t *testing.T) {
 }
 
 func TestUnopposedSkillCheckRejectsUnknownCharacter(t *testing.T) {
-	_, _, _, err := NewWorld(1).UnopposedSkillCheck("missing", "Athletics", 0)
+	world := newTestWorld(t, 1)
+	_, _, _, err := world.UnopposedSkillCheck("missing", "Athletics", 0)
 	if err == nil {
 		t.Fatal("expected missing character error")
 	}

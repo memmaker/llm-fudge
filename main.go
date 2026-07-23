@@ -17,9 +17,23 @@ import (
 
 // Minimal in-process interactive shell with prose-driven flow using 4dF checks.
 func main() {
-	w := rules.NewWorld(987654321)
-	hero := w.CreateCharacter("pc1", "Hero", nil, map[string]int{"athletics": 2, "stealth": 1})
-	goblin := w.CreateCharacter("gob1", "Goblin", nil, map[string]int{"athletics": 1, "stealth": 0})
+	w, err := rules.NewWorld(987654321, "rulesets/example")
+	if err != nil {
+		fmt.Println("failed to load ruleset:", err)
+		return
+	}
+	hero := w.CreateCharacter(
+		"pc1",
+		"Hero",
+		map[string]int{"strength": 1, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 2, "stealth": 1, "fight": 1},
+	)
+	goblin := w.CreateCharacter(
+		"gob1",
+		"Goblin",
+		map[string]int{"strength": 0, "agility": 1, "perception": 0},
+		map[string]int{"athletics": 1, "stealth": 0, "fight": 1},
+	)
 	narration := []string{"You awaken in a dim dungeon. A goblin blocks your path.", "Tell me what you do."}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -112,6 +126,8 @@ func actionTools() []llm.Tool {
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "write_ruleset_file", Description: "Write one recognized ruleset file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}}, "required": []string{"name", "species"}}}},
 	}
 }
 
@@ -156,6 +172,43 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		hero, _ := w.Character(heroID)
 		opponent, _ := w.Character(args.OppID)
 		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %d): success=%t", hero.Name, actorTotal, opponent.Name, opponentTotal, margin, wins), nil
+	case "write_ruleset_file":
+		var args struct {
+			Filename string `json:"filename"`
+			Mode     string `json:"mode"`
+			Content  string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse write ruleset file: %w", err)
+		}
+		if w.Ruleset == nil {
+			return "", fmt.Errorf("world has no ruleset selected")
+		}
+		if args.Filename == "" || args.Mode == "" {
+			return "", fmt.Errorf("write ruleset file requires filename, mode, and content")
+		}
+		if err := w.Ruleset.WriteFile(args.Filename, args.Mode, []byte(args.Content)); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("wrote %s (%s)", args.Filename, args.Mode), nil
+	case "create_character":
+		var req struct {
+			Slug        string         `json:"slug"`
+			Name        string         `json:"name"`
+			Species     string         `json:"species"`
+			Description string         `json:"description"`
+			Location    string         `json:"location"`
+			Attributes  map[string]int `json:"attributes"`
+			Skills      map[string]int `json:"skills"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &req); err != nil {
+			return "", fmt.Errorf("parse create_character: %w", err)
+		}
+		ch, err := w.CreateCharacterValidated(rules.CharacterRequest(req))
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("created character %s", ch.ID), nil
 	default:
 		return "", fmt.Errorf("unknown action tool %q", call.Function.Name)
 	}

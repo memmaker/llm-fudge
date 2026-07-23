@@ -1,0 +1,11 @@
+slug: strength
+display_name: Strength
+description: Physical power and force.
+
+slug: agility
+display_name: Agility
+description: Balance, reflexes, and body control.
+
+slug: perception
+display_name: Perception
+description: Awareness of details and danger.

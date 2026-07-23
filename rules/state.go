@@ -48,6 +48,7 @@ type WoundState struct {
 type Character struct {
 	ID          string
 	Name        string
+	Species     string
 	Attributes  map[string]int
 	Skills      map[string]int
 	Gifts       []string
@@ -64,13 +65,21 @@ type Character struct {
 type World struct {
 	Player     string
 	Characters map[string]*Character
+	Ruleset    *Ruleset
+	Seed       int64
 	rng        *rand.Rand
 }
 
-// NewWorld creates a deterministic game world. Reuse the seed and action
-// sequence to reproduce every check result.
-func NewWorld(seed int64) *World {
-	return &World{Characters: make(map[string]*Character), rng: rand.New(rand.NewSource(seed))}
+// NewWorld creates a deterministic game world with a selected ruleset.
+// Reuse the seed and action sequence to reproduce every check result.
+func NewWorld(seed int64, path string) (*World, error) {
+	ruleset, err := LoadRuleset(path)
+	if err != nil {
+		return nil, err
+	}
+	w := &World{Characters: make(map[string]*Character), Seed: seed, rng: rand.New(rand.NewSource(seed))}
+	w.Ruleset = ruleset
+	return w, nil
 }
 
 func (w *World) CreateCharacter(id, name string, attributes, skills map[string]int) *Character {
@@ -94,11 +103,116 @@ func (w *World) CreateCharacter(id, name string, attributes, skills map[string]i
 	return ch
 }
 
+// Character retrieves a character by id and handles error if character does not exist
 func (w *World) Character(id string) (*Character, error) {
-	ch := w.Characters[id]
-	if ch == nil {
+	ch, exists := w.Characters[id]
+	if !exists {
 		return nil, fmt.Errorf("character not found: %s", id)
 	}
+	return ch, nil
+}
+
+// CharacterRequest holds arguments for create_character tool
+// slug optional; name, species required
+// attributes and skills maps may be nil
+// location optional
+// description optional
+// gifts, faults, powers optional
+// creates and freezes the ruleset on first use
+
+type CharacterRequest struct {
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	Species     string         `json:"species"`
+	Description string         `json:"description"`
+	Location    string         `json:"location"`
+	Attributes  map[string]int `json:"attributes"`
+	Skills      map[string]int `json:"skills"`
+}
+
+// CreateCharacterValidated validates and creates a character according to the ruleset
+func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, error) {
+	if w.Ruleset == nil {
+		return nil, fmt.Errorf("world has no selected ruleset")
+	}
+	if w.Ruleset.Frozen {
+		return nil, fmt.Errorf("ruleset is frozen")
+	}
+	if req.Name == "" {
+		return nil, fmt.Errorf("character name is required")
+	}
+	id := req.Slug
+	if id == "" {
+		id = slug(req.Name)
+	}
+	if !slugPattern.MatchString(id) {
+		return nil, fmt.Errorf("invalid character slug: %s", id)
+	}
+	if _, exists := w.Characters[id]; exists {
+		return nil, fmt.Errorf("character slug already exists: %s", id)
+	}
+	specKey := strings.ToLower(req.Species)
+	spec, ok := w.Ruleset.Species[specKey]
+	if !ok {
+		return nil, fmt.Errorf("species not found: %s", req.Species)
+	}
+	// attributes default fair (0)
+	attrs := make(map[string]int, len(w.Ruleset.Attributes))
+	for key := range w.Ruleset.Attributes {
+		attrs[key] = 0
+	}
+	for key, val := range req.Attributes {
+		keyLower := strings.ToLower(key)
+		if _, ok := w.Ruleset.Attributes[keyLower]; !ok {
+			return nil, fmt.Errorf("unknown attribute: %s", key)
+		}
+		if val < -3 || val > 3 {
+			return nil, fmt.Errorf("attribute %s must be between -3 and 3", key)
+		}
+		attrs[keyLower] = val
+	}
+	// skills default poor (-2)
+	skills := make(map[string]int, len(w.Ruleset.Skills))
+	for key := range w.Ruleset.Skills {
+		skills[key] = -2
+	}
+	for key, val := range req.Skills {
+		keyLower := strings.ToLower(key)
+		if _, ok := w.Ruleset.Skills[keyLower]; !ok {
+			return nil, fmt.Errorf("unknown skill: %s", key)
+		}
+		if val < -3 || val > 3 {
+			return nil, fmt.Errorf("skill %s must be between -3 and 3", key)
+		}
+		skills[keyLower] = val
+	}
+	// location default
+	loc := req.Location
+	if loc == "" {
+		loc = "default"
+	}
+	// description can be empty
+	ch := &Character{
+		ID:          id,
+		Name:        req.Name,
+		Species:     specKey,
+		Attributes:  attrs,
+		Skills:      skills,
+		Gifts:       nil,
+		Faults:      nil,
+		FudgePoints: 0,
+		Wounds:      WoundState{},
+		Inventory:   make(map[string]int),
+		Coins:       0,
+		Scale:       spec.Scale,
+		Description: req.Description,
+		Location:    loc,
+	}
+	w.Characters[id] = ch
+	if w.Player == "" {
+		w.Player = id
+	}
+	w.Ruleset.Frozen = true
 	return ch, nil
 }
 
