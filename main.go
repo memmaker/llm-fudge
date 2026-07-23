@@ -53,54 +53,167 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 	fmt.Println("Welcome to Fudge!")
 	fmt.Println()
 
-	// Step 1: Choose setting
+	// Step 1: Select or create setting
+	settingName := setupSetting(w, rl)
+	if settingName == "" {
+		return ""
+	}
+	fmt.Println()
+
+	// Step 2: Select or improvise adventure
+	adventureContent := setupAdventure(w, rl, settingName)
+	if adventureContent == "" {
+		return ""
+	}
+	fmt.Println()
+
+	// Step 3: Create character with LLM
+	setupCharacter(w, rl, settingName, adventureContent)
+	if len(w.Characters) == 0 {
+		return ""
+	}
+
+	// Set player to the created character
+	for id := range w.Characters {
+		w.Player = id
+		break
+	}
+
+	fmt.Println()
+	fmt.Println(wrapText(adventureContent, terminalWidth()-4))
+	return adventureContent
+}
+
+func setupSetting(w *rules.World, rl *readline.Instance) string {
 	settings, err := listAvailableSettings()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return ""
 	}
-	if len(settings) == 0 {
-		fmt.Println("No settings available.")
+
+	options := settings
+	if len(settings) > 0 {
+		fmt.Println("Select a setting:")
+		choice, err := showChoiceMenu(options)
+		if err != nil {
+			return ""
+		}
+
+		if choice != "↳ Type your answer" {
+			if _, err := loadSettingTool(w, choice); err != nil {
+				fmt.Println("Error loading setting:", err)
+				return ""
+			}
+			return choice
+		}
+	}
+
+	// User wants custom setting - use LLM
+	fmt.Println("Describe the setting you'd like:")
+	description, err := readlineInput(rl, "Setting description: ")
+	if err != nil || description == "" {
 		return ""
 	}
 
-	fmt.Println("Select a setting:")
-	setting, err := showChoiceMenu(settings)
+	prompt, _ := loadPrompt("new-game-prompt.md")
+	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
+		fmt.Println("LLM error:", err)
 		return ""
 	}
-	if _, err := loadSettingTool(w, setting); err != nil {
-		fmt.Println("Error loading setting:", err)
-		return ""
-	}
-	fmt.Println()
 
-	// Step 2: Choose adventure
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: prompt},
+		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s", description)},
+	}
+
+	response, err := chatWithSpinner(client, model, messages, actionTools())
+	if err != nil {
+		fmt.Println("LLM error:", err)
+		return ""
+	}
+
+	if response.Message.Content != "" {
+		fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
+	}
+
+	// Process tool calls to save the setting
+	for _, toolCall := range response.Message.ToolCalls {
+		if toolCall.Function.Name == "write_setting_file" {
+			result, err := executeAction(w, "", "", toolCall)
+			if err != nil {
+				fmt.Println("Error creating setting:", err)
+				return ""
+			}
+			fmt.Println(result)
+		}
+	}
+
+	// Return a placeholder name (user should have created it via tool)
+	if len(w.Ruleset.Species) > 0 {
+		return "custom"
+	}
+	return ""
+}
+
+func setupAdventure(w *rules.World, rl *readline.Instance, settingName string) string {
 	adventures, err := listAvailableAdventures(w)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return ""
 	}
-	if len(adventures) == 0 {
-		fmt.Println("No adventures available in this setting.")
+
+	if len(adventures) > 0 {
+		fmt.Println("Select an adventure:")
+		choice, err := showChoiceMenu(adventures)
+		if err != nil {
+			return ""
+		}
+
+		if choice != "↳ Type your answer" {
+			adventureContent, err := loadAdventureTool(w, choice)
+			if err != nil {
+				fmt.Println("Error loading adventure:", err)
+				return ""
+			}
+			return adventureContent
+		}
+	}
+
+	// User wants improvised adventure - use LLM
+	fmt.Println("Describe the adventure scenario you'd like:")
+	scenario, err := readlineInput(rl, "Scenario: ")
+	if err != nil || scenario == "" {
 		return ""
 	}
 
-	fmt.Println("Select an adventure:")
-	adventure, err := showChoiceMenu(adventures)
+	prompt, _ := loadPrompt("new-game-prompt.md")
+	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
+		fmt.Println("LLM error:", err)
 		return ""
 	}
 
-	// Load adventure content
-	adventureContent, err := loadAdventureTool(w, adventure)
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: prompt},
+		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", settingName, scenario)},
+	}
+
+	response, err := chatWithSpinner(client, model, messages, nil)
 	if err != nil {
-		fmt.Println("Error loading adventure:", err)
+		fmt.Println("LLM error:", err)
 		return ""
 	}
-	fmt.Println()
 
-	// Step 3: Create character with LLM guidance
+	if response.Message.Content != "" {
+		fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
+		return response.Message.Content
+	}
+
+	return ""
+}
+
+func setupCharacter(w *rules.World, rl *readline.Instance, settingName string, adventureContent string) {
 	characterPrompt := fmt.Sprintf(`You are helping the player create a character for a Fudge RPG adventure.
 
 The adventure they've chosen is:
@@ -113,12 +226,12 @@ Available traits:
 
 Guide them through character creation. Ask about their character concept, then help them select species, attributes, skills, gifts, and faults from the available options. Use the create_character tool when they're ready.
 
-Be brief, helpful, and focused on creating a character that fits the adventure.`, adventureContent, setting, formatAvailableTraits(w))
+Be brief, helpful, and focused on creating a character that fits the adventure.`, adventureContent, settingName, formatAvailableTraits(w))
 
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
-		return ""
+		return
 	}
 
 	messages := []llm.Message{
@@ -126,21 +239,21 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 		{Role: llm.RoleUser, Content: "Let's create my character."},
 	}
 
+	rl.SetPrompt("You: ")
 	for {
 		response, err := chatWithSpinner(client, model, messages, actionTools())
 		if err != nil {
 			fmt.Println("LLM error:", err)
-			return ""
+			return
 		}
 
 		messages = append(messages, response.Message)
 
-		// Print any narration before tool execution
 		if response.Message.Content != "" {
 			fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
 		}
 
-		// Keep processing tool calls until we get narration
+		// Process tool calls
 		for len(response.Message.ToolCalls) > 0 {
 			for _, toolCall := range response.Message.ToolCalls {
 				result, err := executeAction(w, "", "", toolCall)
@@ -155,14 +268,12 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 				})
 			}
 
-			// Update charsheet after all mutations
 			writeCharsheet(w)
 
-			// Get follow-up response after tool calls
 			response, err = chatWithSpinner(client, model, messages, actionTools())
 			if err != nil {
 				fmt.Println("LLM error:", err)
-				return ""
+				return
 			}
 			if response.Message.Content != "" {
 				fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
@@ -172,22 +283,14 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 
 		// Check if character is created
 		if len(w.Characters) > 0 {
-			// Set player to the first (and should be only) character
-			for id := range w.Characters {
-				w.Player = id
-				break
-			}
-			return adventureContent
+			return
 		}
 
-		// Get player input for next turn
+		// Get player input
 		fmt.Print("\n")
-		input, err := readlineInput(rl, "You: ")
-		if err != nil {
-			return ""
-		}
-		if input == "quit" || input == "exit" {
-			return ""
+		input, err := readlineInput(rl, "")
+		if err != nil || input == "quit" || input == "exit" {
+			return
 		}
 		if input != "" {
 			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
