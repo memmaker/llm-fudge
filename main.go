@@ -75,21 +75,7 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 	}
 	fmt.Println()
 
-	// Step 2: Choose species
-	speciesList := sortedSpeciesKeys(w.Ruleset.Species)
-	if len(speciesList) == 0 {
-		fmt.Println("No species available in this setting.")
-		return ""
-	}
-
-	fmt.Println("Select a species:")
-	species, err := showChoiceMenu(speciesList)
-	if err != nil {
-		return ""
-	}
-	fmt.Println()
-
-	// Step 3: Choose adventure
+	// Step 2: Choose adventure
 	adventures, err := listAvailableAdventures(w)
 	if err != nil {
 		fmt.Println("Error:", err)
@@ -114,35 +100,130 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 	}
 	fmt.Println()
 
-	// Step 4: Character name
-	fmt.Print("Character name: ")
-	charName, err := readlineInput(rl, "")
-	if err != nil || charName == "" {
-		charName = "Adventurer"
-	}
+	// Step 3: Create character with LLM guidance
+	characterPrompt := fmt.Sprintf(`You are helping the player create a character for a Fudge RPG adventure.
 
-	// Create character with chosen species
-	charID := slugify(charName)
-	ch, err := w.CreateCharacterValidated(rules.CharacterRequest{
-		Slug:        charID,
-		Name:        charName,
-		Species:     species,
-		Description: "",
-		Location:    "",
-		Attributes:  make(map[string]int),
-		Skills:      make(map[string]int),
-	})
+The adventure they've chosen is:
+%s
+
+The setting is: %s
+
+Available traits:
+%s
+
+Guide them through character creation. Ask about their character concept, then help them select species, attributes, skills, gifts, and faults from the available options. Use the create_character tool when they're ready.
+
+Be brief, helpful, and focused on creating a character that fits the adventure.`, adventureContent, setting, formatAvailableTraits(w))
+
+	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
-		fmt.Println("Error creating character:", err)
+		fmt.Println("LLM error:", err)
 		return ""
 	}
 
-	w.Player = ch.ID
-	writeCharsheet(w)
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: characterPrompt},
+		{Role: llm.RoleUser, Content: "Let's create my character."},
+	}
 
-	fmt.Println()
-	fmt.Println(wrapText(adventureContent, terminalWidth()-4))
-	return adventureContent
+	for {
+		response, err := chatWithSpinner(client, model, messages, actionTools())
+		if err != nil {
+			fmt.Println("LLM error:", err)
+			return ""
+		}
+
+		messages = append(messages, response.Message)
+
+		// Print any narration before tool execution
+		if response.Message.Content != "" {
+			fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
+		}
+
+		// Keep processing tool calls until we get narration
+		for len(response.Message.ToolCalls) > 0 {
+			for _, toolCall := range response.Message.ToolCalls {
+				result, err := executeAction(w, "", "", toolCall)
+				if err != nil {
+					result = "Error: " + err.Error()
+				}
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Function.Name,
+					Content:    result,
+				})
+			}
+
+			// Update charsheet after all mutations
+			writeCharsheet(w)
+
+			// Get follow-up response after tool calls
+			response, err = chatWithSpinner(client, model, messages, actionTools())
+			if err != nil {
+				fmt.Println("LLM error:", err)
+				return ""
+			}
+			if response.Message.Content != "" {
+				fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
+			}
+			messages = append(messages, response.Message)
+		}
+
+		// Check if character is created
+		if len(w.Characters) > 0 {
+			// Set player to the first (and should be only) character
+			for id := range w.Characters {
+				w.Player = id
+				break
+			}
+			return adventureContent
+		}
+
+		// Get player input for next turn
+		fmt.Print("\n")
+		input, err := readlineInput(rl, "You: ")
+		if err != nil {
+			return ""
+		}
+		if input == "quit" || input == "exit" {
+			return ""
+		}
+		if input != "" {
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
+		}
+	}
+}
+
+func formatAvailableTraits(w *rules.World) string {
+	var sb strings.Builder
+
+	sb.WriteString("SPECIES:\n")
+	for _, species := range sortedSpeciesKeys(w.Ruleset.Species) {
+		sb.WriteString(fmt.Sprintf("  - %s\n", species))
+	}
+
+	sb.WriteString("\nATTRIBUTES:\n")
+	for _, attr := range sortedAttributeKeys(w.Ruleset.Attributes) {
+		sb.WriteString(fmt.Sprintf("  - %s\n", attr))
+	}
+
+	sb.WriteString("\nSKILLS:\n")
+	for _, skill := range sortedSkillKeys(w.Ruleset.Skills) {
+		sb.WriteString(fmt.Sprintf("  - %s\n", skill))
+	}
+
+	sb.WriteString("\nGIFTS:\n")
+	for _, gift := range sortedGiftKeys(w.Ruleset.Gifts) {
+		sb.WriteString(fmt.Sprintf("  - %s\n", gift))
+	}
+
+	sb.WriteString("\nFAULTS:\n")
+	for _, fault := range sortedFaultKeys(w.Ruleset.Faults) {
+		sb.WriteString(fmt.Sprintf("  - %s\n", fault))
+	}
+
+	return sb.String()
 }
 
 func listAvailableSettings() ([]string, error) {
