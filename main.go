@@ -892,16 +892,30 @@ func showChoiceMenu(options []string) (string, error) {
 
 	for {
 		if !firstDraw {
-			// Move cursor up to menu start and clear it
-			linesToClear := len(allOptions) + 2
-			fmt.Printf("\033[%dA\033[J", linesToClear)
+			// Calculate total lines to clear (each option may wrap)
+			totalLines := 2 // 1 for blank line before, 1 for help text at end
+			for _, opt := range allOptions {
+				wrapped := wrapText(opt, terminalWidth()-4)
+				lineCount := strings.Count(wrapped, "\n") + 1
+				totalLines += lineCount
+			}
+			fmt.Printf("\033[%dA\033[J", totalLines)
 		}
 
 		for i, opt := range allOptions {
-			if i == selected {
-				fmt.Printf("  \033[1;44m▶ %s \033[0m\n", opt)
-			} else {
-				fmt.Printf("    %s\n", opt)
+			wrapped := wrapText(opt, terminalWidth()-4)
+			lines := strings.Split(wrapped, "\n")
+
+			for j, line := range lines {
+				if i == selected {
+					if j == 0 {
+						fmt.Printf("  \033[1;44m▶ %s\033[0m\n", line)
+					} else {
+						fmt.Printf("    %s\n", line)
+					}
+				} else {
+					fmt.Printf("    %s\n", line)
+				}
 			}
 		}
 		fmt.Printf("\n  \033[90m↑↓ to navigate, Enter to select\033[0m\n")
