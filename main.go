@@ -68,7 +68,15 @@ func main() {
 	}
 }
 
-const dmPrompt = `You are the dungeon master for a Fudge RPG. Trivial character actions don't need any skill checks. If the player's action warrants a skill check (action needing some skill, complex action, uncertain outcomes, opposed actions), call exactly one available tool to resolve it. Then narrate the outcome briefly using the tool result. Do not use dice or randomness yourself.`
+const dmPrompt = `You are the dungeon master for a Fudge RPG. Trivial character actions don't need any skill checks. If the player's action warrants a skill check (action needing some skill, complex action, uncertain outcomes, opposed actions), call exactly one available tool to resolve it. Then narrate the outcome briefly using the tool result. Do not use dice or randomness yourself.
+
+When creating a character:
+1. First call query_ruleset to see what attributes, skills, species, gifts, and faults are available in the current ruleset
+2. Use only those available traits (lowercase slugs like "strength", "agility", not "Dexterity" or "Will")
+3. Then call create_character with the character details using the valid trait slugs
+4. Narrate the character creation result
+
+Always check the ruleset first before assuming standard RPG traits exist.`
 
 const llmRequestTimeout = time.Minute
 
