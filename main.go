@@ -662,6 +662,9 @@ func printNarration(log []string) {
 }
 
 func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
+	hideCursor()
+	defer showCursor()
+
 	brailleChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
