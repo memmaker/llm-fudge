@@ -70,15 +70,15 @@ type World struct {
 	rng        *rand.Rand
 }
 
-// NewWorld creates a deterministic game world with a selected ruleset.
+// NewWorld creates a deterministic game world with a selected setting.
 // Reuse the seed and action sequence to reproduce every check result.
 func NewWorld(seed int64, path string) (*World, error) {
-	ruleset, err := LoadRuleset(path)
+	setting, err := LoadSetting(path)
 	if err != nil {
 		return nil, err
 	}
 	w := &World{Characters: make(map[string]*Character), Seed: seed, rng: rand.New(rand.NewSource(seed))}
-	w.Ruleset = ruleset
+	w.Ruleset = setting
 	return w, nil
 }
 
@@ -118,7 +118,7 @@ func (w *World) Character(id string) (*Character, error) {
 // location optional
 // description optional
 // gifts, faults, powers optional
-// creates and freezes the ruleset on first use
+// creates and freezes the setting on first use
 
 type CharacterRequest struct {
 	Slug        string         `json:"slug"`
@@ -132,13 +132,13 @@ type CharacterRequest struct {
 	Faults      []string       `json:"faults"`
 }
 
-// CreateCharacterValidated validates and creates a character according to the ruleset
+// CreateCharacterValidated validates and creates a character according to the setting
 func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, error) {
 	if w.Ruleset == nil {
-		return nil, fmt.Errorf("world has no selected ruleset")
+		return nil, fmt.Errorf("world has no selected setting")
 	}
 	if w.Ruleset.Frozen {
-		return nil, fmt.Errorf("ruleset is frozen")
+		return nil, fmt.Errorf("setting is frozen")
 	}
 	if req.Name == "" {
 		return nil, fmt.Errorf("character name is required")

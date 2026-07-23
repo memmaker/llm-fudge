@@ -11,7 +11,7 @@ import (
 )
 
 func TestExecuteActionUsesWorldChecks(t *testing.T) {
-	w, err := rules.NewWorld(1, "rulesets/example")
+	w, err := rules.NewWorld(1, "settings/example")
 	if err != nil {
 		t.Fatalf("create world: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestActionToolsIncludeCreateCharacter(t *testing.T) {
 	for _, tool := range tools {
 		toolNames[tool.Function.Name] = true
 	}
-	expectedTools := []string{"list_rulesets", "load_ruleset", "list_adventures", "load_adventure", "query_ruleset", "create_character"}
+	expectedTools := []string{"list_settings", "load_setting", "list_adventures", "load_adventure", "query_setting", "create_character"}
 	for _, expected := range expectedTools {
 		if !toolNames[expected] {
 			t.Fatalf("%s tool not found in action tools", expected)
@@ -67,7 +67,7 @@ func TestExecuteActionWritesRulesetFile(t *testing.T) {
 		t.Fatalf("create world: %v", err)
 	}
 	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{
-		Name:      "write_ruleset_file",
+		Name:      "write_setting_file",
 		Arguments: `{"filename":"skills.rec","mode":"replace","content":"slug: athletics\ndisplay_name: Athletics\ndescription: Move quickly\n"}`,
 	}})
 	if err != nil {
@@ -76,9 +76,9 @@ func TestExecuteActionWritesRulesetFile(t *testing.T) {
 	if !strings.Contains(result, "wrote skills.rec") {
 		t.Fatalf("unexpected result: %q", result)
 	}
-	loaded, err := rules.LoadRuleset(path)
+	loaded, err := rules.LoadSetting(path)
 	if err != nil {
-		t.Fatalf("reload ruleset: %v", err)
+		t.Fatalf("reload setting: %v", err)
 	}
 	if _, ok := loaded.Skills["athletics"]; !ok {
 		t.Fatalf("expected athletics skill after write")
@@ -127,7 +127,7 @@ func TestCreateCharacterFreezesRulesetOnSuccess(t *testing.T) {
 		t.Fatalf("create world: %v", err)
 	}
 	if w.Ruleset.Frozen {
-		t.Fatal("ruleset should not be frozen initially")
+		t.Fatal("setting should not be frozen initially")
 	}
 
 	args := `{"name":"Test","species":"human"}`
@@ -136,7 +136,7 @@ func TestCreateCharacterFreezesRulesetOnSuccess(t *testing.T) {
 		t.Fatalf("character creation failed: %v", err)
 	}
 	if !w.Ruleset.Frozen {
-		t.Fatal("ruleset should be frozen after creating character")
+		t.Fatal("setting should be frozen after creating character")
 	}
 }
 
@@ -231,11 +231,11 @@ func TestCreateCharacterRejectsDuplicateSlug(t *testing.T) {
 		t.Fatalf("first character creation failed: %v", err)
 	}
 
-	// After first character, ruleset is frozen and no more characters can be created
+	// After first character, setting is frozen and no more characters can be created
 	args2 := `{"slug":"hero2","name":"AnotherHero","species":"human"}`
 	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args2}})
 	if err == nil {
-		t.Fatalf("expected error when ruleset is frozen, got result: %q", result)
+		t.Fatalf("expected error when setting is frozen, got result: %q", result)
 	}
 	if !strings.Contains(err.Error(), "frozen") {
 		t.Fatalf("unexpected error (expected 'frozen'): %v", err)

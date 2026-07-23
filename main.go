@@ -23,7 +23,7 @@ func main() {
 
 	reader := bufio.NewReader(os.Stdin)
 
-	// Setup phase: LLM guides through ruleset, character, and adventure selection
+	// Setup phase: LLM guides through setting, character, and adventure selection
 	adventure := runSetupPhase(w, reader)
 	if adventure == "" {
 		fmt.Println("Setup cancelled.")
@@ -37,12 +37,12 @@ func main() {
 const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure. Follow these steps:
 
 1. Greet the player and welcome them to Fudge
-2. Ask them to choose a ruleset - use list_rulesets to show options
-3. Guide them to load their chosen ruleset using load_ruleset
+2. Ask them to choose a setting - use list_settings to show options
+3. Guide them to load their chosen setting using load_setting
 4. Help them create a character:
-   - First use query_ruleset to show available traits
+   - First use query_setting to show available traits
    - Guide them through using create_character with valid traits
-5. Use list_adventures to show available adventures in the loaded ruleset
+5. Use list_adventures to show available adventures in the loaded setting
 6. Guide them to load an adventure using load_adventure
 7. Present the adventure story opening and ask what they do
 8. Return control to the DM for gameplay
@@ -197,12 +197,12 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 const dmPrompt = `You are the dungeon master for a Fudge RPG. Trivial character actions don't need any skill checks. If the player's action warrants a skill check (action needing some skill, complex action, uncertain outcomes, opposed actions), call exactly one available tool to resolve it. Then narrate the outcome briefly using the tool result. Do not use dice or randomness yourself.
 
 When creating a character:
-1. First call query_ruleset to see what attributes, skills, species, gifts, and faults are available in the current ruleset
+1. First call query_setting to see what attributes, skills, species, gifts, and faults are available in the current setting
 2. Use only those available traits (lowercase slugs like "strength", "agility", not "Dexterity" or "Will")
 3. Then call create_character with the character details using the valid trait slugs
 4. Narrate the character creation result
 
-Always check the ruleset first before assuming standard RPG traits exist.`
+Always check the setting first before assuming standard RPG traits exist.`
 
 const llmRequestTimeout = time.Minute
 
@@ -259,26 +259,26 @@ func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, t
 
 func actionTools() []llm.Tool {
 	return []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{Name: "list_rulesets", Description: "List all available rulesets.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "load_ruleset", Description: "Load a specific ruleset by name.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "query_ruleset", Description: "Query available attributes, skills, species, gifts, and faults in the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "list_settings", Description: "List all available settings.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "load_setting", Description: "Load a specific setting by name.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "query_setting", Description: "Query available attributes, skills, species, gifts, and faults in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "write_ruleset_file", Description: "Write one recognized ruleset file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
 	}
 }
 
-func listRulesets() (string, error) {
-	entries, err := os.ReadDir("rulesets")
+func listSettings() (string, error) {
+	entries, err := os.ReadDir("settings")
 	if err != nil {
-		return "", fmt.Errorf("failed to read rulesets directory: %w", err)
+		return "", fmt.Errorf("failed to read settings directory: %w", err)
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Available rulesets:\n\n")
+	sb.WriteString("Available settings:\n\n")
 
 	count := 0
 	for _, entry := range entries {
@@ -289,33 +289,33 @@ func listRulesets() (string, error) {
 	}
 
 	if count == 0 {
-		return "No rulesets found.", nil
+		return "No settings found.", nil
 	}
 	return sb.String(), nil
 }
 
-func loadRulesetTool(w *rules.World, name string) (string, error) {
-	path := filepath.Join("rulesets", name)
+func loadSettingTool(w *rules.World, name string) (string, error) {
+	path := filepath.Join("settings", name)
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("ruleset not found: %s", name)
+		return "", fmt.Errorf("setting not found: %s", name)
 	}
 
-	ruleset, err := rules.LoadRuleset(path)
+	setting, err := rules.LoadSetting(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to load ruleset: %w", err)
+		return "", fmt.Errorf("failed to load setting: %w", err)
 	}
 
-	w.Ruleset = ruleset
+	w.Ruleset = setting
 	w.Characters = make(map[string]*rules.Character)
 	w.Player = ""
 
-	return fmt.Sprintf("Loaded ruleset: %s", name), nil
+	return fmt.Sprintf("Loaded setting: %s", name), nil
 }
 
 func listAdventures(w *rules.World) (string, error) {
 	if w.Ruleset == nil {
-		return "", fmt.Errorf("no ruleset loaded")
+		return "", fmt.Errorf("no setting loaded")
 	}
 
 	adventuresPath := filepath.Join(w.Ruleset.Path, "adventures")
@@ -347,7 +347,7 @@ func listAdventures(w *rules.World) (string, error) {
 
 func loadAdventureTool(w *rules.World, name string) (string, error) {
 	if w.Ruleset == nil {
-		return "", fmt.Errorf("no ruleset loaded")
+		return "", fmt.Errorf("no setting loaded")
 	}
 
 	adventurePath := filepath.Join(w.Ruleset.Path, "adventures", name+".md")
@@ -359,13 +359,13 @@ func loadAdventureTool(w *rules.World, name string) (string, error) {
 	return string(content), nil
 }
 
-func queryRuleset(w *rules.World) (string, error) {
+func querySetting(w *rules.World) (string, error) {
 	if w.Ruleset == nil {
-		return "", fmt.Errorf("world has no selected ruleset")
+		return "", fmt.Errorf("world has no selected setting")
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Available traits in ruleset:\n\n")
+	sb.WriteString("Available traits in setting:\n\n")
 
 	sb.WriteString("ATTRIBUTES:\n")
 	for _, attr := range sortedAttributeKeys(w.Ruleset.Attributes) {
@@ -448,16 +448,16 @@ func sortedFaultKeys(m map[string]*rules.Fault) []string {
 
 func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
-	case "list_rulesets":
-		return listRulesets()
-	case "load_ruleset":
+	case "list_settings":
+		return listSettings()
+	case "load_setting":
 		var args struct {
 			Name string `json:"name"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse load_ruleset: %w", err)
+			return "", fmt.Errorf("parse load_setting: %w", err)
 		}
-		return loadRulesetTool(w, args.Name)
+		return loadSettingTool(w, args.Name)
 	case "list_adventures":
 		return listAdventures(w)
 	case "load_adventure":
@@ -468,8 +468,8 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 			return "", fmt.Errorf("parse load_adventure: %w", err)
 		}
 		return loadAdventureTool(w, args.Name)
-	case "query_ruleset":
-		return queryRuleset(w)
+	case "query_setting":
+		return querySetting(w)
 	case "unopposed_skill_check":
 		var args struct {
 			Skill      string `json:"skill"`
@@ -509,20 +509,20 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		hero, _ := w.Character(heroID)
 		opponent, _ := w.Character(args.OppID)
 		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %d): success=%t", hero.Name, actorTotal, opponent.Name, opponentTotal, margin, wins), nil
-	case "write_ruleset_file":
+	case "write_setting_file":
 		var args struct {
 			Filename string `json:"filename"`
 			Mode     string `json:"mode"`
 			Content  string `json:"content"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse write ruleset file: %w", err)
+			return "", fmt.Errorf("parse write setting file: %w", err)
 		}
 		if w.Ruleset == nil {
-			return "", fmt.Errorf("world has no ruleset selected")
+			return "", fmt.Errorf("world has no setting selected")
 		}
 		if args.Filename == "" || args.Mode == "" {
-			return "", fmt.Errorf("write ruleset file requires filename, mode, and content")
+			return "", fmt.Errorf("write setting file requires filename, mode, and content")
 		}
 		if err := w.Ruleset.WriteFile(args.Filename, args.Mode, []byte(args.Content)); err != nil {
 			return "", err

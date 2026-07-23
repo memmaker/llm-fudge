@@ -79,7 +79,7 @@ var validFiles = map[string]bool{
 	powersFile:     true,
 }
 
-func LoadRuleset(path string) (*Ruleset, error) {
+func LoadSetting(path string) (*Ruleset, error) {
 	r := &Ruleset{
 		Slug:       filepath.Base(path),
 		Path:       path,
@@ -249,11 +249,11 @@ func validateRecSyntax(content []byte) error {
 
 func (r *Ruleset) WriteFile(filename string, mode string, content []byte) error {
 	if r.Frozen {
-		return fmt.Errorf("ruleset is frozen")
+		return fmt.Errorf("setting is frozen")
 	}
 
 	if !validFiles[filename] {
-		return fmt.Errorf("invalid ruleset file: %s", filename)
+		return fmt.Errorf("invalid setting file: %s", filename)
 	}
 
 	if mode != "append" && mode != "replace" {

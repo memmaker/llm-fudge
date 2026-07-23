@@ -7,30 +7,30 @@ import (
 	"testing"
 )
 
-func TestLoadRulesetSupportsMissingOptionalFiles(t *testing.T) {
+func TestLoadSettingSupportsMissingOptionalFiles(t *testing.T) {
 	path := t.TempDir()
 	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\ndescription: Raw might\n")
 
-	ruleset, err := LoadRuleset(path)
+	setting, err := LoadSetting(path)
 	if err != nil {
-		t.Fatalf("LoadRuleset returned error: %v", err)
+		t.Fatalf("LoadSetting returned error: %v", err)
 	}
-	if ruleset.Slug != filepath.Base(path) {
-		t.Fatalf("ruleset slug = %q", ruleset.Slug)
+	if setting.Slug != filepath.Base(path) {
+		t.Fatalf("setting slug = %q", setting.Slug)
 	}
-	if len(ruleset.Attributes) != 1 {
-		t.Fatalf("attributes count = %d", len(ruleset.Attributes))
+	if len(setting.Attributes) != 1 {
+		t.Fatalf("attributes count = %d", len(setting.Attributes))
 	}
-	if len(ruleset.Skills)+len(ruleset.Gifts)+len(ruleset.Faults)+len(ruleset.Powers)+len(ruleset.Species) != 0 {
+	if len(setting.Skills)+len(setting.Gifts)+len(setting.Faults)+len(setting.Powers)+len(setting.Species) != 0 {
 		t.Fatalf("optional definitions should be empty")
 	}
 }
 
-func TestLoadRulesetRejectsInvalidDefinitions(t *testing.T) {
+func TestLoadSettingRejectsInvalidDefinitions(t *testing.T) {
 	t.Run("invalid slug", func(t *testing.T) {
 		path := t.TempDir()
 		writeFile(t, filepath.Join(path, "attributes.rec"), "slug: Invalid Slug\ndisplay_name: Strength\ndescription: Raw might\n")
-		_, err := LoadRuleset(path)
+		_, err := LoadSetting(path)
 		if err == nil || !strings.Contains(err.Error(), "slug") {
 			t.Fatalf("expected slug error, got: %v", err)
 		}
@@ -40,7 +40,7 @@ func TestLoadRulesetRejectsInvalidDefinitions(t *testing.T) {
 		path := t.TempDir()
 		writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\ndescription: Raw might\n")
 		writeFile(t, filepath.Join(path, "species.rec"), "slug: giant\ndisplay_name: Giant\ndescription: Too big\nscale: 11\n")
-		_, err := LoadRuleset(path)
+		_, err := LoadSetting(path)
 		if err == nil || !strings.Contains(err.Error(), "scale") {
 			t.Fatalf("expected scale error, got: %v", err)
 		}
@@ -50,32 +50,32 @@ func TestLoadRulesetRejectsInvalidDefinitions(t *testing.T) {
 func TestRulesetWriteFileSafetyAndSyntax(t *testing.T) {
 	path := t.TempDir()
 	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\ndescription: Raw might\n")
-	ruleset, err := LoadRuleset(path)
+	setting, err := LoadSetting(path)
 	if err != nil {
-		t.Fatalf("LoadRuleset returned error: %v", err)
+		t.Fatalf("LoadSetting returned error: %v", err)
 	}
 
-	if err := ruleset.WriteFile("../hack.rec", "replace", []byte("slug: bad\n")); err == nil {
+	if err := setting.WriteFile("../hack.rec", "replace", []byte("slug: bad\n")); err == nil {
 		t.Fatal("expected unsafe path error")
 	}
-	if err := ruleset.WriteFile("unknown.rec", "replace", []byte("slug: bad\n")); err == nil {
+	if err := setting.WriteFile("unknown.rec", "replace", []byte("slug: bad\n")); err == nil {
 		t.Fatal("expected unsupported file error")
 	}
-	if err := ruleset.WriteFile("skills.rec", "bad", []byte("slug: bad\n")); err == nil {
+	if err := setting.WriteFile("skills.rec", "bad", []byte("slug: bad\n")); err == nil {
 		t.Fatal("expected mode error")
 	}
-	if err := ruleset.WriteFile("skills.rec", "replace", []byte("not-a-field\n")); err == nil {
+	if err := setting.WriteFile("skills.rec", "replace", []byte("not-a-field\n")); err == nil {
 		t.Fatal("expected syntax error")
 	}
-	if err := ruleset.WriteFile("skills.rec", "replace", []byte("slug: athletics\ndisplay_name: Athletics\ndescription: Move quickly\n")); err != nil {
+	if err := setting.WriteFile("skills.rec", "replace", []byte("slug: athletics\ndisplay_name: Athletics\ndescription: Move quickly\n")); err != nil {
 		t.Fatalf("replace write failed: %v", err)
 	}
-	if err := ruleset.WriteFile("skills.rec", "append", []byte("\nslug: stealth\ndisplay_name: Stealth\ndescription: Move quietly\n")); err != nil {
+	if err := setting.WriteFile("skills.rec", "append", []byte("\nslug: stealth\ndisplay_name: Stealth\ndescription: Move quietly\n")); err != nil {
 		t.Fatalf("append write failed: %v", err)
 	}
-	reloaded, err := LoadRuleset(path)
+	reloaded, err := LoadSetting(path)
 	if err != nil {
-		t.Fatalf("reloading ruleset failed: %v", err)
+		t.Fatalf("reloading setting failed: %v", err)
 	}
 	if len(reloaded.Skills) != 2 {
 		t.Fatalf("skills count = %d", len(reloaded.Skills))
@@ -91,10 +91,10 @@ func TestNewWorldLoadsRuleset(t *testing.T) {
 		t.Fatalf("NewWorld returned error: %v", err)
 	}
 	if world.Ruleset == nil {
-		t.Fatal("world ruleset is nil")
+		t.Fatal("world setting is nil")
 	}
 	if world.Ruleset.Slug != filepath.Base(path) {
-		t.Fatalf("world ruleset slug = %q", world.Ruleset.Slug)
+		t.Fatalf("world setting slug = %q", world.Ruleset.Slug)
 	}
 }
 

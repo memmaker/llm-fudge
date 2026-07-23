@@ -8,7 +8,7 @@ import (
 
 func newTestWorld(t *testing.T, seed int64) *World {
 	t.Helper()
-	w, err := NewWorld(seed, filepath.Join("..", "rulesets", "example"))
+	w, err := NewWorld(seed, filepath.Join("..", "settings", "example"))
 	if err != nil {
 		t.Fatalf("NewWorld returned error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCreateCharacterRejectsDuplicateSlug(t *testing.T) {
 	}
 
 	if !world.Ruleset.Frozen {
-		t.Fatal("ruleset should be frozen after first character")
+		t.Fatal("setting should be frozen after first character")
 	}
 
 	req2 := CharacterRequest{
