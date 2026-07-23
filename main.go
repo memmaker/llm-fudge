@@ -19,6 +19,7 @@ import (
 
 // LLM-guided game setup with adventure loading
 func main() {
+	clearScreen()
 	w := &rules.World{Characters: make(map[string]*rules.Character)}
 
 	// Setup readline instance with history and line editing
@@ -40,25 +41,21 @@ func main() {
 	runGamePhase(w, rl, adventure)
 }
 
-const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure.
-
-DURING SETUP: Discuss the setting, rules, and character creation with the player. Explain mechanics, answer questions, and help them understand the world.
-
-Follow these steps:
-1. Greet the player and welcome them to Fudge
-2. Ask them to choose a setting - use list_settings to show options
-3. Guide them to load their chosen setting using load_setting
-4. Help them create a character:
-   - First use query_setting to show available traits
-   - Guide them through using create_character with valid traits
-5. Use list_adventures to show available adventures in the loaded setting
-6. Guide them to load an adventure using load_adventure
-7. Present the adventure story opening and ask what they do
-8. Once the adventure begins, switch to in-game narration mode
-
-Be enthusiastic and encouraging during setup!`
+func loadPrompt(filename string) (string, error) {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
+	}
+	return string(content), nil
+}
 
 func runSetupPhase(w *rules.World, rl *readline.Instance) string {
+	setupPrompt, err := loadPrompt("new-game-prompt.md")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return ""
+	}
+
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -139,6 +136,12 @@ func runSetupPhase(w *rules.World, rl *readline.Instance) string {
 }
 
 func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string) {
+	dmPrompt, err := loadPrompt("dm-prompt.md")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -216,76 +219,7 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 	}
 }
 
-const dmPrompt = `You are the dungeon master for a Fudge RPG. DURING GAMEPLAY, you provide ONLY in-game narration. Nothing else.
-
-YOUR SOLE JOB: Tell the story as it unfolds. Narrate events, describe scenes, bring NPCs to life through dialogue and action. Nothing more.
-
-RULES:
-- Trivial actions don't need skill checks
-- For actions needing a check (action requiring skill, complex situation, uncertain outcome, opposed actions): call exactly ONE skill check tool
-- Narrate the outcome using ONLY the tool result
-- Do NOT add your own dice rolls or randomness
-- Do NOT break character to explain rules or mechanics
-- Do NOT ask what the player does next (just narrate and wait for their input)
-- Do NOT comment on the game, your role, or anything meta
-- Every response must be pure in-game narration as the DM describing the world
-
-Example of CORRECT response: "The goblin's blade whistles through the air. You feel the sting of the cut across your arm."
-
-Example of WRONG responses:
-- "The goblin rolled poorly, so it missed" (don't explain rolls)
-- "What do you do next?" (don't prompt, just narrate)
-- "I'm going to have the goblin attack" (don't explain your role)
-- "The goblin's attack - I should probably roll this" (no meta-commentary)
-
-Simply narrate the story. That is all.`
-
 const llmRequestTimeout = time.Minute
-
-func narrateAction(w *rules.World, heroID, goblinID, prompt string) (string, error) {
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		return "", err
-	}
-
-	messages := []llm.Message{
-		{Role: llm.RoleSystem, Content: dmPrompt},
-		{Role: llm.RoleUser, Content: prompt},
-	}
-	response, err := chatWithTimeout(client, model, messages, actionTools())
-	if err != nil {
-		return "", err
-	}
-	if len(response.Message.ToolCalls) == 0 {
-		if response.Message.Content == "" {
-			return "", fmt.Errorf("LLM returned neither narration nor an action tool call")
-		}
-		return response.Message.Content, nil
-	}
-	if len(response.Message.ToolCalls) != 1 {
-		return "", fmt.Errorf("expected one action tool call, got %d", len(response.Message.ToolCalls))
-	}
-
-	messages = append(messages, response.Message)
-	result, err := executeAction(w, heroID, goblinID, response.Message.ToolCalls[0])
-	if err != nil {
-		return "", err
-	}
-	messages = append(messages, llm.Message{
-		Role:       llm.RoleTool,
-		ToolCallID: response.Message.ToolCalls[0].ID,
-		Name:       response.Message.ToolCalls[0].Function.Name,
-		Content:    result,
-	})
-	response, err = chatWithTimeout(client, model, messages, nil)
-	if err != nil {
-		return "", err
-	}
-	if response.Message.Content == "" {
-		return "", fmt.Errorf("LLM returned no narration")
-	}
-	return response.Message.Content, nil
-}
 
 func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
@@ -308,6 +242,7 @@ func actionTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "query_setting", Description: "Query available attributes, skills, species, gifts, and faults in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with multiple choice options to select from using cursor keys.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of options to present to the user. A 'Type your answer' option is automatically added."}}, "required": []string{"options"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an unopposed check against a difficulty using a chosen trait.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"trait_type", "trait_slug", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve an opposed check between two actors using independently chosen traits.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
@@ -519,6 +454,21 @@ func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, ma
 
 func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
+	case "user_choice":
+		var args struct {
+			Options []string `json:"options"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse user_choice: %w", err)
+		}
+		if len(args.Options) == 0 {
+			return "", fmt.Errorf("user_choice requires at least one option")
+		}
+		choice, err := showChoiceMenu(args.Options)
+		if err != nil {
+			return "", err
+		}
+		return choice, nil
 	case "list_settings":
 		return listSettings()
 	case "load_setting":
@@ -543,12 +493,12 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		return querySetting(w)
 	case "unopposed_check":
 		var args struct {
-			TraitType             string `json:"trait_type"`
-			TraitSlug             string `json:"trait_slug"`
-			Difficulty            int    `json:"difficulty"`
-			SituationalModifier   int    `json:"situational_modifier"`
-			AddOne                bool   `json:"add_one"`
-			Reroll                bool   `json:"reroll"`
+			TraitType           string `json:"trait_type"`
+			TraitSlug           string `json:"trait_slug"`
+			Difficulty          int    `json:"difficulty"`
+			SituationalModifier int    `json:"situational_modifier"`
+			AddOne              bool   `json:"add_one"`
+			Reroll              bool   `json:"reroll"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse unopposed check: %w", err)
@@ -574,14 +524,14 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		return fmt.Sprintf("%s rolled %+d (total %d against %d): %s%s", hero.Name, result.Roll, result.Total, args.Difficulty, successStr, critStr), nil
 	case "opposed_check":
 		var args struct {
-			ActorTraitType      string `json:"actor_trait_type"`
-			ActorTraitSlug      string `json:"actor_trait_slug"`
-			ActorModifier       int    `json:"actor_modifier"`
-			OpponentID          string `json:"opponent_id"`
-			OpponentTraitType   string `json:"opponent_trait_type"`
-			OpponentTraitSlug   string `json:"opponent_trait_slug"`
-			OpponentModifier    int    `json:"opponent_modifier"`
-			AddOne              bool   `json:"add_one"`
+			ActorTraitType    string `json:"actor_trait_type"`
+			ActorTraitSlug    string `json:"actor_trait_slug"`
+			ActorModifier     int    `json:"actor_modifier"`
+			OpponentID        string `json:"opponent_id"`
+			OpponentTraitType string `json:"opponent_trait_type"`
+			OpponentTraitSlug string `json:"opponent_trait_slug"`
+			OpponentModifier  int    `json:"opponent_modifier"`
+			AddOne            bool   `json:"add_one"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse opposed check: %w", err)
@@ -705,7 +655,6 @@ func printNarration(log []string) {
 	fmt.Println("--------------------")
 }
 
-
 func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
 	brailleChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -781,4 +730,106 @@ func wrapLine(line string, width int) []string {
 		wrapped = append(wrapped, current)
 	}
 	return wrapped
+}
+
+func showChoiceMenu(options []string) (string, error) {
+	allOptions := append(options, "↳ Type your answer")
+	selected := 0
+
+	rl, err := readline.New("")
+	if err != nil {
+		return "", err
+	}
+	defer rl.Close()
+
+	for {
+		clearScreen()
+		fmt.Println()
+		fmt.Println("  Choose an option (↑↓ to navigate, Enter to select):")
+		fmt.Println()
+
+		for i, opt := range allOptions {
+			if i == selected {
+				fmt.Printf("  \033[1;44m▶ %s \033[0m\n", opt)
+			} else {
+				fmt.Printf("    %s\n", opt)
+			}
+		}
+		fmt.Println()
+
+		key, err := readKey()
+		if err != nil {
+			return "", err
+		}
+
+		switch key {
+		case "up":
+			if selected > 0 {
+				selected--
+			} else {
+				selected = len(allOptions) - 1
+			}
+		case "down":
+			if selected < len(allOptions)-1 {
+				selected++
+			} else {
+				selected = 0
+			}
+		case "enter":
+			fmt.Println()
+			if selected == len(allOptions)-1 {
+				rl.SetPrompt("Your answer: ")
+				answer, err := rl.Readline()
+				if err != nil {
+					return "", err
+				}
+				return answer, nil
+			}
+			return allOptions[selected], nil
+		case "escape":
+			fmt.Println()
+			return "", nil
+		}
+	}
+}
+
+func readKey() (string, error) {
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", fmt.Errorf("failed to set raw mode: %w", err)
+	}
+	defer term.Restore(fd, oldState)
+
+	buf := make([]byte, 3)
+	n, err := os.Stdin.Read(buf)
+	if err != nil {
+		return "", err
+	}
+
+	if n >= 1 {
+		switch buf[0] {
+		case 10, 13:
+			return "enter", nil
+		case 27:
+			if n >= 3 && buf[1] == '[' {
+				switch buf[2] {
+				case 'A':
+					return "up", nil
+				case 'B':
+					return "down", nil
+				case 'C':
+					return "right", nil
+				case 'D':
+					return "left", nil
+				}
+			}
+			return "escape", nil
+		}
+	}
+	return "", nil
+}
+
+func clearScreen() {
+	fmt.Print("\033[H\033[2J")
 }
