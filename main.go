@@ -287,7 +287,7 @@ Be brief, helpful, and focused on creating a character that fits the adventure.`
 
 		// Get player input
 		fmt.Print("\n")
-		input, err := readlineInput(rl, "")
+		input, err := readlineInput(rl, "You: ")
 		if err != nil || input == "quit" || input == "exit" {
 			return
 		}
