@@ -72,26 +72,36 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 
 		messages = append(messages, response.Message)
 
-		// Process tool calls
-		for _, toolCall := range response.Message.ToolCalls {
-			result, err := executeAction(w, "", "", toolCall)
-			if err != nil {
-				result = "Error: " + err.Error()
-			}
-			messages = append(messages, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Function.Name,
-				Content:    result,
-			})
+		// Keep processing tool calls until we get narration
+		for len(response.Message.ToolCalls) > 0 {
+			for _, toolCall := range response.Message.ToolCalls {
+				result, err := executeAction(w, "", "", toolCall)
+				if err != nil {
+					result = "Error: " + err.Error()
+				}
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Function.Name,
+					Content:    result,
+				})
 
-			// Capture adventure content
-			if toolCall.Function.Name == "load_adventure" {
-				adventure = result
+				// Capture adventure content
+				if toolCall.Function.Name == "load_adventure" {
+					adventure = result
+				}
 			}
+
+			// Get follow-up response after tool calls
+			response, err = chatWithTimeout(client, model, messages, actionTools())
+			if err != nil {
+				fmt.Println("LLM error:", err)
+				return ""
+			}
+			messages = append(messages, response.Message)
 		}
 
-		// Print DM response
+		// Print final narration
 		if response.Message.Content != "" {
 			fmt.Println("\nDM:", response.Message.Content)
 		}
