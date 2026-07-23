@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -124,6 +125,7 @@ func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, t
 
 func actionTools() []llm.Tool {
 	return []llm.Tool{
+		{Type: "function", Function: llm.ToolFunction{Name: "query_ruleset", Description: "Query available attributes, skills, species, gifts, and faults in the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_ruleset_file", Description: "Write one recognized ruleset file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
@@ -131,8 +133,97 @@ func actionTools() []llm.Tool {
 	}
 }
 
+func queryRuleset(w *rules.World) (string, error) {
+	if w.Ruleset == nil {
+		return "", fmt.Errorf("world has no selected ruleset")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Available traits in ruleset:\n\n")
+
+	sb.WriteString("ATTRIBUTES:\n")
+	for _, attr := range sortedAttributeKeys(w.Ruleset.Attributes) {
+		desc := w.Ruleset.Attributes[attr].Description
+		sb.WriteString(fmt.Sprintf("  - %s: %s\n", attr, desc))
+	}
+
+	sb.WriteString("\nSKILLS:\n")
+	for _, skill := range sortedSkillKeys(w.Ruleset.Skills) {
+		desc := w.Ruleset.Skills[skill].Description
+		sb.WriteString(fmt.Sprintf("  - %s: %s\n", skill, desc))
+	}
+
+	sb.WriteString("\nSPECIES:\n")
+	for _, spec := range sortedSpeciesKeys(w.Ruleset.Species) {
+		desc := w.Ruleset.Species[spec].Description
+		scale := w.Ruleset.Species[spec].Scale
+		sb.WriteString(fmt.Sprintf("  - %s (scale %d): %s\n", spec, scale, desc))
+	}
+
+	sb.WriteString("\nGIFTS:\n")
+	for _, gift := range sortedGiftKeys(w.Ruleset.Gifts) {
+		desc := w.Ruleset.Gifts[gift].Description
+		sb.WriteString(fmt.Sprintf("  - %s: %s\n", gift, desc))
+	}
+
+	sb.WriteString("\nFAULTS:\n")
+	for _, fault := range sortedFaultKeys(w.Ruleset.Faults) {
+		desc := w.Ruleset.Faults[fault].Description
+		sb.WriteString(fmt.Sprintf("  - %s: %s\n", fault, desc))
+	}
+
+	return sb.String(), nil
+}
+
+func sortedAttributeKeys(m map[string]*rules.Attribute) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedSkillKeys(m map[string]*rules.Skill) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedSpeciesKeys(m map[string]*rules.Species) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedGiftKeys(m map[string]*rules.Gift) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedFaultKeys(m map[string]*rules.Fault) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
+	case "query_ruleset":
+		return queryRuleset(w)
 	case "unopposed_skill_check":
 		var args struct {
 			Skill      string `json:"skill"`

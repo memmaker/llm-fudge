@@ -42,18 +42,18 @@ func TestExecuteActionUsesWorldChecks(t *testing.T) {
 
 func TestActionToolsIncludeCreateCharacter(t *testing.T) {
 	tools := actionTools()
-	if len(tools) != 4 {
-		t.Fatalf("got %d tools, want 4", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("got %d tools, want 5", len(tools))
 	}
-	found := false
+	toolNames := make(map[string]bool)
 	for _, tool := range tools {
-		if tool.Function.Name == "create_character" {
-			found = true
-			break
-		}
+		toolNames[tool.Function.Name] = true
 	}
-	if !found {
+	if !toolNames["create_character"] {
 		t.Fatalf("create_character tool not found in action tools")
+	}
+	if !toolNames["query_ruleset"] {
+		t.Fatalf("query_ruleset tool not found in action tools")
 	}
 }
 
