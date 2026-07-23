@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"math/rand"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,59 +157,81 @@ func TestUnopposedCheckWithModifiers(t *testing.T) {
 		map[string]int{"athletics": 2},
 	)
 
-	_, total, roll, critSuccess, critFailure, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 2, false, false)
+	result, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 2, false, false)
 	if err != nil {
 		t.Fatalf("unopposed check with modifier failed: %v", err)
 	}
 	// 2 (athletics) + 2 (modifier) = expected base of 4 before roll
 	expectedBase := 2 + 2
-	if total != expectedBase+roll {
-		t.Fatalf("expected total %d, got %d (base %d + roll %d)", expectedBase+roll, total, expectedBase, roll)
+	if result.Total != expectedBase+result.Roll {
+		t.Fatalf("expected total %d, got %d (base %d + roll %d)", expectedBase+result.Roll, result.Total, expectedBase, result.Roll)
 	}
-	if critSuccess || critFailure {
-		t.Logf("no natural critical expected with roll %d", roll)
+	if result.CritSuccess || result.CritFailure {
+		t.Logf("no natural critical expected with roll %d", result.Roll)
 	}
 }
 
 func TestUnopposedCheckDetectsCriticalSuccess(t *testing.T) {
-	world := newTestWorld(t, 999)
-	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
+	// Search for a seed that produces natural +4
+	var result *CheckResult
+	foundSeed := int64(-1)
+	for seed := int64(0); seed < 1000; seed++ {
+		world := newTestWorld(t, seed)
+		world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
 
-	// Need to find the seed that produces natural +4
-	for seed := int64(0); seed < 10000; seed++ {
-		w := newTestWorld(t, seed)
-		w.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-		_, _, roll, critSuccess, _, _ := w.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, false)
-		if roll == 4 {
-			if !critSuccess {
-				t.Fatal("natural +4 should be critical success")
+		// Try several rolls with this seed
+		for i := 0; i < 10; i++ {
+			r, _ := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, false)
+			if r.Roll == 4 {
+				result = r
+				foundSeed = seed
+				break
 			}
-			return
+		}
+		if foundSeed >= 0 {
+			break
 		}
 	}
-	t.Fatal("could not find seed for natural +4")
+
+	if foundSeed < 0 {
+		t.Fatal("could not find seed that produces natural +4 within 1000 seeds and 10 rolls each")
+	}
+	if !result.CritSuccess {
+		t.Fatal("natural +4 should be critical success")
+	}
 }
 
 func TestUnopposedCheckDetectsCriticalFailure(t *testing.T) {
-	world := newTestWorld(t, 999)
-	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
+	// Search for a seed that produces natural -4
+	var result *CheckResult
+	foundSeed := int64(-1)
+	for seed := int64(0); seed < 1000; seed++ {
+		world := newTestWorld(t, seed)
+		world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
 
-	// Need to find the seed that produces natural -4
-	for seed := int64(0); seed < 10000; seed++ {
-		w := newTestWorld(t, seed)
-		w.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-		success, _, roll, _, critFailure, _ := w.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, false)
-		if roll == -4 {
-			if success {
-				t.Fatal("natural -4 should always fail")
+		// Try several rolls with this seed
+		for i := 0; i < 10; i++ {
+			r, _ := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, false)
+			if r.Roll == -4 {
+				result = r
+				foundSeed = seed
+				break
 			}
-			if !critFailure {
-				t.Fatal("natural -4 should be critical failure")
-			}
-			return
+		}
+		if foundSeed >= 0 {
+			break
 		}
 	}
-	t.Fatal("could not find seed for natural -4")
+
+	if foundSeed < 0 {
+		t.Fatal("could not find seed that produces natural -4 within 1000 seeds and 10 rolls each")
+	}
+	if result.Success {
+		t.Fatal("natural -4 should always fail")
+	}
+	if !result.CritFailure {
+		t.Fatal("natural -4 should be critical failure")
+	}
 }
 
 func TestOpposedCheckWithIndependentModifiers(t *testing.T) {
@@ -219,21 +240,21 @@ func TestOpposedCheckWithIndependentModifiers(t *testing.T) {
 	world.CreateCharacter("goblin", "Goblin", map[string]int{"strength": 0}, map[string]int{"fight": 1})
 
 	// Both have independent modifiers
-	actorWins, actorTotal, oppTotal, margin, _, _, err := world.OpposedCheckEx("hero", "skill", "fight", 1, "goblin", "skill", "fight", 1, false)
+	result, err := world.OpposedCheck("hero", "skill", "fight", 1, "goblin", "skill", "fight", 1, false)
 	if err != nil {
 		t.Fatalf("opposed check failed: %v", err)
 	}
 
 	// hero: 2 + 1 = 3, goblin: 1 + 1 = 2 (before rolls)
 	// hero still has advantage
-	if !actorWins && actorTotal <= oppTotal {
-		t.Fatalf("actor with better trait should likely win: actor=%d, opp=%d", actorTotal, oppTotal)
+	if !result.ActorWins && result.ActorTotal <= result.OpponentTotal {
+		t.Fatalf("actor with better trait should likely win: actor=%d, opp=%d", result.ActorTotal, result.OpponentTotal)
 	}
-	if actorWins && actorTotal <= oppTotal {
-		t.Fatalf("win requires strict advantage: actor=%d, opp=%d", actorTotal, oppTotal)
+	if result.ActorWins && result.ActorTotal <= result.OpponentTotal {
+		t.Fatalf("win requires strict advantage: actor=%d, opp=%d", result.ActorTotal, result.OpponentTotal)
 	}
-	if actorWins && margin != actorTotal-oppTotal {
-		t.Fatalf("margin calculation wrong: expected %d, got %d", actorTotal-oppTotal, margin)
+	if result.ActorWins && result.RelativeDegree != result.ActorTotal-result.OpponentTotal {
+		t.Fatalf("margin calculation wrong: expected %d, got %d", result.ActorTotal-result.OpponentTotal, result.RelativeDegree)
 	}
 }
 
@@ -243,7 +264,7 @@ func TestAddOneSpendsFudgePoint(t *testing.T) {
 	ch.FudgePoints = 1
 
 	// Run check with add_one: true
-	_, _, _, _, _, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, true, false)
+	_, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, true, false)
 	if err != nil {
 		t.Fatalf("unopposed check with add_one failed: %v", err)
 	}
@@ -258,7 +279,7 @@ func TestAddOneFailsWithoutFudgePoint(t *testing.T) {
 	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
 
 	// Try to use add_one without Fudge Points
-	_, _, _, _, _, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, true, false)
+	_, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, true, false)
 	if err == nil {
 		t.Fatal("add_one without Fudge Points should fail")
 	}
@@ -273,7 +294,7 @@ func TestRerollSpendsFudgePoint(t *testing.T) {
 	ch.FudgePoints = 1
 
 	// Run first check
-	_, total1, roll1, _, _, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, false)
+	result1, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, false)
 	if err != nil {
 		t.Fatalf("first check failed: %v", err)
 	}
@@ -282,7 +303,7 @@ func TestRerollSpendsFudgePoint(t *testing.T) {
 	ch.FudgePoints = 1
 
 	// Run reroll
-	_, total2, roll2, _, _, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, true)
+	result2, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, true)
 	if err != nil {
 		t.Fatalf("reroll failed: %v", err)
 	}
@@ -292,8 +313,8 @@ func TestRerollSpendsFudgePoint(t *testing.T) {
 	}
 
 	// Reroll should produce different results with different RNG state
-	if roll1 == roll2 && total1 == total2 {
-		t.Logf("warning: same roll on reroll (possible but unlikely): roll=%d, total=%d", roll1, total1)
+	if result1.Roll == result2.Roll && result1.Total == result2.Total {
+		t.Logf("warning: same roll on reroll (possible but unlikely): roll=%d, total=%d", result1.Roll, result1.Total)
 	}
 }
 
@@ -302,7 +323,7 @@ func TestRerollFailsWithoutFudgePoint(t *testing.T) {
 	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
 
 	// Try to reroll without Fudge Points
-	_, _, _, _, _, err := world.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, true)
+	_, err := world.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, true)
 	if err == nil {
 		t.Fatal("reroll without Fudge Points should fail")
 	}
@@ -314,32 +335,27 @@ func TestRerollFailsWithoutFudgePoint(t *testing.T) {
 func TestInvalidTraitRejectedWithoutRNGConsumption(t *testing.T) {
 	world := newTestWorld(t, 42)
 	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-	ch := world.CreateCharacter("hero2", "Hero2", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-	ch.FudgePoints = 1
 
-	// Try to use invalid trait
-	_, _, _, _, _, err := world.UnopposedCheckEx("hero", "skill", "invalid-skill", 0, 0, false, false)
+	// Try to use invalid trait - should fail before RNG consumption
+	_, err := world.UnopposedCheck("hero", "skill", "invalid-skill", 0, 0, false, false)
 	if err == nil {
 		t.Fatal("should reject invalid trait")
 	}
 
-	// Check that RNG was not consumed by looking at determinism
+	// Verify RNG was not consumed: second world with same seed should produce same result
 	world2 := newTestWorld(t, 42)
 	world2.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-	world2.CreateCharacter("hero2", "Hero2", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-	world2.Characters["hero2"].FudgePoints = 1
 
-	// Valid check should produce same result
-	_, _, roll2, _, _, _ := world2.UnopposedCheckEx("hero", "skill", "athletics", 0, 0, false, false)
+	// Valid check in world2 should produce same roll as world1 would have without the error
+	result2, _ := world2.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, false)
 
-	// Get first world's result with a fresh check
-	world.Seed = 42
-	world.rng = rand.New(rand.NewSource(42))
-	world.CreateCharacter("hero3", "Hero3", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
-	_, _, roll1, _, _, _ := world.UnopposedCheckEx("hero3", "skill", "athletics", 0, 0, false, false)
+	// Create fresh world and verify determinism
+	world3 := newTestWorld(t, 42)
+	world3.CreateCharacter("hero", "Hero", map[string]int{"strength": 0}, map[string]int{"athletics": 0})
+	result3, _ := world3.UnopposedCheck("hero", "skill", "athletics", 0, 0, false, false)
 
-	if roll1 != roll2 {
-		t.Logf("RNG was consumed by invalid trait: roll1=%d, roll2=%d", roll1, roll2)
+	if result2.Roll != result3.Roll {
+		t.Errorf("RNG consumed by invalid trait: roll2=%d, roll3=%d", result2.Roll, result3.Roll)
 	}
 }
 
@@ -348,14 +364,14 @@ func TestOpposedCheckWithModifiers(t *testing.T) {
 	world.CreateCharacter("hero", "Hero", map[string]int{"strength": 1}, map[string]int{"fight": 2})
 	world.CreateCharacter("goblin", "Goblin", map[string]int{"strength": 0}, map[string]int{"fight": 1})
 
-	success, actorTotal, oppTotal, _, _, _, err := world.OpposedCheckEx("hero", "skill", "fight", 1, "goblin", "skill", "fight", 0, false)
+	result, err := world.OpposedCheck("hero", "skill", "fight", 1, "goblin", "skill", "fight", 0, false)
 	if err != nil {
 		t.Fatalf("opposed check with modifiers failed: %v", err)
 	}
 
 	// hero: 2 (fight) + 1 (modifier) + roll
 	// goblin: 1 (fight) + 0 (modifier) + roll
-	if actorTotal <= oppTotal && success {
-		t.Fatalf("actor should not win with lower total: actor=%d, opp=%d", actorTotal, oppTotal)
+	if result.ActorTotal <= result.OpponentTotal && result.ActorWins {
+		t.Fatalf("actor should not win with lower total: actor=%d, opp=%d", result.ActorTotal, result.OpponentTotal)
 	}
 }

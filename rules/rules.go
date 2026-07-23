@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+const (
+	TraitTypeAttribute = "attribute"
+	TraitTypeSkill     = "skill"
+
+	NatCritSuccessRoll = 4
+	NatCritFailureRoll = -4
+)
+
 type DiceMethod int
 
 const (
@@ -78,9 +86,10 @@ func (w *World) validateCheckInputs(actorID string, traitType string, traitSlug 
 	if _, err := w.Character(actorID); err != nil {
 		return err
 	}
-	if traitType != "attribute" && traitType != "skill" {
+	if traitType != TraitTypeAttribute && traitType != TraitTypeSkill {
 		return fmt.Errorf("invalid trait type: %s", traitType)
 	}
+	// Normalize trait slug at input boundary
 	traitSlug = strings.ToLower(traitSlug)
 	_, ok := resolveTrait(w.Characters[actorID], traitType, traitSlug)
 	if !ok {
@@ -112,8 +121,17 @@ func (w *World) unopposedRoll(ch *Character, traitType string, trait string, mod
 	return roll, result, tv + mod
 }
 
-// unopposedRollEx returns (roll, result, base, isCritSuccess, isCritFailure)
-func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, mod int, addOneBonus int, dice DiceMethod) (int, int, int, bool, bool) {
+// CheckResult holds the outcome of a skill check
+type CheckResult struct {
+	Success      bool
+	Total        int
+	Roll         int
+	CritSuccess  bool
+	CritFailure  bool
+}
+
+// unopposedRollEx rolls and returns raw results with critical detection
+func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, mod int, addOneBonus int, dice DiceMethod) CheckResult {
 	tv, ok := resolveTrait(ch, traitType, trait)
 	if !ok {
 		tv = 0
@@ -127,27 +145,31 @@ func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, m
 	}
 
 	// Detect natural criticals before adding modifiers
-	critSuccess := roll == 4
-	critFailure := roll == -4
+	critSuccess := roll == NatCritSuccessRoll
+	critFailure := roll == NatCritFailureRoll
 
 	// Apply add_one bonus
 	roll += addOneBonus
 
 	result := tv + roll + mod + ch.Wounds.Penalty()
-	return roll, result, tv + mod, critSuccess, critFailure
+	return CheckResult{
+		Total:       result,
+		Roll:        roll,
+		CritSuccess: critSuccess,
+		CritFailure: critFailure,
+	}
 }
 
-// UnopposedCheckEx resolves an unopposed check with full Fudge Point support
-// Returns: (success, total, roll, critSuccess, critFailure, error)
-func (w *World) UnopposedCheckEx(actorID string, traitType string, traitSlug string, difficulty int, situationalModifier int, addOne bool, reroll bool) (bool, int, int, bool, bool, error) {
+// UnopposedCheck resolves an unopposed check with full Fudge Point support
+func (w *World) UnopposedCheck(actorID string, traitType string, traitSlug string, difficulty int, situationalModifier int, addOne bool, reroll bool) (*CheckResult, error) {
 	// Validate all inputs before consuming resources
 	if err := w.validateCheckInputs(actorID, traitType, traitSlug, addOne, reroll); err != nil {
-		return false, 0, 0, false, false, err
+		return nil, err
 	}
 
 	ch := w.Characters[actorID]
 	if !ch.Wounds.CanAct() {
-		return false, 0, 0, false, false, fmt.Errorf("%s is incapacitated and cannot act", ch.Name)
+		return nil, fmt.Errorf("%s is incapacitated and cannot act", ch.Name)
 	}
 
 	// All validation passed; now consume resources
@@ -162,11 +184,10 @@ func (w *World) UnopposedCheckEx(actorID string, traitType string, traitSlug str
 	}
 
 	// Execute the roll
-	roll, result, _, critSuccess, critFailure := w.unopposedRollEx(ch, traitType, traitSlug, situationalModifier, addOneBonus, Dice4DF)
+	result := w.unopposedRollEx(ch, traitType, traitSlug, situationalModifier, addOneBonus, Dice4DF)
+	result.Success = result.Total >= difficulty
 
-	success := result >= difficulty
-
-	return success, result, roll, critSuccess, critFailure, nil
+	return &result, nil
 }
 
 func (w *World) opposedRoll(a *Character, aTraitType string, aTrait string, aMod int, b *Character, bTraitType string, bTrait string, bMod int, dice DiceMethod) (int, int, int, int, int, int) {
@@ -205,35 +226,43 @@ func (w *World) OpposedSkillCheck(actorID, actorSkill, opponentID, opponentSkill
 	return actorTotal > opponentTotal, actorTotal, opponentTotal, actorTotal - opponentTotal, nil
 }
 
-// OpposedCheckEx resolves an opposed check with full trait and Fudge Point support
-// Only the actor can spend Fudge Points
-// Returns: (actorWins, actorTotal, opponentTotal, relativeDegree, actorCritSuccess, opponentCritFailure, error)
-// Ties are not wins; actor must strictly exceed opponent
-func (w *World) OpposedCheckEx(actorID string, actorTraitType string, actorTraitSlug string, actorMod int,
-	opponentID string, opponentTraitType string, opponentTraitSlug string, opponentMod int, addOne bool) (bool, int, int, int, bool, bool, error) {
+// OpposedResult holds the outcome of an opposed check
+type OpposedResult struct {
+	ActorWins      bool
+	ActorTotal     int
+	OpponentTotal  int
+	RelativeDegree int
+	ActorCrit      bool
+	OpponentCrit   bool
+}
+
+// OpposedCheck resolves an opposed check with full trait and Fudge Point support
+// Only the actor can spend Fudge Points. Ties are not wins; actor must strictly exceed opponent.
+func (w *World) OpposedCheck(actorID string, actorTraitType string, actorTraitSlug string, actorMod int,
+	opponentID string, opponentTraitType string, opponentTraitSlug string, opponentMod int, addOne bool) (*OpposedResult, error) {
 
 	// Validate all inputs before consuming resources
 	if err := w.validateCheckInputs(actorID, actorTraitType, actorTraitSlug, addOne, false); err != nil {
-		return false, 0, 0, 0, false, false, err
+		return nil, err
 	}
 
 	opponentTraitSlug = strings.ToLower(opponentTraitSlug)
 	if _, err := w.Character(opponentID); err != nil {
-		return false, 0, 0, 0, false, false, err
+		return nil, err
 	}
-	if opponentTraitType != "attribute" && opponentTraitType != "skill" {
-		return false, 0, 0, 0, false, false, fmt.Errorf("invalid opponent trait type: %s", opponentTraitType)
+	if opponentTraitType != TraitTypeAttribute && opponentTraitType != TraitTypeSkill {
+		return nil, fmt.Errorf("invalid opponent trait type: %s", opponentTraitType)
 	}
 	_, ok := resolveTrait(w.Characters[opponentID], opponentTraitType, opponentTraitSlug)
 	if !ok {
-		return false, 0, 0, 0, false, false, fmt.Errorf("unknown opponent %s: %s", opponentTraitType, opponentTraitSlug)
+		return nil, fmt.Errorf("unknown opponent %s: %s", opponentTraitType, opponentTraitSlug)
 	}
 
 	actor := w.Characters[actorID]
 	opponent := w.Characters[opponentID]
 
 	if !actor.Wounds.CanAct() || !opponent.Wounds.CanAct() {
-		return false, 0, 0, 0, false, false, fmt.Errorf("an incapacitated character cannot make an opposed check")
+		return nil, fmt.Errorf("an incapacitated character cannot make an opposed check")
 	}
 
 	// All validation passed; now consume resources
@@ -244,14 +273,20 @@ func (w *World) OpposedCheckEx(actorID string, actorTraitType string, actorTrait
 	}
 
 	// Execute rolls
-	_, actorTotal, _, actorCrit, _ := w.unopposedRollEx(actor, actorTraitType, actorTraitSlug, actorMod, addOneBonus, Dice4DF)
-	_, opponentTotal, _, _, opponentFail := w.unopposedRollEx(opponent, opponentTraitType, opponentTraitSlug, opponentMod, 0, Dice4DF)
+	actorResult := w.unopposedRollEx(actor, actorTraitType, actorTraitSlug, actorMod, addOneBonus, Dice4DF)
+	opponentResult := w.unopposedRollEx(opponent, opponentTraitType, opponentTraitSlug, opponentMod, 0, Dice4DF)
 
 	// Actor must strictly exceed opponent; ties are not wins
-	actorWins := actorTotal > opponentTotal
-	relativeDegree := actorTotal - opponentTotal
+	actorWins := actorResult.Total > opponentResult.Total
 
-	return actorWins, actorTotal, opponentTotal, relativeDegree, actorCrit, opponentFail, nil
+	return &OpposedResult{
+		ActorWins:      actorWins,
+		ActorTotal:     actorResult.Total,
+		OpponentTotal:  opponentResult.Total,
+		RelativeDegree: actorResult.Total - opponentResult.Total,
+		ActorCrit:      actorResult.CritSuccess,
+		OpponentCrit:   opponentResult.CritFailure,
+	}, nil
 }
 
 func difficultyLevel(s string) int {

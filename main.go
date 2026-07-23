@@ -495,18 +495,22 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		if args.TraitType == "" || args.TraitSlug == "" {
 			return "", fmt.Errorf("unopposed check requires trait_type and trait_slug")
 		}
-		success, total, roll, critSuccess, critFailure, err := w.UnopposedCheckEx(heroID, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
+		result, err := w.UnopposedCheck(heroID, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
 		if err != nil {
 			return "", err
 		}
 		hero, _ := w.Character(heroID)
 		var critStr string
-		if critSuccess {
+		if result.CritSuccess {
 			critStr = " (CRITICAL SUCCESS!)"
-		} else if critFailure {
+		} else if result.CritFailure {
 			critStr = " (CRITICAL FAILURE!)"
 		}
-		return fmt.Sprintf("%s rolled %+d (total %d against %d): %s%s", hero.Name, roll, total, args.Difficulty, map[bool]string{true: "success", false: "failure"}[success], critStr), nil
+		successStr := "failure"
+		if result.Success {
+			successStr = "success"
+		}
+		return fmt.Sprintf("%s rolled %+d (total %d against %d): %s%s", hero.Name, result.Roll, result.Total, args.Difficulty, successStr, critStr), nil
 	case "opposed_check":
 		var args struct {
 			ActorTraitType      string `json:"actor_trait_type"`
@@ -527,20 +531,24 @@ func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (
 		if args.OpponentID == "" {
 			args.OpponentID = goblinID
 		}
-		wins, actorTotal, opponentTotal, margin, actorCrit, opponentCrit, err := w.OpposedCheckEx(heroID, args.ActorTraitType, args.ActorTraitSlug, args.ActorModifier, args.OpponentID, args.OpponentTraitType, args.OpponentTraitSlug, args.OpponentModifier, args.AddOne)
+		result, err := w.OpposedCheck(heroID, args.ActorTraitType, args.ActorTraitSlug, args.ActorModifier, args.OpponentID, args.OpponentTraitType, args.OpponentTraitSlug, args.OpponentModifier, args.AddOne)
 		if err != nil {
 			return "", err
 		}
 		hero, _ := w.Character(heroID)
 		opponent, _ := w.Character(args.OpponentID)
 		var critStr string
-		if actorCrit {
+		if result.ActorCrit {
 			critStr += " (actor critical!)"
 		}
-		if opponentCrit {
+		if result.OpponentCrit {
 			critStr += " (opponent critical!)"
 		}
-		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %+d): %s%s", hero.Name, actorTotal, opponent.Name, opponentTotal, margin, map[bool]string{true: "actor wins", false: "tie or loss"}[wins], critStr), nil
+		outcomeStr := "tie or loss"
+		if result.ActorWins {
+			outcomeStr = "actor wins"
+		}
+		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %+d): %s%s", hero.Name, result.ActorTotal, opponent.Name, result.OpponentTotal, result.RelativeDegree, outcomeStr, critStr), nil
 	case "write_setting_file":
 		var args struct {
 			Filename string `json:"filename"`
