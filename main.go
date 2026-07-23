@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,8 +17,13 @@ import (
 	"golang.org/x/term"
 )
 
+var debug bool
+
 // LLM-guided game setup with adventure loading
 func main() {
+	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
+	flag.Parse()
+
 	clearScreen()
 	w := &rules.World{Characters: make(map[string]*rules.Character)}
 
@@ -46,6 +52,21 @@ func loadPrompt(filename string) (string, error) {
 		return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
 	}
 	return string(content), nil
+}
+
+func debugToolCall(call llm.ToolCall, result string, err error) {
+	if !debug {
+		return
+	}
+	fmt.Printf("\n\033[1;35m[TOOL]\033[0m \033[1m%s\033[0m\n", call.Function.Name)
+	if call.Function.Arguments != "" {
+		fmt.Printf("  \033[90mArgs:\033[0m %s\n", call.Function.Arguments)
+	}
+	if err != nil {
+		fmt.Printf("  \033[91mError:\033[0m %s\n", err.Error())
+	} else if result != "" {
+		fmt.Printf("  \033[92mResult:\033[0m %s\n", result)
+	}
 }
 
 func runSetupPhase(w *rules.World, rl *readline.Instance) string {
@@ -139,6 +160,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) string {
 	for _, toolCall := range response.Message.ToolCalls {
 		if toolCall.Function.Name == "write_setting_file" {
 			result, err := executeAction(w, "", "", toolCall)
+			debugToolCall(toolCall, result, err)
 			if err != nil {
 				fmt.Println("Error creating setting:", err)
 				return ""
@@ -260,6 +282,7 @@ Be brief, conversational, and focused. After each selection, immediately continu
 			fmt.Println()
 			for _, toolCall := range response.Message.ToolCalls {
 				result, err := executeAction(w, "", "", toolCall)
+				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
 				}
@@ -434,6 +457,7 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		if len(response.Message.ToolCalls) > 0 {
 			for _, toolCall := range response.Message.ToolCalls {
 				result, err := executeAction(w, w.Player, "", toolCall)
+				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
 				}
