@@ -466,7 +466,11 @@ func streamChat(client *llm.Client, model string, messages []llm.Message, tools 
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
 	defer cancel()
 
+	done := make(chan struct{})
+	go showLoadingSpinner(llmRequestTimeout, done)
+
 	messageChan, err := client.Stream(ctx, llm.Request{Model: model, Messages: messages, Tools: tools})
+	close(done)
 	if err != nil {
 		return llm.Response{}, err
 	}
