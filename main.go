@@ -34,8 +34,11 @@ func main() {
 	runGamePhase(w, reader, adventure)
 }
 
-const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure. Follow these steps:
+const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure.
 
+DURING SETUP: Discuss the setting, rules, and character creation with the player. Explain mechanics, answer questions, and help them understand the world.
+
+Follow these steps:
 1. Greet the player and welcome them to Fudge
 2. Ask them to choose a setting - use list_settings to show options
 3. Guide them to load their chosen setting using load_setting
@@ -45,9 +48,9 @@ const setupPrompt = `You are guiding a player through setting up a new Fudge RPG
 5. Use list_adventures to show available adventures in the loaded setting
 6. Guide them to load an adventure using load_adventure
 7. Present the adventure story opening and ask what they do
-8. Return control to the DM for gameplay
+8. Once the adventure begins, switch to in-game narration mode
 
-Be enthusiastic and encouraging throughout!`
+Be enthusiastic and encouraging during setup!`
 
 func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 	client, model, _, err := llm.InitClientFromHome()
@@ -104,12 +107,9 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 			messages = append(messages, response.Message)
 		}
 
-		// Print final narration (filtered for meta text)
+		// Print final narration
 		if response.Message.Content != "" {
-			cleaned := filterMetaText(response.Message.Content)
-			if cleaned != "" {
-				fmt.Println("\nDM:", wrapText(cleaned, terminalWidth()-5))
-			}
+			fmt.Println("\nDM:", wrapText(response.Message.Content, terminalWidth()-5))
 		}
 
 		// Check if setup is complete
@@ -204,32 +204,38 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 				continue
 			}
 			if finalResponse.Message.Content != "" {
-				cleaned := filterMetaText(finalResponse.Message.Content)
-				if cleaned != "" {
-					narration = []string{cleaned}
-				}
+				narration = []string{finalResponse.Message.Content}
 			}
 			messages = append(messages, finalResponse.Message)
 		} else if response.Message.Content != "" {
-			cleaned := filterMetaText(response.Message.Content)
-			if cleaned != "" {
-				narration = []string{cleaned}
-			}
+			narration = []string{response.Message.Content}
 		}
 	}
 }
 
-const dmPrompt = `You are the dungeon master for a Fudge RPG. Trivial character actions don't need any skill checks. If the player's action warrants a skill check (action needing some skill, complex action, uncertain outcomes, opposed actions), call exactly one available tool to resolve it. Then narrate the outcome briefly using the tool result. Do not use dice or randomness yourself.
+const dmPrompt = `You are the dungeon master for a Fudge RPG. DURING GAMEPLAY, you provide ONLY in-game narration. Nothing else.
 
-IMPORTANT: Only provide game narration and story content. Do NOT include meta-commentary, instructions to the player about what to do next, or commentary about your role as DM. Just tell the story.
+YOUR SOLE JOB: Tell the story as it unfolds. Narrate events, describe scenes, bring NPCs to life through dialogue and action. Nothing more.
 
-When creating a character:
-1. First call query_setting to see what attributes, skills, species, gifts, and faults are available in the current setting
-2. Use only those available traits (lowercase slugs like "strength", "agility", not "Dexterity" or "Will")
-3. Then call create_character with the character details using the valid trait slugs
-4. Narrate the character creation result
+RULES:
+- Trivial actions don't need skill checks
+- For actions needing a check (action requiring skill, complex situation, uncertain outcome, opposed actions): call exactly ONE skill check tool
+- Narrate the outcome using ONLY the tool result
+- Do NOT add your own dice rolls or randomness
+- Do NOT break character to explain rules or mechanics
+- Do NOT ask what the player does next (just narrate and wait for their input)
+- Do NOT comment on the game, your role, or anything meta
+- Every response must be pure in-game narration as the DM describing the world
 
-Always check the setting first before assuming standard RPG traits exist.`
+Example of CORRECT response: "The goblin's blade whistles through the air. You feel the sting of the cut across your arm."
+
+Example of WRONG responses:
+- "The goblin rolled poorly, so it missed" (don't explain rolls)
+- "What do you do next?" (don't prompt, just narrate)
+- "I'm going to have the goblin attack" (don't explain your role)
+- "The goblin's attack - I should probably roll this" (no meta-commentary)
+
+Simply narrate the story. That is all.`
 
 const llmRequestTimeout = time.Minute
 
@@ -696,39 +702,6 @@ func printNarration(log []string) {
 	fmt.Println("--------------------")
 }
 
-func filterMetaText(narration string) string {
-	lines := strings.Split(narration, "\n")
-	var filtered []string
-	metaPatterns := []string{
-		"Returning control",
-		"go ahead and",
-		"I'm here to",
-		"Have fun",
-		"Let me know",
-		"What would you like",
-		"What do you do",
-		"What happens next",
-	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		isMetaText := false
-		for _, pattern := range metaPatterns {
-			if strings.Contains(strings.ToLower(trimmed), strings.ToLower(pattern)) {
-				isMetaText = true
-				break
-			}
-		}
-		if !isMetaText {
-			filtered = append(filtered, line)
-		}
-	}
-
-	return strings.TrimSpace(strings.Join(filtered, "\n"))
-}
 
 func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
 	brailleChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
