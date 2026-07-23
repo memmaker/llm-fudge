@@ -92,6 +92,9 @@ func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
 				}
 			}
 
+			// Update charsheet after all mutations
+			writeCharsheet(w)
+
 			// Get follow-up response after tool calls
 			response, err = chatWithTimeout(client, model, messages, actionTools())
 			if err != nil {
@@ -187,6 +190,9 @@ func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string)
 					Content:    result,
 				})
 			}
+
+			// Update charsheet after all mutations
+			writeCharsheet(w)
 
 			// Get final narration from LLM
 			finalResponse, err := chatWithTimeout(client, model, messages, nil)
@@ -457,6 +463,14 @@ func sortedFaultKeys(m map[string]*rules.Fault) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func writeCharsheet(w *rules.World) error {
+	if w.Player == "" {
+		return nil
+	}
+	content := rules.StateFileText(w)
+	return os.WriteFile("charsheet.txt", []byte(content), 0o644)
 }
 
 func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, map[string]interface{}, error) {

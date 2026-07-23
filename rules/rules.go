@@ -446,7 +446,7 @@ func fmtWound(w WoundState) string {
 	return strings.Join(parts, " | ")
 }
 
-func stateFileText(w *World) string {
+func StateFileText(w *World) string {
 	if w.Player == "" {
 		return "No player character set."
 	}
