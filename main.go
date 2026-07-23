@@ -50,92 +50,141 @@ func loadPrompt(filename string) (string, error) {
 }
 
 func runSetupPhase(w *rules.World, rl *readline.Instance) string {
-	setupPrompt, err := loadPrompt("new-game-prompt.md")
+	fmt.Println("Welcome to Fudge!")
+	fmt.Println()
+
+	// Step 1: Choose setting
+	settings, err := listAvailableSettings()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return ""
 	}
-
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		fmt.Println("LLM error:", err)
+	if len(settings) == 0 {
+		fmt.Println("No settings available.")
 		return ""
 	}
 
-	messages := []llm.Message{
-		{Role: llm.RoleSystem, Content: setupPrompt},
-		{Role: llm.RoleUser, Content: "Let's start a new adventure!"},
+	fmt.Println("Select a setting:")
+	setting, err := showChoiceMenu(settings)
+	if err != nil {
+		return ""
+	}
+	if _, err := loadSettingTool(w, setting); err != nil {
+		fmt.Println("Error loading setting:", err)
+		return ""
+	}
+	fmt.Println()
+
+	// Step 2: Choose species
+	speciesList := sortedSpeciesKeys(w.Ruleset.Species)
+	if len(speciesList) == 0 {
+		fmt.Println("No species available in this setting.")
+		return ""
 	}
 
-	adventure := ""
+	fmt.Println("Select a species:")
+	species, err := showChoiceMenu(speciesList)
+	if err != nil {
+		return ""
+	}
+	fmt.Println()
 
-	for {
-		response, err := chatWithSpinner(client, model, messages, actionTools())
-		if err != nil {
-			fmt.Println("LLM error:", err)
-			return ""
-		}
+	// Step 3: Choose adventure
+	adventures, err := listAvailableAdventures(w)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return ""
+	}
+	if len(adventures) == 0 {
+		fmt.Println("No adventures available in this setting.")
+		return ""
+	}
 
-		messages = append(messages, response.Message)
+	fmt.Println("Select an adventure:")
+	adventure, err := showChoiceMenu(adventures)
+	if err != nil {
+		return ""
+	}
 
-		// Print any narration before tool execution
-		if response.Message.Content != "" {
-			fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-		}
+	// Load adventure content
+	adventureContent, err := loadAdventureTool(w, adventure)
+	if err != nil {
+		fmt.Println("Error loading adventure:", err)
+		return ""
+	}
+	fmt.Println()
 
-		// Keep processing tool calls until we get narration
-		for len(response.Message.ToolCalls) > 0 {
-			for _, toolCall := range response.Message.ToolCalls {
-				result, err := executeAction(w, "", "", toolCall)
-				if err != nil {
-					result = "Error: " + err.Error()
-				}
-				messages = append(messages, llm.Message{
-					Role:       llm.RoleTool,
-					ToolCallID: toolCall.ID,
-					Name:       toolCall.Function.Name,
-					Content:    result,
-				})
+	// Step 4: Character name
+	fmt.Print("Character name: ")
+	charName, err := readlineInput(rl, "")
+	if err != nil || charName == "" {
+		charName = "Adventurer"
+	}
 
-				// Capture adventure content
-				if toolCall.Function.Name == "load_adventure" {
-					adventure = result
-				}
-			}
+	// Create character with chosen species
+	charID := slugify(charName)
+	ch, err := w.CreateCharacterValidated(rules.CharacterRequest{
+		Slug:        charID,
+		Name:        charName,
+		Species:     species,
+		Description: "",
+		Location:    "",
+		Attributes:  make(map[string]int),
+		Skills:      make(map[string]int),
+	})
+	if err != nil {
+		fmt.Println("Error creating character:", err)
+		return ""
+	}
 
-			// Update charsheet after all mutations
-			writeCharsheet(w)
+	w.Player = ch.ID
+	writeCharsheet(w)
 
-			// Get follow-up response after tool calls
-			response, err = chatWithSpinner(client, model, messages, actionTools())
-			if err != nil {
-				fmt.Println("LLM error:", err)
-				return ""
-			}
-			if response.Message.Content != "" {
-				fmt.Println(wrapText(response.Message.Content, terminalWidth()-5))
-			}
-			messages = append(messages, response.Message)
-		}
+	fmt.Println()
+	fmt.Println(wrapText(adventureContent, terminalWidth()-4))
+	return adventureContent
+}
 
-		// Check if setup is complete
-		if w.Ruleset != nil && len(w.Characters) > 0 && adventure != "" {
-			return adventure
-		}
-
-		// Get player input for next turn
-		fmt.Print("\n")
-		input, err := readlineInput(rl, "You: ")
-		if err != nil {
-			return ""
-		}
-		if input == "quit" || input == "exit" {
-			return ""
-		}
-		if input != "" {
-			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
+func listAvailableSettings() ([]string, error) {
+	entries, err := os.ReadDir("settings")
+	if err != nil {
+		return nil, err
+	}
+	var settings []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			settings = append(settings, entry.Name())
 		}
 	}
+	sort.Strings(settings)
+	return settings, nil
+}
+
+func listAvailableAdventures(w *rules.World) ([]string, error) {
+	if w.Ruleset == nil {
+		return nil, fmt.Errorf("no setting loaded")
+	}
+	adventuresPath := filepath.Join(w.Ruleset.Path, "adventures")
+	entries, err := os.ReadDir(adventuresPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var adventures []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+			name := strings.TrimSuffix(entry.Name(), ".md")
+			adventures = append(adventures, name)
+		}
+	}
+	sort.Strings(adventures)
+	return adventures, nil
+}
+
+func slugify(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
 }
 
 func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string) {
