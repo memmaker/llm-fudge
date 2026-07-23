@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,33 +17,127 @@ import (
 	"golang.org/x/term"
 )
 
-// Minimal in-process interactive shell with prose-driven flow using 4dF checks.
+// LLM-guided game setup with adventure loading
 func main() {
-	w, err := rules.NewWorld(987654321, "rulesets/example")
-	if err != nil {
-		fmt.Println("failed to load ruleset:", err)
-		return
-	}
-	hero := w.CreateCharacter(
-		"pc1",
-		"Hero",
-		map[string]int{"strength": 1, "agility": 1, "perception": 0},
-		map[string]int{"athletics": 2, "stealth": 1, "fight": 1},
-	)
-	goblin := w.CreateCharacter(
-		"gob1",
-		"Goblin",
-		map[string]int{"strength": 0, "agility": 1, "perception": 0},
-		map[string]int{"athletics": 1, "stealth": 0, "fight": 1},
-	)
-	narration := []string{"You awaken in a dim dungeon. A goblin blocks your path.", "Tell me what you do."}
+	w := &rules.World{Characters: make(map[string]*rules.Character)}
 
 	reader := bufio.NewReader(os.Stdin)
-	for {
-		// Render narration
-		printNarration(narration)
 
-		// Player prompt
+	// Setup phase: LLM guides through ruleset, character, and adventure selection
+	adventure := runSetupPhase(w, reader)
+	if adventure == "" {
+		fmt.Println("Setup cancelled.")
+		return
+	}
+
+	// Game phase: LLM acts as DM
+	runGamePhase(w, reader, adventure)
+}
+
+const setupPrompt = `You are guiding a player through setting up a new Fudge RPG adventure. Follow these steps:
+
+1. Greet the player and welcome them to Fudge
+2. Ask them to choose a ruleset - use list_rulesets to show options
+3. Guide them to load their chosen ruleset using load_ruleset
+4. Help them create a character:
+   - First use query_ruleset to show available traits
+   - Guide them through using create_character with valid traits
+5. Use list_adventures to show available adventures in the loaded ruleset
+6. Guide them to load an adventure using load_adventure
+7. Present the adventure story opening and ask what they do
+8. Return control to the DM for gameplay
+
+Be enthusiastic and encouraging throughout!`
+
+func runSetupPhase(w *rules.World, reader *bufio.Reader) string {
+	client, model, _, err := llm.InitClientFromHome()
+	if err != nil {
+		fmt.Println("LLM error:", err)
+		return ""
+	}
+
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: setupPrompt},
+		{Role: llm.RoleUser, Content: "Let's start a new adventure!"},
+	}
+
+	adventure := ""
+
+	for {
+		response, err := chatWithTimeout(client, model, messages, actionTools())
+		if err != nil {
+			fmt.Println("LLM error:", err)
+			return ""
+		}
+
+		messages = append(messages, response.Message)
+
+		// Process tool calls
+		for _, toolCall := range response.Message.ToolCalls {
+			result, err := executeAction(w, "", "", toolCall)
+			if err != nil {
+				result = "Error: " + err.Error()
+			}
+			messages = append(messages, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: toolCall.ID,
+				Name:       toolCall.Function.Name,
+				Content:    result,
+			})
+
+			// Capture adventure content
+			if toolCall.Function.Name == "load_adventure" {
+				adventure = result
+			}
+		}
+
+		// Print DM response
+		if response.Message.Content != "" {
+			fmt.Println("\nDM:", response.Message.Content)
+		}
+
+		// Check if setup is complete
+		if w.Ruleset != nil && len(w.Characters) > 0 && adventure != "" {
+			return adventure
+		}
+
+		// Get player input for next turn
+		fmt.Print("\nYou: ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return ""
+		}
+		input = strings.TrimSpace(input)
+		if input == "quit" || input == "exit" {
+			return ""
+		}
+		if input != "" {
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
+		}
+	}
+}
+
+func runGamePhase(w *rules.World, reader *bufio.Reader, adventureOpening string) {
+	client, model, _, err := llm.InitClientFromHome()
+	if err != nil {
+		fmt.Println("LLM error:", err)
+		return
+	}
+
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: dmPrompt},
+		{Role: llm.RoleUser, Content: "The adventure begins:\n\n" + adventureOpening},
+	}
+
+	var narration []string
+
+	for {
+		// Print narration
+		if len(narration) > 0 {
+			printNarration(narration)
+		}
+
+		// Get player input
 		fmt.Print("You: ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -59,12 +154,43 @@ func main() {
 			continue
 		}
 
-		text, err := narrateAction(w, hero.ID, goblin.ID, line)
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: line})
+		response, err := chatWithTimeout(client, model, messages, actionTools())
 		if err != nil {
 			fmt.Println("LLM error:", err)
 			continue
 		}
-		narration = []string{text}
+
+		messages = append(messages, response.Message)
+
+		// Process tool calls if any
+		if len(response.Message.ToolCalls) > 0 {
+			for _, toolCall := range response.Message.ToolCalls {
+				result, err := executeAction(w, w.Player, "", toolCall)
+				if err != nil {
+					result = "Error: " + err.Error()
+				}
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Function.Name,
+					Content:    result,
+				})
+			}
+
+			// Get final narration from LLM
+			finalResponse, err := chatWithTimeout(client, model, messages, nil)
+			if err != nil {
+				fmt.Println("LLM error:", err)
+				continue
+			}
+			if finalResponse.Message.Content != "" {
+				narration = []string{finalResponse.Message.Content}
+			}
+			messages = append(messages, finalResponse.Message)
+		} else if response.Message.Content != "" {
+			narration = []string{response.Message.Content}
+		}
 	}
 }
 
@@ -133,12 +259,104 @@ func chatWithTimeout(client *llm.Client, model string, messages []llm.Message, t
 
 func actionTools() []llm.Tool {
 	return []llm.Tool{
+		{Type: "function", Function: llm.ToolFunction{Name: "list_rulesets", Description: "List all available rulesets.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "load_ruleset", Description: "Load a specific ruleset by name.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "query_ruleset", Description: "Query available attributes, skills, species, gifts, and faults in the current ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_skill_check", Description: "Resolve a skill check against a difficulty.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"skill": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}}, "required": []string{"skill", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_skill_check", Description: "Resolve a skill check against an opponent.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actorSkill": map[string]any{"type": "string"}, "oppID": map[string]any{"type": "string"}, "oppSkill": map[string]any{"type": "string"}}, "required": []string{"actorSkill", "oppSkill"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "write_ruleset_file", Description: "Write one recognized ruleset file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected ruleset.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"slug": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
 	}
+}
+
+func listRulesets() (string, error) {
+	entries, err := os.ReadDir("rulesets")
+	if err != nil {
+		return "", fmt.Errorf("failed to read rulesets directory: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Available rulesets:\n\n")
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			sb.WriteString(fmt.Sprintf("  - %s\n", entry.Name()))
+			count++
+		}
+	}
+
+	if count == 0 {
+		return "No rulesets found.", nil
+	}
+	return sb.String(), nil
+}
+
+func loadRulesetTool(w *rules.World, name string) (string, error) {
+	path := filepath.Join("rulesets", name)
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("ruleset not found: %s", name)
+	}
+
+	ruleset, err := rules.LoadRuleset(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to load ruleset: %w", err)
+	}
+
+	w.Ruleset = ruleset
+	w.Characters = make(map[string]*rules.Character)
+	w.Player = ""
+
+	return fmt.Sprintf("Loaded ruleset: %s", name), nil
+}
+
+func listAdventures(w *rules.World) (string, error) {
+	if w.Ruleset == nil {
+		return "", fmt.Errorf("no ruleset loaded")
+	}
+
+	adventuresPath := filepath.Join(w.Ruleset.Path, "adventures")
+	entries, err := os.ReadDir(adventuresPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "No adventures available.", nil
+		}
+		return "", fmt.Errorf("failed to read adventures directory: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Available adventures:\n\n")
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+			name := strings.TrimSuffix(entry.Name(), ".md")
+			sb.WriteString(fmt.Sprintf("  - %s\n", name))
+			count++
+		}
+	}
+
+	if count == 0 {
+		return "No adventures found.", nil
+	}
+	return sb.String(), nil
+}
+
+func loadAdventureTool(w *rules.World, name string) (string, error) {
+	if w.Ruleset == nil {
+		return "", fmt.Errorf("no ruleset loaded")
+	}
+
+	adventurePath := filepath.Join(w.Ruleset.Path, "adventures", name+".md")
+	content, err := os.ReadFile(adventurePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to load adventure: %w", err)
+	}
+
+	return string(content), nil
 }
 
 func queryRuleset(w *rules.World) (string, error) {
@@ -230,6 +448,26 @@ func sortedFaultKeys(m map[string]*rules.Fault) []string {
 
 func executeAction(w *rules.World, heroID, goblinID string, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
+	case "list_rulesets":
+		return listRulesets()
+	case "load_ruleset":
+		var args struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse load_ruleset: %w", err)
+		}
+		return loadRulesetTool(w, args.Name)
+	case "list_adventures":
+		return listAdventures(w)
+	case "load_adventure":
+		var args struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse load_adventure: %w", err)
+		}
+		return loadAdventureTool(w, args.Name)
 	case "query_ruleset":
 		return queryRuleset(w)
 	case "unopposed_skill_check":
