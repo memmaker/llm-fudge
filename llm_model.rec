@@ -1,0 +1,8 @@
+provider: openai
+#model: gpt-5-mini
+# This is not obviously bad at consistency..
+model: gpt-5.3-chat-latest
+
+#provider: lmstudio
+#model: qwen/qwen3.5-4b
+#base_url: http://localhost:1234/v1

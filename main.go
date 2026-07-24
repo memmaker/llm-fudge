@@ -221,7 +221,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) string {
 	// Process tool calls to save the setting
 	for _, toolCall := range response.Message.ToolCalls {
 		if toolCall.Function.Name == "write_setting_file" {
-			result, err := executeAction(w, "", "", toolCall)
+			result, err := executeAction(w, toolCall)
 			debugToolCall(toolCall, result, err)
 			if err != nil {
 				fmt.Println("Error creating setting:", err)
@@ -344,7 +344,7 @@ func setupCharacterAutomatic(w *rules.World, rl *readline.Instance, settingName 
 		for len(response.Message.ToolCalls) > 0 {
 			fmt.Println()
 			for _, toolCall := range response.Message.ToolCalls {
-				result, err := executeAction(w, "", "", toolCall)
+				result, err := executeAction(w, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
@@ -418,7 +418,7 @@ func setupCharacterCustom(w *rules.World, rl *readline.Instance, settingName str
 		for len(response.Message.ToolCalls) > 0 {
 			fmt.Println()
 			for _, toolCall := range response.Message.ToolCalls {
-				result, err := executeAction(w, "", "", toolCall)
+				result, err := executeAction(w, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
@@ -580,7 +580,7 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		// Process tool calls if any
 		if len(response.Message.ToolCalls) > 0 {
 			for _, toolCall := range response.Message.ToolCalls {
-				result, err := executeAction(w, w.Player, "", toolCall)
+				result, err := executeAction(w, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()

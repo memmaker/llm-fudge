@@ -21,14 +21,9 @@ func TestExecuteActionUsesWorldChecks(t *testing.T) {
 		map[string]int{"strength": 1, "agility": 1, "perception": 0},
 		map[string]int{"athletics": 2, "stealth": 1, "fight": 1},
 	)
-	goblin := w.CreateCharacter(
-		"goblin",
-		"Goblin",
-		map[string]int{"strength": 0, "agility": 1, "perception": 0},
-		map[string]int{"athletics": 1, "stealth": 0, "fight": 1},
-	)
 
-	result, err := executeAction(w, hero.ID, goblin.ID, llm.ToolCall{Function: llm.ToolCallFunction{
+	w.Player = hero.ID
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{
 		Name:      "unopposed_check",
 		Arguments: `{"trait_type":"skill","trait_slug":"athletics","difficulty":1}`,
 	}})
@@ -66,7 +61,7 @@ func TestExecuteActionWritesRulesetFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create world: %v", err)
 	}
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{
 		Name:      "write_setting_file",
 		Arguments: `{"filename":"skills.rec","mode":"replace","content":"slug: athletics\ndisplay_name: Athletics\ndescription: Move quickly\n"}`,
 	}})
@@ -95,7 +90,7 @@ func TestExecuteActionCreateCharacter(t *testing.T) {
 		t.Fatalf("create world: %v", err)
 	}
 	args := `{"slug":"hero","name":"Hero","species":"human","description":"desc","location":"start","attributes":{"testattr":1},"skills":{"testskill":2}}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("executeAction create_character: %v", err)
 	}
@@ -131,7 +126,7 @@ func TestCreateCharacterFreezesRulesetOnSuccess(t *testing.T) {
 	}
 
 	args := `{"name":"Test","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
@@ -151,7 +146,7 @@ func TestCreateCharacterRejectsInvalidSpecies(t *testing.T) {
 	}
 
 	args := `{"name":"Test","species":"invalid_species"}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err == nil {
 		t.Fatalf("expected error for invalid species, got result: %q", result)
 	}
@@ -171,7 +166,7 @@ func TestCreateCharacterDefaultsAttributesToFairSkillsToPoor(t *testing.T) {
 	}
 
 	args := `{"name":"Test","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
@@ -205,7 +200,7 @@ func TestCreateCharacterDesignatesPlayer(t *testing.T) {
 	}
 
 	args := `{"slug":"pc1","name":"PlayerChar","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
@@ -226,14 +221,14 @@ func TestCreateCharacterRejectsDuplicateSlug(t *testing.T) {
 	}
 
 	args1 := `{"slug":"hero","name":"Hero","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args1}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args1}})
 	if err != nil {
 		t.Fatalf("first character creation failed: %v", err)
 	}
 
 	// After first character, setting is frozen and no more characters can be created
 	args2 := `{"slug":"hero2","name":"AnotherHero","species":"human"}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args2}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args2}})
 	if err == nil {
 		t.Fatalf("expected error when setting is frozen, got result: %q", result)
 	}
@@ -274,13 +269,13 @@ func TestApplyDamageMutation(t *testing.T) {
 	}
 
 	args := `{"slug":"hero","name":"Hero","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
 
 	damageArgs := `{"character_id":"hero","damage_points":5}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
 	if err != nil {
 		t.Fatalf("apply_damage failed: %v", err)
 	}
@@ -305,18 +300,18 @@ func TestHealMutation(t *testing.T) {
 	}
 
 	args := `{"slug":"hero","name":"Hero","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
 
 	// Apply damage
 	damageArgs := `{"character_id":"hero","damage_points":5}`
-	executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
+	executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "apply_damage", Arguments: damageArgs}})
 
 	// Heal
 	healArgs := `{"character_id":"hero","levels":1}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
 	if err != nil {
 		t.Fatalf("heal failed: %v", err)
 	}
@@ -341,14 +336,14 @@ func TestDeclarDeadMutation(t *testing.T) {
 	}
 
 	args := `{"slug":"hero","name":"Hero","species":"human"}`
-	_, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
 	if err != nil {
 		t.Fatalf("character creation failed: %v", err)
 	}
 
 	// Declare dead
 	deadArgs := `{"character_id":"hero"}`
-	result, err := executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "declare_dead", Arguments: deadArgs}})
+	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "declare_dead", Arguments: deadArgs}})
 	if err != nil {
 		t.Fatalf("declare_dead failed: %v", err)
 	}
@@ -362,15 +357,16 @@ func TestDeclarDeadMutation(t *testing.T) {
 	}
 
 	// Dead character cannot act
+	w.Player = "hero"
 	checkArgs := `{"trait_type":"skill","trait_slug":"fight","difficulty":1}`
-	_, err = executeAction(w, "hero", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "unopposed_check", Arguments: checkArgs}})
+	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "unopposed_check", Arguments: checkArgs}})
 	if err == nil || !strings.Contains(err.Error(), "incapacitated") {
 		t.Fatalf("dead character should not be able to act: %v", err)
 	}
 
 	// Dead character cannot be healed
 	healArgs := `{"character_id":"hero","levels":1}`
-	result, err = executeAction(w, "", "", llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
+	result, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "heal", Arguments: healArgs}})
 	if err != nil {
 		t.Fatalf("heal should not error, but return failure: %v", err)
 	}

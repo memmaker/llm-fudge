@@ -9,5 +9,3 @@ The common room is filled with the usual crowd—a few locals nursing their drin
 As you approach the bar to order a drink, you notice something unusual: a rolled parchment on the counter, sealed with wax, with your name written on it in an unfamiliar hand.
 
 The bartender slides a drink toward you. "That arrived for you this morning. Rider came in at dawn looking for anyone matching your description. Seems you've got business waiting."
-
-What do you do?
