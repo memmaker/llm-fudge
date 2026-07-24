@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,10 +26,14 @@ func main() {
 	flag.Parse()
 
 	clearScreen()
-	w := &rules.World{Characters: make(map[string]*rules.Character)}
+	w := &rules.World{
+		Characters: make(map[string]*rules.Character),
+		Seed:       time.Now().UnixNano(),
+		Rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
 
 	// Setup readline instance with history and line editing
-	rl, err := readline.New("You: ")
+	rl, err := readline.New("> ")
 	if err != nil {
 		fmt.Println("Error initializing readline:", err)
 		return
@@ -47,11 +52,63 @@ func main() {
 }
 
 func loadPrompt(filename string) (string, error) {
+	always, err := os.ReadFile("system-prompts/always.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to load always.md: %w", err)
+	}
+
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
 	}
-	return string(content), nil
+
+	// Replace ESC placeholders with actual escape character
+	alwaysStr := strings.ReplaceAll(string(always), "ESC", "\033")
+	return alwaysStr + "\n\n" + string(content), nil
+}
+
+func loadCharacterPrompt(promptFile, adventureContent, settingName string, w *rules.World) (string, error) {
+	always, err := os.ReadFile("system-prompts/always.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to load always.md: %w", err)
+	}
+
+	content, err := os.ReadFile(promptFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to load character prompt: %w", err)
+	}
+
+	// Replace ESC placeholders with actual escape character
+	alwaysStr := strings.ReplaceAll(string(always), "ESC", "\033")
+	prompt := alwaysStr + "\n\n" + string(content)
+
+	// Append setting information
+	settingInfo := fmt.Sprintf("\n## Setting Information:\n\nThe setting is: %s\n\nAvailable traits:\n%s\n\nThe adventure they've chosen is:\n%s",
+		settingName, formatAvailableTraits(w), adventureContent)
+
+	return prompt + settingInfo, nil
+}
+
+func loadDMPrompt(w *rules.World) (string, error) {
+	always, err := os.ReadFile("system-prompts/always.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to load always.md: %w", err)
+	}
+
+	content, err := os.ReadFile("system-prompts/dm.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to load dm.md: %w", err)
+	}
+
+	// Replace ESC placeholders with actual escape character
+	alwaysStr := strings.ReplaceAll(string(always), "ESC", "\033")
+	prompt := alwaysStr + "\n\n" + string(content)
+
+	// Append setting information
+	settingInfo := fmt.Sprintf("\n## Setting Information:\n\nThe setting is: %s\n\nAvailable traits:\n%s",
+		w.Ruleset.Slug, formatAvailableTraits(w))
+
+	return prompt + settingInfo, nil
 }
 
 func debugToolCall(call llm.ToolCall, result string, err error) {
@@ -135,7 +192,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) string {
 		return ""
 	}
 
-	prompt, _ := loadPrompt("new-game-prompt.md")
+	prompt, _ := loadPrompt("system-prompts/setting-creation.md")
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -207,7 +264,7 @@ func setupAdventure(w *rules.World, rl *readline.Instance, settingName string) s
 		return ""
 	}
 
-	prompt, _ := loadPrompt("new-game-prompt.md")
+	prompt, _ := loadPrompt("system-prompts/adventure-creation.md")
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		fmt.Println("LLM error:", err)
@@ -231,29 +288,31 @@ func setupAdventure(w *rules.World, rl *readline.Instance, settingName string) s
 }
 
 func setupCharacter(w *rules.World, rl *readline.Instance, settingName string, adventureContent string) {
-	characterPrompt := fmt.Sprintf(`You are helping the player create a character for a Fudge RPG adventure.
+	fmt.Println("How would you like to create your character?")
+	choice, err := showChoiceMenu([]string{"Automatic - I describe my concept, you decide the traits", "Custom - I want to choose all my traits"})
+	if err != nil {
+		return
+	}
 
-The adventure they've chosen is:
-%s
+	if choice == "Automatic - I describe my concept, you decide the traits" {
+		setupCharacterAutomatic(w, rl, settingName, adventureContent)
+	} else {
+		setupCharacterCustom(w, rl, settingName, adventureContent)
+	}
+}
 
-The setting is: %s
+func setupCharacterAutomatic(w *rules.World, rl *readline.Instance, settingName string, adventureContent string) {
+	fmt.Println("Describe your character concept:")
+	concept, err := readlineInput(rl, "Concept: ")
+	if err != nil || concept == "" {
+		return
+	}
 
-Available traits:
-%s
-
-IMPORTANT FLOW:
-1. Start by asking about their character concept/idea (brief description)
-2. Guide them through selecting: species, then 2-3 attributes (top ones for their concept), then 1-2 skills, optional gifts, optional faults
-3. Use the user_choice tool to present options for each selection - list the 3-4 most relevant options
-4. After collecting all selections, use the create_character tool with:
-   - name: their chosen name (if not provided, suggest one based on their concept)
-   - species: the selected species
-   - attributes: map of selected attributes with values (use 2-3, values 1-3)
-   - skills: map of selected skills with values (use 1-2, values 1-2)
-   - gifts: array of selected gifts (can be empty)
-   - faults: array of selected faults (can be empty)
-
-Be brief, conversational, and focused. After each selection, immediately continue to the next step without waiting for manual input. Once you have all information, create the character immediately.`, adventureContent, settingName, formatAvailableTraits(w))
+	characterPrompt, err := loadCharacterPrompt("system-prompts/character-automatic.md", adventureContent, settingName, w)
+	if err != nil {
+		fmt.Println("Error loading character creation prompt:", err)
+		return
+	}
 
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
@@ -263,10 +322,9 @@ Be brief, conversational, and focused. After each selection, immediately continu
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: characterPrompt},
-		{Role: llm.RoleUser, Content: "I'm ready to create my character. Let's start!"},
+		{Role: llm.RoleUser, Content: fmt.Sprintf("I want to create a character with this concept: %s", concept)},
 	}
 
-	rl.SetPrompt("You: ")
 	for {
 		fmt.Println()
 		response, err := streamChat(client, model, messages, actionTools())
@@ -313,7 +371,81 @@ Be brief, conversational, and focused. After each selection, immediately continu
 
 		// Get player input
 		fmt.Print("\n")
-		input, err := readlineInput(rl, "You: ")
+		input, err := getPlayerInput(rl)
+		if err != nil || input == "quit" || input == "exit" {
+			return
+		}
+		if input != "" {
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
+		}
+	}
+}
+
+func setupCharacterCustom(w *rules.World, rl *readline.Instance, settingName string, adventureContent string) {
+	characterPrompt, err := loadCharacterPrompt("system-prompts/character-custom.md", adventureContent, settingName, w)
+	if err != nil {
+		fmt.Println("Error loading character creation prompt:", err)
+		return
+	}
+
+	client, model, _, err := llm.InitClientFromHome()
+	if err != nil {
+		fmt.Println("LLM error:", err)
+		return
+	}
+
+	messages := []llm.Message{
+		{Role: llm.RoleSystem, Content: characterPrompt},
+		{Role: llm.RoleUser, Content: "I'm ready to create my character. Let's start!"},
+	}
+
+	for {
+		fmt.Println()
+		response, err := streamChat(client, model, messages, actionTools())
+		if err != nil {
+			fmt.Println("\nLLM error:", err)
+			return
+		}
+
+		messages = append(messages, response.Message)
+
+		// Process tool calls
+		for len(response.Message.ToolCalls) > 0 {
+			fmt.Println()
+			for _, toolCall := range response.Message.ToolCalls {
+				result, err := executeAction(w, "", "", toolCall)
+				debugToolCall(toolCall, result, err)
+				if err != nil {
+					result = "Error: " + err.Error()
+				}
+				messages = append(messages, llm.Message{
+					Role:       llm.RoleTool,
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Function.Name,
+					Content:    result,
+				})
+			}
+
+			writeCharsheet(w)
+
+			fmt.Println()
+			response, err = streamChat(client, model, messages, actionTools())
+			if err != nil {
+				fmt.Println("\nLLM error:", err)
+				return
+			}
+			fmt.Println()
+			messages = append(messages, response.Message)
+		}
+
+		// Check if character is created
+		if len(w.Characters) > 0 {
+			return
+		}
+
+		// Get player input
+		fmt.Print("\n")
+		input, err := getPlayerInput(rl)
 		if err != nil || input == "quit" || input == "exit" {
 			return
 		}
@@ -397,7 +529,7 @@ func slugify(s string) string {
 }
 
 func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string) {
-	dmPrompt, err := loadPrompt("dm-prompt.md")
+	dmPrompt, err := loadDMPrompt(w)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -414,17 +546,9 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		{Role: llm.RoleUser, Content: "The adventure begins:\n\n" + adventureOpening},
 	}
 
-	var narration []string
-
 	for {
-		// Print narration from previous response
-		if len(narration) > 0 {
-			printNarration(narration)
-			narration = nil
-		}
-
 		// Get player input
-		line, err := readlineInput(rl, "You: ")
+		line, err := getPlayerInput(rl)
 		if err != nil {
 			fmt.Println("Error reading input; exiting.")
 			return
@@ -447,11 +571,6 @@ func runGamePhase(w *rules.World, rl *readline.Instance, adventureOpening string
 		}
 
 		messages = append(messages, response.Message)
-
-		// Print narration in box after stream completes
-		if response.Message.Content != "" {
-			fmt.Printf("\n\n--- DM Narration ---\n%s\n--------------------\n", response.Message.Content)
-		}
 
 		// Process tool calls if any
 		if len(response.Message.ToolCalls) > 0 {
@@ -502,32 +621,40 @@ func streamChat(client *llm.Client, model string, messages []llm.Message, tools 
 	var accumulatedMessage llm.Message
 	accumulatedMessage.Role = llm.RoleAssistant
 
+	buffer := ""
+	width := terminalWidth()
+
 	for msg := range messageChan {
 		accumulatedMessage.Content += msg.Content
 		if msg.Content != "" {
-			fmt.Print(msg.Content)
+			buffer += msg.Content
+
+			// Process complete lines, leaving partial content in buffer
+			lines := strings.Split(buffer, "\n")
+
+			// Print all complete lines (all but the last one)
+			for i := 0; i < len(lines)-1; i++ {
+				wrapped := wrapLine(lines[i], width)
+				fmt.Println(strings.Join(wrapped, "\n"))
+			}
+
+			// Keep the last incomplete line in buffer
+			buffer = lines[len(lines)-1]
 		}
 		if len(msg.ToolCalls) > 0 {
 			accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, msg.ToolCalls...)
 		}
 	}
 
+	// Print any remaining buffered content
+	if buffer != "" {
+		wrapped := wrapLine(buffer, width)
+		fmt.Println(strings.Join(wrapped, "\n"))
+	}
+
 	return llm.Response{Message: accumulatedMessage}, nil
 }
 
-func printNarration(log []string) {
-	const maxLines = 12
-	start := 0
-	if len(log) > maxLines {
-		start = len(log) - maxLines
-	}
-	fmt.Println("--- DM Narration ---")
-	for i := start; i < len(log); i++ {
-		wrapped := wrapText(log[i], terminalWidth()-4)
-		fmt.Println(wrapped)
-	}
-	fmt.Println("--------------------")
-}
 
 func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
 	hideCursor()
@@ -552,6 +679,11 @@ func showLoadingSpinner(duration time.Duration, done <-chan struct{}) {
 
 func readlineInput(rl *readline.Instance, prompt string) (string, error) {
 	rl.SetPrompt(prompt)
+	return rl.Readline()
+}
+
+func getPlayerInput(rl *readline.Instance) (string, error) {
+	rl.SetPrompt("> ")
 	return rl.Readline()
 }
 
@@ -646,7 +778,7 @@ func showChoiceMenu(options []string) (string, error) {
 			for j, line := range lines {
 				if i == selected {
 					if j == 0 {
-						fmt.Printf("  \033[1;44m▶ %s\033[0m\n", line)
+						fmt.Printf("  \033[94m> %s\033[0m\n", line)
 					} else {
 						fmt.Printf("    %s\n", line)
 					}

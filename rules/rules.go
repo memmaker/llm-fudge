@@ -113,9 +113,9 @@ func (w *World) unopposedRoll(ch *Character, traitType string, trait string, mod
 	var roll int
 	switch dice {
 	case Dice1D6:
-		roll = roll1d6f(w.rng)
+		roll = roll1d6f(w.Rng)
 	default:
-		roll = roll4df(w.rng)
+		roll = roll4df(w.Rng)
 	}
 	result := tv + roll + mod + ch.Wounds.Penalty()
 	return roll, result, tv + mod
@@ -139,9 +139,9 @@ func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, m
 	var roll int
 	switch dice {
 	case Dice1D6:
-		roll = roll1d6f(w.rng)
+		roll = roll1d6f(w.Rng)
 	default:
-		roll = roll4df(w.rng)
+		roll = roll4df(w.Rng)
 	}
 
 	// Detect natural criticals before adding modifiers

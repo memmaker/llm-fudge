@@ -67,7 +67,7 @@ type World struct {
 	Characters map[string]*Character
 	Ruleset    *Ruleset
 	Seed       int64
-	rng        *rand.Rand
+	Rng        *rand.Rand
 }
 
 // NewWorld creates a deterministic game world with a selected setting.
@@ -77,7 +77,7 @@ func NewWorld(seed int64, path string) (*World, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &World{Characters: make(map[string]*Character), Seed: seed, rng: rand.New(rand.NewSource(seed))}
+	w := &World{Characters: make(map[string]*Character), Seed: seed, Rng: rand.New(rand.NewSource(seed))}
 	w.Ruleset = setting
 	return w, nil
 }
