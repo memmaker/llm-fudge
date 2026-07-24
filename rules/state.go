@@ -137,9 +137,6 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	if w.Ruleset == nil {
 		return nil, fmt.Errorf("world has no selected setting")
 	}
-	if w.Ruleset.Frozen {
-		return nil, fmt.Errorf("setting is frozen")
-	}
 	if req.Name == "" {
 		return nil, fmt.Errorf("character name is required")
 	}
@@ -232,7 +229,6 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	if w.Player == "" {
 		w.Player = id
 	}
-	w.Ruleset.Frozen = true
 	return ch, nil
 }
 
