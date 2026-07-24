@@ -122,7 +122,12 @@ func debugToolCall(call llm.ToolCall, result string, err error) {
 	if err != nil {
 		fmt.Printf("  \033[91mError:\033[0m %s\n", err.Error())
 	} else if result != "" {
-		fmt.Printf("  \033[92mResult:\033[0m %s\n", result)
+		// For dice-rolling tools, also display roll breakdown
+		if call.Function.Name == "unopposed_check" || call.Function.Name == "opposed_check" {
+			fmt.Printf("  \033[92mDice:\033[0m %s\n", result)
+		} else {
+			fmt.Printf("  \033[92mResult:\033[0m %s\n", result)
+		}
 	}
 }
 
