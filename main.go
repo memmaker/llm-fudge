@@ -22,6 +22,7 @@ import (
 )
 
 var debug bool
+var imgGen bool
 
 const (
 	// maxAdventureAttempts caps the retries when the LLM won't save the adventure.
@@ -102,6 +103,7 @@ func (ut *UsageTracker) getPercentage() int {
 // LLM-guided game setup with adventure loading
 func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
+	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
 	flag.Parse()
 
 	ui.ClearScreen()
@@ -136,11 +138,15 @@ func main() {
 }
 
 func loadCharacterPrompt(promptFile string, w *rules.World) (string, error) {
-	return prompts.LoadPrompt(promptFile, w.Setting)
+	return prompts.LoadPrompt(w.Setting, promptFile)
 }
 
 func loadDMPrompt(w *rules.World) (string, error) {
-	return prompts.LoadPrompt("system-prompts/dm.md", w.Setting)
+	files := []string{"system-prompts/dm.md"}
+	if imgGen {
+		files = append(files, "system-prompts/img-style.md")
+	}
+	return prompts.LoadPrompt(w.Setting, files...)
 }
 
 // debugArgLimit caps the arguments shown for a tool call. Narration prose and
@@ -285,7 +291,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 	}
 
 	// Phase 1: Clarification (with loop for refinement)
-	clarifyPrompt, _ := prompts.LoadPrompt("system-prompts/setting-clarification.md", nil)
+	clarifyPrompt, _ := prompts.LoadPrompt(nil, "system-prompts/setting-clarification.md")
 	clarifyMessages := []llm.Message{
 		{Role: llm.RoleSystem, Content: clarifyPrompt},
 		{Role: llm.RoleUser, Content: fmt.Sprintf("I'd like to create a setting with this concept: %s", description)},
@@ -325,7 +331,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 	}
 
 	// Phase 2: Creation - LLM will call create_setting and write_setting_file tools
-	createPrompt, _ := prompts.LoadPrompt("system-prompts/setting-creation.md", nil)
+	createPrompt, _ := prompts.LoadPrompt(nil, "system-prompts/setting-creation.md")
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
 		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s\n\nThe agreed-upon design:\n%s", description, agreedConcept)},
@@ -403,7 +409,7 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 		return errors.New("no scenario specified")
 	}
 
-	prompt, _ := prompts.LoadPrompt("system-prompts/adventure-creation.md", nil)
+	prompt, _ := prompts.LoadPrompt(nil, "system-prompts/adventure-creation.md")
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		return err
@@ -735,10 +741,12 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 }
 
 // narrationOutput is the payload of an output_narration call: the prose goes to
-// the player, the condensed state stays in our context in its place.
+// the player, the condensed state stays in our context in its place, and the
+// image prompt—present only under --img-gen—goes to img-gen.md.
 type narrationOutput struct {
 	Prose          string `json:"prose"`
 	CondensedState string `json:"condensed_state"`
+	ImgGen         string `json:"img_gen"`
 }
 
 // openingBriefing gives the DM the adventure it must open with, plus the player
@@ -779,21 +787,34 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 	// exchange collapses onto all of them at once. Collapsing onto the last one
 	// alone would throw away everything the earlier narration recorded.
 	var condensedStates []string
+	var proses []string
 	var narrated bool
 
+	// collapseTurn always rewrites the turn down to a single assistant message.
+	// Everything else it replaces is noise to the next request: tool-call JSON,
+	// image prompts, tool results, and the retry scaffolding below, which cost
+	// far more tokens than the record they leave behind.
 	collapseTurn := func() {
-		if len(condensedStates) == 0 {
-			// Nothing was condensed, so the exchange itself is the only record
-			// of what happened; leave it in place.
+		record := strings.Join(condensedStates, "\n")
+		if record == "" {
+			// The DM omitted condensed_state, so there is no delta to keep and
+			// the prose is the only record of what happened. Keep that rather
+			// than a marker: the omission is as often an oversight as a turn
+			// where genuinely nothing changed, and prose we drop is gone.
+			record = strings.Join(proses, "\n\n")
+		}
+		if record == "" {
+			// Nothing narrated at all (a turn that ran out of rounds). Drop the
+			// exchange; the player was told, and there is nothing to remember.
+			*messages = (*messages)[:turnStart]
 			return
 		}
-		state := strings.Join(condensedStates, "\n")
 		if debug {
-			fmt.Printf("\033[90m[%s]\033[0m\n\n", state)
+			fmt.Printf("\033[90m[%s]\033[0m\n\n", record)
 		}
 		*messages = append((*messages)[:turnStart], llm.Message{
 			Role:    llm.RoleAssistant,
-			Content: state,
+			Content: record,
 		})
 	}
 
@@ -846,8 +867,16 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			fmt.Println(ui.WrapText(narration.Prose, ui.TerminalWidth()))
 			fmt.Println()
 			narrated = true
+			proses = append(proses, narration.Prose)
 			if narration.CondensedState != "" {
 				condensedStates = append(condensedStates, narration.CondensedState)
+			}
+			// A missing prompt is not worth interrupting play over: the player
+			// has already read the scene, and the next turn writes a new one.
+			if narration.ImgGen != "" {
+				if err := writeImagePrompt(narration.ImgGen); err != nil {
+					fmt.Println("\nImage prompt error:", err)
+				}
 			}
 		}
 
@@ -885,10 +914,13 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			}
 			// Prose written as a plain reply reaches nobody. Say so rather than
 			// resending an identical context and hoping for a different answer.
+			// The reply being replaced is dropped from context when the turn
+			// collapses, so the resent call has to carry the whole turn: any
+			// state the stray text recorded is lost unless it comes back too.
 			if response.Message.Content != "" {
 				*messages = append(*messages, llm.Message{
 					Role:    llm.RoleUser,
-					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration. Send this turn's narration again through output_narration.",
+					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration. Send this turn's narration again through output_narration. Nothing you just wrote outside the call is kept, so repeat all of it in the call—the narration as `prose`, and anything it established as `condensed_state`, even if you already wrote that state as plain text.",
 				})
 				continue
 			}
@@ -906,14 +938,14 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 		return
 	}
 
-	// Out of rounds. The player has already read narration, so end the turn on
-	// that rather than scolding them for a turn that did happen.
-	if narrated {
-		collapseTurn()
-		return
+	// Out of rounds. Collapse either way: if the DM narrated, the turn did
+	// happen and ends on that rather than on a scolding; if it never did, the
+	// rounds spent getting nowhere are not worth carrying, and dropping them
+	// leaves the player's input as the last thing said.
+	collapseTurn()
+	if !narrated {
+		fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
 	}
-
-	fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
 }
 
 func parseNarration(call llm.ToolCall) (narrationOutput, error) {
