@@ -1,0 +1,19 @@
+slug: grit
+display_name: Grit
+description: Toughness, endurance, and resistance to pain and fear.
+
+slug: agility
+display_name: Agility
+description: Speed, reflexes, and precision in movement and shooting.
+
+slug: smarts
+display_name: Smarts
+description: Knowledge, perception, and problem-solving ability.
+
+slug: spirit
+display_name: Spirit
+description: Connection to faith, magic, and supernatural forces.
+
+slug: charm
+display_name: Charm
+description: Presence, persuasion, and force of personality.

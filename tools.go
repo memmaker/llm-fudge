@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"fudge/rules"
@@ -17,8 +16,14 @@ import (
 func settingCreationTools() []llm.Tool {
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{Name: "create_setting", Description: "Initialize a new setting with a chosen name. Call this FIRST before writing any setting files. The name becomes the folder name and setting identifier (converted to lowercase, spaces to hyphens). Example: 'Haunted Deadlands' becomes 'haunted-deadlands'.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string", "description": "The setting name (will be slugified for folder)"}}, "required": []string{"name"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one setting file in .rec format. Valid filenames: species.rec, attributes.rec, skills.rec, gifts.rec, faults.rec. Format: each entry separated by blank line. REQUIRED FIELDS per entry: slug (lowercase+digits+hyphens only, NO underscores), display_name (human-readable name), description (1 sentence). OPTIONAL: scale (0-3, species only). Slug format: use hyphens not underscores, e.g. \"dust-witch\" not \"dust_witch\". Example entry:\nslug: dust-witch\ndisplay_name: Dust Witch\ndescription: Occult wanderers channeling desert spirits.\nscale: 2", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one setting file. CRITICAL SEQUENCE: After create_setting, call this tool once for EACH of these files in this order: (1) description.md, (2) species.rec, (3) attributes.rec, (4) skills.rec, (5) gifts.rec, (6) faults.rec, (7) powers.rec.\n\nFor .rec files: Format each entry separated by blank line. REQUIRED FIELDS per entry: slug (lowercase+digits+hyphens only, NO underscores), display_name (human-readable name), description (1 sentence). OPTIONAL: scale (0-3, species only). Slug format: use hyphens not underscores, e.g. \"dust-witch\" not \"dust_witch\". Example entry:\nslug: dust-witch\ndisplay_name: Dust Witch\ndescription: Occult wanderers channeling desert spirits.\nscale: 2\n\nFor description.md: Plain markdown text describing the setting's atmosphere, themes, and core concept (1-2 sentences).", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. REQUIREMENTS: Write a clear prompt/question before calling this tool. The menu appears after your text. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
+	}
+}
+
+func adventureCreationTools() []llm.Tool {
+	return []llm.Tool{
+		{Type: "function", Function: llm.ToolFunction{Name: "write_adventure", Description: "Persist the improvised adventure to disk so it can be replayed later, and hand it to the DM as the briefing for this session. REQUIRED: call this exactly once, as your only output—do not write the adventure as plain text. It is saved under the current setting's adventures folder, named after the title.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string", "description": "Short evocative adventure title (3-6 words), used as the filename"}, "content": map[string]any{"type": "string", "description": "The full adventure text: hook, situation, immediate stakes"}}, "required": []string{"title", "content"}}}},
 	}
 }
 
@@ -31,7 +36,7 @@ func characterCreationTools() []llm.Tool {
 
 func gameplayTools() []llm.Tool {
 	return []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{Name: "output_narration", Description: "Output narration and world state. REQUIRED: Call this as your final action every turn. Do not output any text directly—use only this tool. Arguments: prose (human-readable narration for the player), condensed_state (ultra-dense LLM-readable state: no articles/fluff, compact notation, world facts, character positions, meaningful events only).", Parameters: map[string]any{"type": "object", "properties": map[string]any{"prose": map[string]any{"type": "string", "description": "Human-readable narration for the player"}, "condensed_state": map[string]any{"type": "string", "description": "Ultra-condensed state for LLM context: no articles/fluff, dense notation, world facts only"}}, "required": []string{"prose", "condensed_state"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "write_state", Description: "Save the condensed world state. REQUIRED: Call this as your final action every turn, after writing the turn's narration as normal text. Argument: condensed_state (ultra-dense LLM-readable state: no articles/fluff, compact notation, world facts, character positions, meaningful events only).", Parameters: map[string]any{"type": "object", "properties": map[string]any{"condensed_state": map[string]any{"type": "string", "description": "Ultra-condensed state for LLM context: no articles/fluff, dense notation, world facts only"}}, "required": []string{"condensed_state"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an action that doesn't involve direct opposition. Use when: (1) a character attempts something that requires skill with an uncertain outcome but no opponent actively resisting (climbing a wall, solving a puzzle, crafting); (2) difficulty is set (difficulty 1-5 typical). Do NOT use this when another character is actively opposing the action—use opposed_check instead. Narrate the result using only the tool output; do not add your own dice rolls or modify the outcome.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"character_id", "trait_type", "trait_slug", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve a direct conflict between two characters (attack, grapple, dodge, deception, resist, etc.). Use when two characters have conflicting intentions. CRITICAL SEQUENCE: (1) If an NPC doesn't exist yet, call create_character FIRST in the same response; (2) THEN immediately call opposed_check with both actor_id and opponent_id (use the character's actual ID). actor_id is whoever initiated the action; opponent_id is whoever reacts. Do NOT narrate the defense separately—the check outcome tells the story. Narrate using only the tool result.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new NPC. CRITICAL: call this BEFORE any check involving that NPC—the character must exist before you can make a check against them. If a player targets an NPC for the first time, create them immediately, THEN call the appropriate check (opposed_check or unopposed_check) in the same response. The character ID is automatically generated from the name. Only use traits (attributes, skills, gifts, faults) that exist in the setting—call query_setting if unsure. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
@@ -40,29 +45,6 @@ func gameplayTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "declare_dead", Description: "Permanently declare a character dead. Dead characters cannot act or be healed.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}}, "required": []string{"character_id"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. For normal gameplay where the player types an action, just narrate the outcome. Do NOT use this as a generic \"What do you do?\" prompt. REQUIREMENTS: Write a clear prompt/question before calling this tool. The menu appears after your text. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
 	}
-}
-
-func listSettings() (string, error) {
-	entries, err := os.ReadDir("settings")
-	if err != nil {
-		return "", fmt.Errorf("failed to read settings directory: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Available settings:\n\n")
-
-	count := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			sb.WriteString(fmt.Sprintf("  - %s\n", entry.Name()))
-			count++
-		}
-	}
-
-	if count == 0 {
-		return "No settings found.", nil
-	}
-	return sb.String(), nil
 }
 
 func loadSetting(w *rules.World, name string) error {
@@ -82,38 +64,6 @@ func loadSetting(w *rules.World, name string) error {
 	return nil
 }
 
-func listAdventures(w *rules.World) (string, error) {
-	if w.Setting == nil {
-		return "", fmt.Errorf("no setting loaded")
-	}
-
-	adventuresPath := filepath.Join(w.Setting.Path, "adventures")
-	entries, err := os.ReadDir(adventuresPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "No adventures available.", nil
-		}
-		return "", fmt.Errorf("failed to read adventures directory: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Available adventures:\n\n")
-
-	count := 0
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			name := strings.TrimSuffix(entry.Name(), ".md")
-			sb.WriteString(fmt.Sprintf("  - %s\n", name))
-			count++
-		}
-	}
-
-	if count == 0 {
-		return "No adventures found.", nil
-	}
-	return sb.String(), nil
-}
-
 func loadAdventureTool(w *rules.World, name string) (string, error) {
 	if w.Setting == nil {
 		return "", fmt.Errorf("no setting loaded")
@@ -126,93 +76,6 @@ func loadAdventureTool(w *rules.World, name string) (string, error) {
 	}
 
 	return string(content), nil
-}
-
-func querySetting(w *rules.World) (string, error) {
-	if w.Setting == nil {
-		return "", fmt.Errorf("world has no selected setting")
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Available traits in setting:\n\n")
-
-	sb.WriteString("ATTRIBUTES:\n")
-	for _, attr := range sortedAttributeKeys(w.Setting.Attributes) {
-		desc := w.Setting.Attributes[attr].Description
-		sb.WriteString(fmt.Sprintf("  - %s: %s\n", attr, desc))
-	}
-
-	sb.WriteString("\nSKILLS:\n")
-	for _, skill := range sortedSkillKeys(w.Setting.Skills) {
-		desc := w.Setting.Skills[skill].Description
-		sb.WriteString(fmt.Sprintf("  - %s: %s\n", skill, desc))
-	}
-
-	sb.WriteString("\nSPECIES:\n")
-	for _, spec := range sortedSpeciesKeys(w.Setting.Species) {
-		desc := w.Setting.Species[spec].Description
-		scale := w.Setting.Species[spec].Scale
-		sb.WriteString(fmt.Sprintf("  - %s (scale %d): %s\n", spec, scale, desc))
-	}
-
-	sb.WriteString("\nGIFTS:\n")
-	for _, gift := range sortedGiftKeys(w.Setting.Gifts) {
-		desc := w.Setting.Gifts[gift].Description
-		sb.WriteString(fmt.Sprintf("  - %s: %s\n", gift, desc))
-	}
-
-	sb.WriteString("\nFAULTS:\n")
-	for _, fault := range sortedFaultKeys(w.Setting.Faults) {
-		desc := w.Setting.Faults[fault].Description
-		sb.WriteString(fmt.Sprintf("  - %s: %s\n", fault, desc))
-	}
-
-	return sb.String(), nil
-}
-
-func sortedAttributeKeys(m map[string]*rules.Attribute) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedSkillKeys(m map[string]*rules.Skill) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedSpeciesKeys(m map[string]*rules.Species) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedGiftKeys(m map[string]*rules.Gift) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedFaultKeys(m map[string]*rules.Fault) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func writeCharsheet(w *rules.World) error {
@@ -371,6 +234,26 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("wrote %s (%s)", args.Filename, args.Mode), nil
+	case "write_adventure":
+		var args struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse write_adventure: %w", err)
+		}
+		if w.Setting == nil {
+			return "", fmt.Errorf("world has no setting selected")
+		}
+		if args.Title == "" || args.Content == "" {
+			return "", fmt.Errorf("write_adventure requires title and content")
+		}
+		path, err := w.Setting.WriteAdventure(args.Title, []byte(args.Content))
+		if err != nil {
+			return "", err
+		}
+		w.AdventureContent = args.Content
+		return fmt.Sprintf("saved adventure %q to %s", args.Title, path), nil
 	case "create_character":
 		var req struct {
 			Name        string         `json:"name"`

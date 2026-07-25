@@ -63,21 +63,24 @@ type Power struct {
 }
 
 const (
-	attributesFile = "attributes.rec"
-	skillsFile     = "skills.rec"
-	speciesFile    = "species.rec"
-	giftsFile      = "gifts.rec"
-	faultsFile     = "faults.rec"
-	powersFile     = "powers.rec"
+	attributesFile  = "attributes.rec"
+	skillsFile      = "skills.rec"
+	speciesFile     = "species.rec"
+	giftsFile       = "gifts.rec"
+	faultsFile      = "faults.rec"
+	powersFile      = "powers.rec"
+	descriptionFile = "description.md"
+	adventuresDir   = "adventures"
 )
 
 var validFiles = map[string]bool{
-	attributesFile: true,
-	skillsFile:     true,
-	speciesFile:    true,
-	giftsFile:      true,
-	faultsFile:     true,
-	powersFile:     true,
+	attributesFile:  true,
+	skillsFile:      true,
+	speciesFile:     true,
+	giftsFile:       true,
+	faultsFile:      true,
+	powersFile:      true,
+	descriptionFile: true,
 }
 
 func LoadSetting(path string) (*SettingInfos, error) {
@@ -298,8 +301,11 @@ func (r *SettingInfos) WriteFile(filename string, mode string, content []byte) e
 		data = content
 	}
 
-	if err := validateRecSyntax(data); err != nil {
-		return err
+	// description.md is prose, not a rec file
+	if filename != descriptionFile {
+		if err := validateRecSyntax(data); err != nil {
+			return err
+		}
 	}
 
 	if err := os.WriteFile(filePath, data, 0o600); err != nil {
@@ -307,6 +313,45 @@ func (r *SettingInfos) WriteFile(filename string, mode string, content []byte) e
 	}
 
 	return r.reloadFile(filename, filePath)
+}
+
+// WriteAdventure persists an improvised adventure in the setting's adventures
+// directory so it can be replayed later. The title is slugified into the
+// filename; an existing adventure of the same name is never overwritten, a
+// numbered variant is written instead. Returns the path written to.
+func (r *SettingInfos) WriteAdventure(title string, content []byte) (string, error) {
+	name := slug(title)
+	if !slugPattern.MatchString(name) {
+		return "", fmt.Errorf("adventure title must contain letters or digits: %q", title)
+	}
+	if len(content) == 0 {
+		return "", fmt.Errorf("adventure content is empty")
+	}
+
+	dirPath := filepath.Join(r.Path, adventuresDir)
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		return "", err
+	}
+
+	filePath := filepath.Join(dirPath, name+".md")
+	for variant := 2; ; variant++ {
+		_, err := os.Stat(filePath)
+		if os.IsNotExist(err) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		filePath = filepath.Join(dirPath, fmt.Sprintf("%s-%d.md", name, variant))
+	}
+
+	if !strings.HasSuffix(string(content), "\n") {
+		content = append(content, '\n')
+	}
+	if err := os.WriteFile(filePath, content, 0o600); err != nil {
+		return "", err
+	}
+	return filePath, nil
 }
 
 func (r *SettingInfos) reloadFile(filename string, filePath string) error {
@@ -334,6 +379,14 @@ func (r *SettingInfos) reloadFile(filename string, filePath string) error {
 		powersFile: func(path string) error {
 			r.Powers = make(map[string]*Power)
 			return loadPowers(r, path)
+		},
+		descriptionFile: func(path string) error {
+			desc, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			r.Description = string(desc)
+			return nil
 		},
 	}
 

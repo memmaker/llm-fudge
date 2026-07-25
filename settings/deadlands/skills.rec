@@ -1,0 +1,19 @@
+slug: shootin
+display_name: Shootin’
+description: Skill with firearms and ranged combat.
+
+slug: fightin
+display_name: Fightin’
+description: Melee combat, brawling, and close-quarters fighting.
+
+slug: ridin
+display_name: Ridin’
+description: Handling horses and frontier vehicles under pressure.
+
+slug: occult
+display_name: Occult
+description: Knowledge and use of magic, rituals, and the supernatural.
+
+slug: talkin
+display_name: Talkin’
+description: Negotiation, deception, and social maneuvering.

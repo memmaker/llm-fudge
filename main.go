@@ -23,6 +23,13 @@ import (
 
 var debug bool
 
+const (
+	// maxAdventureAttempts caps the retries when the LLM won't save the adventure.
+	maxAdventureAttempts = 3
+	// maxTurnIterations caps the tool-call rounds spent on a single game turn.
+	maxTurnIterations = 6
+)
+
 // Model context window sizes in tokens
 var contextWindowSizes = map[string]int{
 	"claude-opus-4-1":            200000,
@@ -100,6 +107,7 @@ func main() {
 	// Setup phase: LLM guides through setting, character, and adventure selection
 	err = runSetupPhase(w, rl)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
@@ -198,50 +206,87 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 		return err
 	}
 
-	// Phase 1: Clarification
+	// Phase 1: Clarification (with loop for refinement)
 	clarifyPrompt, _ := prompts.LoadPrompt("system-prompts/setting-clarification.md", nil)
-	messages := []llm.Message{
+	clarifyMessages := []llm.Message{
 		{Role: llm.RoleSystem, Content: clarifyPrompt},
 		{Role: llm.RoleUser, Content: fmt.Sprintf("I'd like to create a setting with this concept: %s", description)},
 	}
 
-	fmt.Println()
-	_, err = streamChat(client, model, messages, nil)
-	if err != nil {
-		return err
-	}
+	// The agreed-upon proposal, carried into the creation phase
+	var agreedConcept string
 
-	fmt.Println()
+	for {
+		fmt.Println()
+		response, err := streamChat(client, model, clarifyMessages, nil)
+		if err != nil {
+			return err
+		}
 
-	// Get user confirmation
-	confirmed, err := ui.GetInput(rl, "Does this sound right? (yes/no): ")
-	if err != nil || (confirmed != "yes" && confirmed != "y") {
-		return err
+		fmt.Println()
+
+		// Get user confirmation - their response may include feedback
+		userResponse, err := ui.GetInput(rl, "Does this sound right? (yes/no): ")
+		if err != nil {
+			return err
+		}
+
+		if userResponse == "yes" || userResponse == "y" {
+			agreedConcept = response.Message.Content
+			break
+		}
+
+		// User said no (possibly with feedback) - keep the real proposal in
+		// history and send their feedback back for refinement
+		clarifyMessages = append(clarifyMessages, response.Message)
+		clarifyMessages = append(clarifyMessages, llm.Message{
+			Role:    llm.RoleUser,
+			Content: userResponse,
+		})
+		fmt.Println()
 	}
 
 	// Phase 2: Creation - LLM will call create_setting and write_setting_file tools
 	createPrompt, _ := prompts.LoadPrompt("system-prompts/setting-creation.md", nil)
-	messages = []llm.Message{
+	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s", description)},
-	}
-
-	fmt.Println()
-	response, err := streamChat(client, model, messages, settingCreationTools())
-	if err != nil {
-		return err
+		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s\n\nThe agreed-upon design:\n%s", description, agreedConcept)},
 	}
 
 	fmt.Println()
 
-	// Process tool calls to save the setting
-	for _, toolCall := range response.Message.ToolCalls {
-		result, err := executeAction(w, toolCall)
-		debugToolCall(toolCall, result, err)
+	// Agentic loop: continue until LLM stops making tool calls
+	for {
+		response, err := streamChat(client, model, messages, settingCreationTools())
 		if err != nil {
 			return err
 		}
-		fmt.Println(result)
+
+		fmt.Println()
+
+		if len(response.Message.ToolCalls) == 0 {
+			break
+		}
+
+		messages = append(messages, response.Message)
+
+		// Process each tool call and collect results
+		for _, toolCall := range response.Message.ToolCalls {
+			result, err := executeAction(w, toolCall)
+			debugToolCall(toolCall, result, err)
+			if err != nil {
+				// Feed the error back so the LLM can correct and retry
+				result = "Error: " + err.Error()
+			}
+			fmt.Println(result)
+
+			messages = append(messages, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: toolCall.ID,
+				Name:       toolCall.Function.Name,
+				Content:    result,
+			})
+		}
 	}
 
 	// Return a placeholder name (user should have created it via tool)
@@ -291,14 +336,48 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", w.Setting.Description, scenario)},
 	}
 
-	response, err := streamChat(client, model, messages, nil)
-	if err != nil {
-		return err
+	fmt.Println()
+	fmt.Println("Improvising an adventure...")
+
+	// The adventure arrives through write_adventure, which persists it and sets
+	// w.AdventureContent. Loop so a rejected write can be corrected.
+	for attempt := 0; attempt < maxAdventureAttempts && w.AdventureContent == ""; attempt++ {
+		response, err := streamChatSilent(client, model, messages, adventureCreationTools())
+		if err != nil {
+			return err
+		}
+
+		if len(response.Message.ToolCalls) == 0 {
+			if response.Message.Content != "" {
+				messages = append(messages, response.Message)
+			}
+			messages = append(messages, llm.Message{
+				Role:    llm.RoleUser,
+				Content: "You did not save the adventure. Call write_adventure with the title and full content now.",
+			})
+			continue
+		}
+
+		messages = append(messages, response.Message)
+
+		for _, toolCall := range response.Message.ToolCalls {
+			result, err := executeAction(w, toolCall)
+			debugToolCall(toolCall, result, err)
+			if err != nil {
+				result = "Error: " + err.Error()
+			}
+			messages = append(messages, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: toolCall.ID,
+				Name:       toolCall.Function.Name,
+				Content:    result,
+			})
+		}
 	}
-	if response.Message.Content == "" {
-		return errors.New("no adventure found")
+
+	if w.AdventureContent == "" {
+		return errors.New("no adventure was created")
 	}
-	w.AdventureContent = response.Message.Content
 	return nil
 }
 
@@ -540,8 +619,13 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
-		{Role: llm.RoleAssistant, Content: w.AdventureContent},
+		{Role: llm.RoleUser, Content: openingBriefing(w)},
 	}
+
+	// Setup is done and the character exists—open the scene right away instead
+	// of making the player prod us for it.
+	fmt.Println()
+	processGameTurn(w, client, model, &messages)
 
 	for {
 		// Get player input
@@ -567,33 +651,96 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 	}
 }
 
-func processGameTurn(w *rules.World, client *llm.Client, model string, messages *[]llm.Message) {
-	response, err := streamChat(client, model, *messages, gameplayTools())
-	if err != nil {
-		fmt.Println("\nLLM error:", err)
-		return
+type stateUpdate struct {
+	CondensedState string `json:"condensed_state"`
+}
+
+// openingBriefing gives the DM the adventure it must open with, plus the player
+// character it was created without knowing about.
+func openingBriefing(w *rules.World) string {
+	var b strings.Builder
+	b.WriteString("ADVENTURE BRIEFING (the player has not read this):\n\n")
+	b.WriteString(w.AdventureContent)
+	b.WriteString("\n\n")
+
+	if pc, err := w.Character(w.Player); err == nil {
+		b.WriteString(fmt.Sprintf("PLAYER CHARACTER: %s|id:%s|species:%s", pc.Name, pc.ID, pc.Species))
+		if pc.Description != "" {
+			b.WriteString("|" + pc.Description)
+		}
+		b.WriteString("\n\n")
 	}
 
-	*messages = append(*messages, response.Message)
+	b.WriteString("Open the adventure: narrate the first scene as plain text, then call write_state. Put the player character in it and stop where they can act. Do not summarize the briefing—play it.")
+	return b.String()
+}
 
-	// Process tool calls (queries, checks, character creation)
-	if len(response.Message.ToolCalls) > 0 {
-		for _, toolCall := range response.Message.ToolCalls {
-			// Skip output_narration—it's handled in the dedicated narration section below
-			if toolCall.Function.Name == "output_narration" {
-				// Still need to add a response message to avoid API validation errors
+// processGameTurn drives the DM until it hands back narration for the player.
+// Tool calls are executed and fed back, so one turn can take several requests.
+func processGameTurn(w *rules.World, client *llm.Client, model string, messages *[]llm.Message) {
+	for attempt := 0; attempt < maxTurnIterations; attempt++ {
+		response, err := streamChat(client, model, *messages, gameplayTools())
+		if err != nil {
+			fmt.Println("\nLLM error:", err)
+			return
+		}
+
+		// write_state on its own ends the turn: the prose has already streamed
+		// to the player, and only the condensed state is kept in history.
+		if call, ok := onlyWriteState(response.Message.ToolCalls); ok {
+			state, err := parseStateUpdate(call)
+			switch {
+			case err != nil:
+				fmt.Printf("\nError parsing write_state: %v\n", err)
+			case response.Message.Content == "":
+				// The DM saved state without narrating first—nothing streamed
+				// to the player this turn, so make it try again.
+				*messages = append(*messages, response.Message)
 				*messages = append(*messages, llm.Message{
 					Role:       llm.RoleTool,
-					ToolCallID: toolCall.ID,
-					Name:       toolCall.Function.Name,
-					Content:    "Acknowledged",
+					ToolCallID: call.ID,
+					Name:       call.Function.Name,
+					Content:    "Error: you called write_state without narrating first. Write the turn's narration as plain text, then call write_state again.",
 				})
 				continue
+			default:
+				if debug {
+					fmt.Printf("\n\033[90m[%s]\033[0m\n", state.CondensedState)
+				}
+				*messages = append(*messages, llm.Message{
+					Role:    llm.RoleAssistant,
+					Content: state.CondensedState,
+				})
+				return
 			}
-			result, err := executeAction(w, toolCall)
-			debugToolCall(toolCall, result, err)
-			if err != nil {
-				result = "Error: " + err.Error()
+		}
+
+		if len(response.Message.ToolCalls) == 0 {
+			// The DM narrated but still owes us the write_state call that
+			// closes out the turn.
+			if response.Message.Content != "" {
+				*messages = append(*messages, response.Message)
+			}
+			*messages = append(*messages, llm.Message{
+				Role:    llm.RoleUser,
+				Content: "Call write_state to save this turn's state.",
+			})
+			continue
+		}
+
+		*messages = append(*messages, response.Message)
+
+		for _, toolCall := range response.Message.ToolCalls {
+			var result string
+			if toolCall.Function.Name == "write_state" {
+				result = writeStateRetry(toolCall)
+			} else {
+				var err error
+				result, err = executeAction(w, toolCall)
+				debugToolCall(toolCall, result, err)
+				if err != nil {
+					result = "Error: " + err.Error()
+				}
 			}
 			*messages = append(*messages, llm.Message{
 				Role:       llm.RoleTool,
@@ -604,69 +751,42 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 		}
 
 		// Update charsheet after all mutations
-		err := writeCharsheet(w)
-		if err != nil {
+		if err := writeCharsheet(w); err != nil {
 			fmt.Println("\nOutput error:", err)
 		}
 	}
 
-	// Get narration with output_narration tool required (suppress printing—we handle output manually)
-	fmt.Println()
-	finalResponse, err := streamChatSilent(client, model, *messages, []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{
-			Name:        "output_narration",
-			Description: "Output narration and world state. REQUIRED: Call this as your final action every turn. Do not output any text directly—use only this tool. Arguments: prose (human-readable narration for the player), condensed_state (ultra-dense LLM-readable state: no articles/fluff, compact notation, world facts, character positions, meaningful events only).",
-			Parameters: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"prose":           map[string]any{"type": "string", "description": "Human-readable narration for the player"},
-					"condensed_state": map[string]any{"type": "string", "description": "Ultra-condensed state for LLM context: no articles/fluff, dense notation, world facts only"},
-				},
-				"required": []string{"prose", "condensed_state"},
-			},
-		}},
-	})
-	if err != nil {
-		fmt.Println("\nLLM error:", err)
-		return
+	fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
+}
+
+// onlyWriteState returns the write_state call if it is the entire response.
+// Mixed responses go through the tool loop first—state written before this
+// turn's other tool results are known cannot be trusted.
+func onlyWriteState(calls []llm.ToolCall) (llm.ToolCall, bool) {
+	if len(calls) == 1 && calls[0].Function.Name == "write_state" {
+		return calls[0], true
 	}
+	return llm.ToolCall{}, false
+}
 
-	// Extract output_narration tool call (should be the only tool in this response)
-	narrationFound := false
-	for _, toolCall := range finalResponse.Message.ToolCalls {
-		if toolCall.Function.Name == "output_narration" {
-			narrationFound = true
-			var args struct {
-				Prose          string `json:"prose"`
-				CondensedState string `json:"condensed_state"`
-			}
-			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-				fmt.Printf("\nError parsing output_narration: %v\n", err)
-				return
-			}
-
-			// Display prose to player
-			wrapped := ui.WrapText(args.Prose, ui.TerminalWidth()-4)
-			fmt.Println(wrapped)
-
-			// Debug: show condensed state in grey if debug mode enabled
-			if debug {
-				fmt.Printf("\n\033[90m[%s]\033[0m\n", args.CondensedState)
-			}
-
-			// Append only condensed_state to message history (not the tool call itself)
-			*messages = append(*messages, llm.Message{
-				Role:    llm.RoleAssistant,
-				Content: args.CondensedState,
-			})
-			break
-		}
+func parseStateUpdate(call llm.ToolCall) (stateUpdate, error) {
+	var args stateUpdate
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+		return stateUpdate{}, err
 	}
-
-	if !narrationFound {
-		fmt.Println("\nError: DM did not call output_narration. Retrying...")
-		return
+	if args.CondensedState == "" {
+		return stateUpdate{}, errors.New("condensed_state is empty")
 	}
+	return args, nil
+}
+
+// writeStateRetry explains why a write_state call was not accepted, so the DM
+// can produce a usable one on the next request.
+func writeStateRetry(call llm.ToolCall) string {
+	if _, err := parseStateUpdate(call); err != nil {
+		return fmt.Sprintf("Error: could not read your state update (%v). Call write_state again with condensed_state.", err)
+	}
+	return "Deferred: you called write_state before this turn's other tool results were known. Read them and call write_state again, as your only tool call."
 }
 
 const llmRequestTimeout = time.Minute
@@ -691,7 +811,13 @@ func streamChatInternal(client *llm.Client, model string, messages []llm.Message
 	done := make(chan struct{})
 	go ui.ShowLoadingSpinner(llmRequestTimeout, done)
 
-	messageChan, err := client.Stream(ctx, llm.Request{Model: model, Messages: messages, Tools: tools})
+	messageChan, err := client.Stream(ctx, llm.Request{
+		Model:           model,
+		Messages:        messages,
+		Tools:           tools,
+		Temperature:     0.85,
+		ReasoningEffort: llm.ReasoningEffortNone,
+	})
 	close(done)
 	if err != nil {
 		return llm.Response{}, err

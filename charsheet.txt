@@ -1,13 +1,13 @@
-[1m[36m─── CHARACTER SHEET: Max [36m───[0m
+[1m[36m─── CHARACTER SHEET: Garg the Goblin [36m───[0m
 [36m◆ Location:[0m default
 
 [1m▸ Attributes[0m
     [32mAgility[0m Great(+2)[0m
-    [32mPerception[0m Superb(+3)[0m
-    [32mStrength[0m Good(+1)[0m
+    [32mPerception[0m Good(+1)[0m
+    [31mStrength[0m Mediocre(-1)[0m
 
 [1m▸ Skills[0m
-    [32mAthletics[0m Great(+2)[0m
+    [32mAthletics[0m Fair(+0)[0m
     [32mFight[0m Good(+1)[0m
     [32mStealth[0m Great(+2)[0m
 

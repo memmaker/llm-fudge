@@ -1,0 +1,24 @@
+slug: human
+display_name: Human
+description: Adaptable survivors driven by ambition, fear, and grit.
+scale: 0
+
+slug: harrowed
+display_name: Harrowed
+description: Undead gunslingers animated by a possessing spirit and sheer will.
+scale: 0
+
+slug: blessed
+display_name: Blessed
+description: Faith-driven individuals channeling divine power against darkness.
+scale: 0
+
+slug: mad-scientist
+display_name: Mad Scientist
+description: Inventors wielding unstable and dangerous weird science.
+scale: 0
+
+slug: native-shaman
+display_name: Native Shaman
+description: Spirit-guided mediators drawing power from ancestors and nature.
+scale: 0

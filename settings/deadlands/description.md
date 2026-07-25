@@ -1,0 +1,1 @@
+A brutal Weird West where dust-choked frontier towns sit on the edge of supernatural terror, and every gunfight might awaken something far worse. Outlaws, mystics, and survivors navigate a world of dark magic, undead horrors, and dangerous ambition in a land where morality is as shifting as the sands.
