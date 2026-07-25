@@ -90,11 +90,11 @@ func TestNewWorldLoadsRuleset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWorld returned error: %v", err)
 	}
-	if world.Ruleset == nil {
+	if world.Setting == nil {
 		t.Fatal("world setting is nil")
 	}
-	if world.Ruleset.Slug != filepath.Base(path) {
-		t.Fatalf("world setting slug = %q", world.Ruleset.Slug)
+	if world.Setting.Slug != filepath.Base(path) {
+		t.Fatalf("world setting slug = %q", world.Setting.Slug)
 	}
 }
 

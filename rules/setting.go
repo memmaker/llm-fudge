@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"fudge/recfile"
@@ -31,16 +32,16 @@ type Species struct {
 	Scale       int
 }
 
-type Ruleset struct {
-	Slug       string
-	Frozen     bool
-	Path       string
-	Attributes map[string]*Attribute
-	Skills     map[string]*Skill
-	Species    map[string]*Species
-	Gifts      map[string]*Gift
-	Faults     map[string]*Fault
-	Powers     map[string]*Power
+type SettingInfos struct {
+	Slug        string
+	Path        string
+	Description string
+	Attributes  map[string]*Attribute
+	Skills      map[string]*Skill
+	Species     map[string]*Species
+	Gifts       map[string]*Gift
+	Faults      map[string]*Fault
+	Powers      map[string]*Power
 }
 
 type Gift struct {
@@ -79,8 +80,8 @@ var validFiles = map[string]bool{
 	powersFile:     true,
 }
 
-func LoadSetting(path string) (*Ruleset, error) {
-	r := &Ruleset{
+func LoadSetting(path string) (*SettingInfos, error) {
+	r := &SettingInfos{
 		Slug:       filepath.Base(path),
 		Path:       path,
 		Attributes: make(map[string]*Attribute),
@@ -89,6 +90,12 @@ func LoadSetting(path string) (*Ruleset, error) {
 		Gifts:      make(map[string]*Gift),
 		Faults:     make(map[string]*Fault),
 		Powers:     make(map[string]*Power),
+	}
+
+	if desc, err := os.ReadFile(filepath.Join(path, "description.md")); err == nil {
+		r.Description = string(desc)
+	} else if !os.IsNotExist(err) {
+		return nil, err
 	}
 
 	if err := loadAttributes(r, filepath.Join(path, attributesFile)); err != nil {
@@ -113,7 +120,7 @@ func LoadSetting(path string) (*Ruleset, error) {
 	return r, nil
 }
 
-func loadAttributes(r *Ruleset, path string) error {
+func loadAttributes(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "attribute", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		r.Attributes[slug] = &Attribute{
@@ -125,7 +132,7 @@ func loadAttributes(r *Ruleset, path string) error {
 	})
 }
 
-func loadSkills(r *Ruleset, path string) error {
+func loadSkills(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "skill", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		r.Skills[slug] = &Skill{
@@ -137,7 +144,7 @@ func loadSkills(r *Ruleset, path string) error {
 	})
 }
 
-func loadSpecies(r *Ruleset, path string) error {
+func loadSpecies(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "species", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		scale := data.GetIntOrDefault("scale", 0)
@@ -154,7 +161,7 @@ func loadSpecies(r *Ruleset, path string) error {
 	})
 }
 
-func loadGifts(r *Ruleset, path string) error {
+func loadGifts(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "gift", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		r.Gifts[slug] = &Gift{
@@ -166,7 +173,7 @@ func loadGifts(r *Ruleset, path string) error {
 	})
 }
 
-func loadFaults(r *Ruleset, path string) error {
+func loadFaults(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "fault", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		r.Faults[slug] = &Fault{
@@ -178,7 +185,7 @@ func loadFaults(r *Ruleset, path string) error {
 	})
 }
 
-func loadPowers(r *Ruleset, path string) error {
+func loadPowers(r *SettingInfos, path string) error {
 	return loadDefinitions(path, "power", func(data recfile.DataMap) error {
 		slug := strings.ToLower(data["slug"])
 		r.Powers[slug] = &Power{
@@ -247,11 +254,7 @@ func validateRecSyntax(content []byte) error {
 	return nil
 }
 
-func (r *Ruleset) WriteFile(filename string, mode string, content []byte) error {
-	if r.Frozen {
-		return fmt.Errorf("setting is frozen")
-	}
-
+func (r *SettingInfos) WriteFile(filename string, mode string, content []byte) error {
 	if !validFiles[filename] {
 		return fmt.Errorf("invalid setting file: %s", filename)
 	}
@@ -306,7 +309,7 @@ func (r *Ruleset) WriteFile(filename string, mode string, content []byte) error 
 	return r.reloadFile(filename, filePath)
 }
 
-func (r *Ruleset) reloadFile(filename string, filePath string) error {
+func (r *SettingInfos) reloadFile(filename string, filePath string) error {
 	loaders := map[string]func(string) error{
 		attributesFile: func(path string) error {
 			r.Attributes = make(map[string]*Attribute)
@@ -338,4 +341,65 @@ func (r *Ruleset) reloadFile(filename string, filePath string) error {
 		return loader(filePath)
 	}
 	return nil
+}
+
+func (r *SettingInfos) ToString() string {
+	var sb strings.Builder
+
+	if r.Description != "" {
+		sb.WriteString(r.Description)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString("SPECIES:\n")
+	keys := make([]string, 0, len(r.Species))
+	for k := range r.Species {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, species := range keys {
+		sb.WriteString(fmt.Sprintf("  - %s\n", species))
+	}
+
+	sb.WriteString("\nATTRIBUTES:\n")
+	keys = keys[:0]
+	for k := range r.Attributes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, attr := range keys {
+		sb.WriteString(fmt.Sprintf("  - %s\n", attr))
+	}
+
+	sb.WriteString("\nSKILLS:\n")
+	keys = keys[:0]
+	for k := range r.Skills {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, skill := range keys {
+		sb.WriteString(fmt.Sprintf("  - %s\n", skill))
+	}
+
+	sb.WriteString("\nGIFTS:\n")
+	keys = keys[:0]
+	for k := range r.Gifts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, gift := range keys {
+		sb.WriteString(fmt.Sprintf("  - %s\n", gift))
+	}
+
+	sb.WriteString("\nFAULTS:\n")
+	keys = keys[:0]
+	for k := range r.Faults {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, fault := range keys {
+		sb.WriteString(fmt.Sprintf("  - %s\n", fault))
+	}
+
+	return sb.String()
 }
