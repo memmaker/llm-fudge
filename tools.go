@@ -54,10 +54,11 @@ func gameplayTools() []llm.Tool {
 
 	tools := []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{Name: "output_narration", Description: narrationDescription, Parameters: map[string]any{"type": "object", "properties": narrationProperties, "required": narrationRequired}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an action that doesn't involve direct opposition. Use when: (1) a character attempts something that requires skill with an uncertain outcome but no opponent actively resisting (climbing a wall, solving a puzzle, crafting); (2) you set a difficulty on the Fudge trait scale, where Average is 0: -3 trivially easy, -2 very easy, -1 easy, 0 average, +1 hard, +2 very hard, +3 extremely hard. Do NOT use this when another character is actively opposing the action—use opposed_check instead. Narrate the result using only the tool output; do not add your own dice rolls or modify the outcome.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "trait_type", "trait_slug", "difficulty"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Roll an action that nothing is actively resisting: climbing a wall, picking a lock, recalling lore, crafting. Use it whenever the outcome is uncertain and no opponent opposes it—if one does, use opposed_check instead. Skip it entirely for trivial actions with no real chance of failure and no stakes; just narrate those. You name the difficulty and the engine rolls; narrate only what comes back, and never invent a roll or adjust the result. situational_modifier is roughly -4 to +4 for circumstances (terrain, lighting, preparation, exhaustion, poor tools); 0 should be the common case and ±3/±4 is for genuinely extreme conditions. add_one and reroll each spend one of the character's Fudge Points.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "string", "enum": rules.DifficultyNames(), "description": "How hard the task is. The engine converts this to a target number."}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "trait_type", "trait_slug", "difficulty"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve a direct conflict between two characters (attack, grapple, dodge, deception, resist, etc.). Use when two characters have conflicting intentions. CRITICAL SEQUENCE: (1) If an NPC doesn't exist yet, call create_character FIRST in the same response; (2) THEN immediately call opposed_check with both actor_id and opponent_id (use the character's actual ID). actor_id is whoever initiated the action; opponent_id is whoever reacts. Do NOT narrate the defense separately—the check outcome tells the story. Narrate using only the tool result.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new NPC. CRITICAL: call this BEFORE any check involving that NPC—the character must exist before you can make a check against them. If a player targets an NPC for the first time, create them immediately, THEN call the appropriate check (opposed_check or unopposed_check) in the same response. The character ID is automatically generated from the name. Only use traits (attributes, skills, gifts, faults) listed in the Setting Information section of your system prompt. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "apply_damage", Description: "Apply damage to a character. Damage accumulates as scratches and escalates wound levels. Use after combat, falling, explosions, etc.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "damage_points": map[string]any{"type": "integer"}}, "required": []string{"character_id", "damage_points"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "apply_damage", Description: "Wound a character after a hit, a fall, an explosion. You name the wound the fiction calls for and the engine does the arithmetic: it accumulates scratches, escalates wound levels and applies the resulting penalty. A bigger margin on the winning check, a heavier weapon or greater attacker Scale argue for a worse severity; armor, toughness or greater defender Scale argue for a lighter one, and a glancing hit can be narrated with no call at all. Death is never a side effect: characters stop at near death and are killed only by an explicit declare_dead.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "severity": map[string]any{"type": "string", "enum": rules.SeverityNames(), "description": "The wound this hit inflicts on an undamaged target. Existing wounds escalate from there."}}, "required": []string{"character_id", "severity"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "roll_on_table", Description: "Roll on a random table when the fiction needs an outcome that no character is choosing. Use it instead of deciding these yourself—that is the only way they are genuinely random. npc-reaction: how an NPC you have not characterized yet feels about the party on first meeting. npc-morale: whether an NPC presses on, wavers or breaks, checked when a fight turns against them. weather: conditions on the road or at the start of a day outdoors. situational-roll: how luck breaks when there is no actor to check at all. The modifier is roughly -4 to +4 for whatever the established fiction says should tilt it (a reputation, a bribe, the season, a rout already in progress); 0 is the common case. Narrate the result the table gives you.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"table": map[string]any{"type": "string", "enum": rules.TableNames()}, "modifier": map[string]any{"type": "integer"}}, "required": []string{"table"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "heal", Description: "Heal a character by reducing wound levels. Cannot heal the dead.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "levels": map[string]any{"type": "integer"}}, "required": []string{"character_id", "levels"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "declare_dead", Description: "Permanently declare a character dead. Dead characters cannot act or be healed.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}}, "required": []string{"character_id"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the player with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. For normal gameplay where the player types an action, just narrate the outcome. Do NOT use this as a generic \"What do you do?\" prompt. REQUIREMENTS: call output_narration in the same response, with prose that poses the question—the menu is shown underneath it. The player's answer comes back to you as this tool's result, and the turn continues: narrate what their choice leads to. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
@@ -176,7 +177,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			ActorID             string `json:"actor_id"`
 			TraitType           string `json:"trait_type"`
 			TraitSlug           string `json:"trait_slug"`
-			Difficulty          int    `json:"difficulty"`
+			Difficulty          string `json:"difficulty"`
 			SituationalModifier int    `json:"situational_modifier"`
 			AddOne              bool   `json:"add_one"`
 			Reroll              bool   `json:"reroll"`
@@ -187,7 +188,11 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if args.ActorID == "" || args.TraitType == "" || args.TraitSlug == "" {
 			return "", fmt.Errorf("unopposed check requires actor_id, trait_type, and trait_slug")
 		}
-		result, err := w.UnopposedCheck(args.ActorID, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
+		difficulty, err := rules.DifficultyLevel(args.Difficulty)
+		if err != nil {
+			return "", err
+		}
+		result, err := w.UnopposedCheck(args.ActorID, args.TraitType, args.TraitSlug, difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
 		if err != nil {
 			return "", err
 		}
@@ -202,7 +207,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if result.Success {
 			successStr = "ok"
 		}
-		return fmt.Sprintf("%s|roll%+d|tot%d|diff%d|%s%s", actor.Name, result.Roll, result.Total, args.Difficulty, successStr, critStr), nil
+		return fmt.Sprintf("%s|roll%+d|tot%d|%s(%+d)|%s%s", actor.Name, result.Roll, result.Total, args.Difficulty, difficulty, successStr, critStr), nil
 	case "opposed_check":
 		var args struct {
 			ActorID           string `json:"actor_id"`
@@ -317,16 +322,16 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		dp, ok := raw["damage_points"].(float64)
+		severity, ok := raw["severity"].(string)
 		if !ok {
-			return "", fmt.Errorf("damage_points required")
+			return "", fmt.Errorf("severity required (%s)", strings.Join(rules.SeverityNames(), ", "))
 		}
-		damagePoints := int(dp)
-		if damagePoints < 0 {
-			return "", fmt.Errorf("damage points must be non-negative")
+		damagePoints, err := rules.DamagePointsForSeverity(severity)
+		if err != nil {
+			return "", err
 		}
 		result := ch.Wounds.ApplyDamage(damagePoints)
-		return fmt.Sprintf("%s|dmg%d|%s|scratch:%d|pen%+d", ch.Name, damagePoints, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
+		return fmt.Sprintf("%s|hit:%s|now:%s|scratch:%d|pen%+d", ch.Name, severity, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
 	case "heal":
 		ch, raw, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
@@ -349,6 +354,19 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		}
 		ch.Wounds.DeclareDead()
 		return fmt.Sprintf("%s|DEAD", ch.Name), nil
+	case "roll_on_table":
+		var args struct {
+			Table    string `json:"table"`
+			Modifier int    `json:"modifier"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse roll_on_table: %w", err)
+		}
+		roll, value, err := w.RollTable(args.Table, args.Modifier)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s|roll%+d|mod%+d|%s", args.Table, roll, args.Modifier, value), nil
 	default:
 		return "", fmt.Errorf("unknown action tool %q", call.Function.Name)
 	}

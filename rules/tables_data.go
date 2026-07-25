@@ -38,31 +38,23 @@ type RandomTable struct {
 	Entries []TableEntry
 }
 
+// Every table is rolled with 4dF and so is indexed over -4..+4, with the ends
+// left open so a modifier cannot push a roll off the table.
 var tables = map[string]RandomTable{
 	"npc-reaction": {
 		Entries: []TableEntry{
-			{ExactRoll(4), "Violently Hostile"},
-			{RollRangeBetween(5, 6), "Very Hostile"},
-			{RollRangeBetween(7, 8), "Hostile"},
-			{ExactRoll(9), "Unreceptive"},
-			{RollRangeBetween(10, 11), "Neutral/Uncertain"},
-			{ExactRoll(12), "Receptive"},
-			{ExactRoll(13), "Friendly"},
-			{RollRangeBetween(14, 15), "Very Friendly"},
-			{RollRangeBetween(16, 17), "Extremely Friendly/Helpful"},
-			{ExactRoll(18), "Enthusiastic/Devoted"},
-		},
-	},
-	"damage-die": {
-		Entries: []TableEntry{
-			{RollRangeBetween(1, 2), "-1"},
-			{RollRangeBetween(3, 4), "0"},
-			{RollRangeBetween(5, 6), "+1"},
+			{RollAtMost(-4), "Violently hostile"},
+			{RollRangeBetween(-3, -2), "Hostile"},
+			{ExactRoll(-1), "Unreceptive"},
+			{ExactRoll(0), "Neutral/uncertain"},
+			{ExactRoll(1), "Receptive"},
+			{RollRangeBetween(2, 3), "Friendly"},
+			{RollAtLeast(4), "Extremely friendly/helpful"},
 		},
 	},
 	"situational-roll": {
 		Entries: []TableEntry{
-			{ExactRoll(-4), "Extremely bad luck"},
+			{RollAtMost(-4), "Extremely bad luck"},
 			{ExactRoll(-3), "Very bad luck"},
 			{ExactRoll(-2), "Bad luck"},
 			{ExactRoll(-1), "Slight misfortune"},
@@ -70,12 +62,12 @@ var tables = map[string]RandomTable{
 			{ExactRoll(1), "Slight fortune"},
 			{ExactRoll(2), "Good luck"},
 			{ExactRoll(3), "Very good luck"},
-			{ExactRoll(4), "Extremely good luck"},
+			{RollAtLeast(4), "Extremely good luck"},
 		},
 	},
 	"weather": {
 		Entries: []TableEntry{
-			{ExactRoll(-4), "Catastrophic storm"},
+			{RollAtMost(-4), "Catastrophic storm"},
 			{ExactRoll(-3), "Storm"},
 			{ExactRoll(-2), "Heavy rain/snow"},
 			{ExactRoll(-1), "Light rain/overcast"},
@@ -83,7 +75,7 @@ var tables = map[string]RandomTable{
 			{ExactRoll(1), "Pleasant"},
 			{ExactRoll(2), "Clear and fine"},
 			{ExactRoll(3), "Beautiful weather"},
-			{ExactRoll(4), "Perfect weather"},
+			{RollAtLeast(4), "Perfect weather"},
 		},
 	},
 	"npc-morale": {

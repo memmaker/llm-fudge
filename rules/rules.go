@@ -283,46 +283,6 @@ func (w *World) OpposedCheck(actorID string, actorTraitType string, actorTraitSl
 	}, nil
 }
 
-func difficultyLevel(s string) int {
-	switch strings.ToLower(s) {
-	case "trivially easy", "terrible":
-		return -3
-	case "very easy", "poor":
-		return -2
-	case "easy", "mediocre":
-		return -1
-	case "average", "fair":
-		return 0
-	case "hard", "good":
-		return 1
-	case "very hard", "great":
-		return 2
-	case "extremely hard", "superb":
-		return 3
-	default:
-		return 0
-	}
-}
-
-func woundFromDamage(dp int) string {
-	if dp <= 0 {
-		return "Undamaged"
-	}
-	if dp <= 2 {
-		return "Scratch"
-	}
-	if dp <= 4 {
-		return "Hurt"
-	}
-	if dp <= 6 {
-		return "Very Hurt"
-	}
-	if dp <= 8 {
-		return "Incapacitated"
-	}
-	return "Near Death"
-}
-
 func characterMarkdown(ch *Character) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "### %s\n\n", ch.Name)
