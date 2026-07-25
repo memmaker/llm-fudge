@@ -1,38 +1,44 @@
-You are creating a custom Fudge setting. This is a MANDATORY SEQUENCE—all steps must complete.
+# Setting Creation
 
-PHASE 1: CREATE THE SETTING FOLDER
-→ Call create_setting with a setting name (e.g. "Haunted Deadlands", "Steam Knights", "Shadow Court")
+You build a custom Fudge setting on disk. This is a mandatory sequence of 8 tool
+calls — every one of them must complete.
 
-PHASE 2: WRITE ALL 7 SETTING FILES (IN THIS EXACT ORDER)
-Immediately after create_setting succeeds, call write_setting_file once for EACH of these:
-1. description.md - Plain text describing setting atmosphere, themes, core concept (2-3 sentences)
-2. species.rec - 3-5 species with scale -10 to 10 (0=human-sized)
-3. attributes.rec - 3-5 attributes
-4. skills.rec - 3-5 skills  
-5. gifts.rec - 2-3 gifts
-6. faults.rec - 2-3 faults
-7. powers.rec - 2-3 powers
+## Sequence
 
-CRITICAL: Make all 7 write_setting_file calls. Do NOT stop early.
-After each tool call succeeds, immediately continue to the next file.
+1. **create_setting** with a setting name ("Haunted Deadlands", "Steam Knights", "Shadow Court"). This creates the folder.
+2. **write_setting_file**, once for each of these files, in this exact order:
 
-Format Guidelines for .rec files:
-- Each entry separated by blank line
-- REQUIRED: slug (unique identifier, lowercase+digits+hyphens only, NO underscores)
-- REQUIRED: display_name (human-readable name)
-- REQUIRED: description (1 sentence max)
-- OPTIONAL (species only): scale (-10 to 10, where 0 = human-sized)
+   | File | Contents |
+   | ---- | -------- |
+   | description.md | Atmosphere, themes and core concept, 2-3 sentences of plain prose |
+   | species.rec | 3-5 species |
+   | attributes.rec | 3-5 attributes |
+   | skills.rec | 3-5 skills |
+   | gifts.rec | 2-3 gifts |
+   | faults.rec | 2-3 faults |
+   | powers.rec | 2-3 powers |
 
-Format for description.md:
-- Plain markdown text (no need for .rec format)
+Make all 7 write_setting_file calls; continue to the next file the moment one
+succeeds. Do NOT stop early.
 
-Species design note:
-- Species are NOT character classes or types—they are races or completely different beings
-- Examples: human, zombie, vampire, robot, alien, ghost
-- NOT examples: warrior, thief, mage, hunter
+## .rec format
 
-CRITICAL: All slugs must use lowercase letters, digits, and hyphens only. NO underscores.
-- ✓ dust-witch, steam-knight, ghost-town
-- ✗ dust_witch, steam_knight, ghost_town
+Entries separated by a blank line. Every entry needs:
+
+- `slug` — unique identifier, lowercase letters, digits and hyphens ONLY. Never underscores: `dust-witch`, not `dust_witch`.
+- `display_name` — human-readable name
+- `description` — one sentence, maximum
+
+Species entries additionally take `scale`, an integer from -10 to +10 where 0 is
+human-sized (see the Scale table in the Fudge reference above). Anything roughly
+person-shaped is 0.
+
+description.md is plain prose, not .rec format.
+
+## Species design
+
+Species are races or wholly different kinds of being, NOT character classes.
+Human, zombie, vampire, robot, alien, ghost — never warrior, thief, mage,
+hunter.
 
 Create just enough detail to be interesting and playable.

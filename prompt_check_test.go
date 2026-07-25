@@ -20,12 +20,12 @@ func TestDMPromptWrapsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"UNIVERSAL OUTPUT CONSTRAINTS", "# Fudge Rules", "## Setting Information:"} {
+	for _, marker := range []string{"# Output Rules", "# Fudge Rules", "## Setting Information:"} {
 		if n := strings.Count(prompt, marker); n != 1 {
 			t.Errorf("%q appears %d times, want 1", marker, n)
 		}
 	}
-	if !strings.Contains(prompt, "## Image Generation Rules") {
+	if !strings.Contains(prompt, "# Image Generation") {
 		t.Error("img-style.md missing from prompt")
 	}
 }
