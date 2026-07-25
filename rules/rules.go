@@ -106,10 +106,7 @@ func (w *World) validateCheckInputs(actorID string, traitType string, traitSlug 
 }
 
 func (w *World) unopposedRoll(ch *Character, traitType string, trait string, mod int, dice DiceMethod) (int, int, int) {
-	tv, ok := resolveTrait(ch, traitType, trait)
-	if !ok {
-		tv = 0
-	}
+	tv, _ := resolveTrait(ch, traitType, trait)
 	var roll int
 	switch dice {
 	case Dice1D6:
@@ -123,19 +120,16 @@ func (w *World) unopposedRoll(ch *Character, traitType string, trait string, mod
 
 // CheckResult holds the outcome of a skill check
 type CheckResult struct {
-	Success      bool
-	Total        int
-	Roll         int
-	CritSuccess  bool
-	CritFailure  bool
+	Success     bool
+	Total       int
+	Roll        int
+	CritSuccess bool
+	CritFailure bool
 }
 
 // unopposedRollEx rolls and returns raw results with critical detection
 func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, mod int, addOneBonus int, dice DiceMethod) CheckResult {
-	tv, ok := resolveTrait(ch, traitType, trait)
-	if !ok {
-		tv = 0
-	}
+	tv, _ := resolveTrait(ch, traitType, trait)
 	var roll int
 	switch dice {
 	case Dice1D6:

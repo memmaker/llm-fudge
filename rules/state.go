@@ -63,23 +63,26 @@ type Character struct {
 }
 
 type World struct {
-	Player     string
-	Characters map[string]*Character
-	Ruleset    *Ruleset
-	Seed       int64
-	Rng        *rand.Rand
+	Setting          *SettingInfos
+	AdventureContent string
+	Player           string
+	CondensedState   []string
+	Characters       map[string]*Character
+	Seed             int64
+	Rng              *rand.Rand
 }
 
-// NewWorld creates a deterministic game world with a selected setting.
-// Reuse the seed and action sequence to reproduce every check result.
-func NewWorld(seed int64, path string) (*World, error) {
-	setting, err := LoadSetting(path)
+func NewWorld(seed int64, settingPath string) (*World, error) {
+	setting, err := LoadSetting(settingPath)
 	if err != nil {
 		return nil, err
 	}
-	w := &World{Characters: make(map[string]*Character), Seed: seed, Rng: rand.New(rand.NewSource(seed))}
-	w.Ruleset = setting
-	return w, nil
+	return &World{
+		Setting:    setting,
+		Seed:       seed,
+		Rng:        rand.New(rand.NewSource(seed)),
+		Characters: make(map[string]*Character),
+	}, nil
 }
 
 func (w *World) CreateCharacter(id, name string, attributes, skills map[string]int) *Character {
@@ -118,10 +121,8 @@ func (w *World) Character(id string) (*Character, error) {
 // location optional
 // description optional
 // gifts, faults, powers optional
-// creates and freezes the setting on first use
 
 type CharacterRequest struct {
-	Slug        string         `json:"slug"`
 	Name        string         `json:"name"`
 	Species     string         `json:"species"`
 	Description string         `json:"description"`
@@ -132,18 +133,18 @@ type CharacterRequest struct {
 	Faults      []string       `json:"faults"`
 }
 
-// CreateCharacterValidated validates and creates a character according to the setting
+// CreateCharacterValidated validates and creates a character according to the setting.
+// Assumes the very first character created is the player character and will set their slug in the world.
 func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, error) {
-	if w.Ruleset == nil {
+	if w.Setting == nil {
 		return nil, fmt.Errorf("world has no selected setting")
 	}
+
 	if req.Name == "" {
 		return nil, fmt.Errorf("character name is required")
 	}
-	id := req.Slug
-	if id == "" {
-		id = slug(req.Name)
-	}
+
+	id := slug(req.Name)
 	if !slugPattern.MatchString(id) {
 		return nil, fmt.Errorf("invalid character slug: %s", id)
 	}
@@ -151,18 +152,18 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 		return nil, fmt.Errorf("character slug already exists: %s", id)
 	}
 	specKey := strings.ToLower(req.Species)
-	spec, ok := w.Ruleset.Species[specKey]
+	spec, ok := w.Setting.Species[specKey]
 	if !ok {
 		return nil, fmt.Errorf("species not found: %s", req.Species)
 	}
 	// attributes default fair (0)
-	attrs := make(map[string]int, len(w.Ruleset.Attributes))
-	for key := range w.Ruleset.Attributes {
+	attrs := make(map[string]int, len(w.Setting.Attributes))
+	for key := range w.Setting.Attributes {
 		attrs[key] = 0
 	}
 	for key, val := range req.Attributes {
 		keyLower := strings.ToLower(key)
-		if _, ok := w.Ruleset.Attributes[keyLower]; !ok {
+		if _, ok := w.Setting.Attributes[keyLower]; !ok {
 			return nil, fmt.Errorf("unknown attribute: %s", key)
 		}
 		if val < -3 || val > 3 {
@@ -171,13 +172,13 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 		attrs[keyLower] = val
 	}
 	// skills default poor (-2)
-	skills := make(map[string]int, len(w.Ruleset.Skills))
-	for key := range w.Ruleset.Skills {
+	skills := make(map[string]int, len(w.Setting.Skills))
+	for key := range w.Setting.Skills {
 		skills[key] = -2
 	}
 	for key, val := range req.Skills {
 		keyLower := strings.ToLower(key)
-		if _, ok := w.Ruleset.Skills[keyLower]; !ok {
+		if _, ok := w.Setting.Skills[keyLower]; !ok {
 			return nil, fmt.Errorf("unknown skill: %s", key)
 		}
 		if val < -3 || val > 3 {
@@ -194,7 +195,7 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	gifts := make([]string, 0, len(req.Gifts))
 	for _, giftSlug := range req.Gifts {
 		giftKey := strings.ToLower(giftSlug)
-		if _, ok := w.Ruleset.Gifts[giftKey]; !ok {
+		if _, ok := w.Setting.Gifts[giftKey]; !ok {
 			return nil, fmt.Errorf("unknown gift: %s", giftSlug)
 		}
 		gifts = append(gifts, giftKey)
@@ -203,7 +204,7 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	faults := make([]string, 0, len(req.Faults))
 	for _, faultSlug := range req.Faults {
 		faultKey := strings.ToLower(faultSlug)
-		if _, ok := w.Ruleset.Faults[faultKey]; !ok {
+		if _, ok := w.Setting.Faults[faultKey]; !ok {
 			return nil, fmt.Errorf("unknown fault: %s", faultSlug)
 		}
 		faults = append(faults, faultKey)
@@ -229,6 +230,7 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	if w.Player == "" {
 		w.Player = id
 	}
+
 	return ch, nil
 }
 

@@ -26,6 +26,33 @@ func TestLoadSettingSupportsMissingOptionalFiles(t *testing.T) {
 	}
 }
 
+func TestLoadSettingLoadsDescription(t *testing.T) {
+	path := t.TempDir()
+	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\ndescription: Raw might\n")
+	writeFile(t, filepath.Join(path, "description.md"), "A great setting for adventure\n")
+
+	setting, err := LoadSetting(path)
+	if err != nil {
+		t.Fatalf("LoadSetting returned error: %v", err)
+	}
+	if setting.Description != "A great setting for adventure\n" {
+		t.Fatalf("description = %q", setting.Description)
+	}
+}
+
+func TestLoadSettingHandlesMissingDescription(t *testing.T) {
+	path := t.TempDir()
+	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\ndescription: Raw might\n")
+
+	setting, err := LoadSetting(path)
+	if err != nil {
+		t.Fatalf("LoadSetting returned error: %v", err)
+	}
+	if setting.Description != "" {
+		t.Fatalf("description should be empty when file is missing, got %q", setting.Description)
+	}
+}
+
 func TestLoadSettingRejectsInvalidDefinitions(t *testing.T) {
 	t.Run("invalid slug", func(t *testing.T) {
 		path := t.TempDir()

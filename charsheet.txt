@@ -1,15 +1,15 @@
-[1m[36m─── CHARACTER SHEET: Lucky the Runner [36m───[0m
+[1m[36m─── CHARACTER SHEET: Max [36m───[0m
 [36m◆ Location:[0m default
 
 [1m▸ Attributes[0m
-    [32mAgility[0m Superb(+3)[0m
-    [32mPerception[0m Great(+2)[0m
+    [32mAgility[0m Great(+2)[0m
+    [32mPerception[0m Superb(+3)[0m
     [32mStrength[0m Good(+1)[0m
 
 [1m▸ Skills[0m
     [32mAthletics[0m Great(+2)[0m
-    [31mFight[0m Poor(-2)[0m
-    [32mStealth[0m Good(+1)[0m
+    [32mFight[0m Good(+1)[0m
+    [32mStealth[0m Great(+2)[0m
 
 [1m▸ Wounds[0m
   ○ Scratch | ○ Hurt | ○ Very Hurt | ○ Incap. | ○ Near Death | ○ Dead
@@ -23,6 +23,4 @@
 [1m▸ Fudge Points:[0m [31m0[0m
 [1m▸ Coins:[0m 0
 
-
-[36m◆ Present:[0m Grum Blacktankard
 [36m[1m──────────────────────────────────────────[0m

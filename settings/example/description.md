@@ -1,0 +1,1 @@
+Your basic medieval fantasy setting.

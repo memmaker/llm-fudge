@@ -581,6 +581,13 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 		for _, toolCall := range response.Message.ToolCalls {
 			// Skip output_narration—it's handled in the dedicated narration section below
 			if toolCall.Function.Name == "output_narration" {
+				// Still need to add a response message to avoid API validation errors
+				*messages = append(*messages, llm.Message{
+					Role:       llm.RoleTool,
+					ToolCallID: toolCall.ID,
+					Name:       toolCall.Function.Name,
+					Content:    "Acknowledged",
+				})
 				continue
 			}
 			result, err := executeAction(w, toolCall)

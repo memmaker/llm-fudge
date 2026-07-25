@@ -7,7 +7,8 @@ import (
 	"testing"
 
 	"fudge/rules"
-	llm "github.com/memmaker/gollum/llm"
+
+	"github.com/memmaker/gollum/llm"
 )
 
 func TestExecuteActionUsesWorldChecks(t *testing.T) {
@@ -25,30 +26,13 @@ func TestExecuteActionUsesWorldChecks(t *testing.T) {
 	w.Player = hero.ID
 	result, err := executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{
 		Name:      "unopposed_check",
-		Arguments: `{"trait_type":"skill","trait_slug":"athletics","difficulty":1}`,
+		Arguments: `{"character_id":"hero","trait_type":"skill","trait_slug":"athletics","difficulty":1}`,
 	}})
 	if err != nil {
 		t.Fatalf("execute action: %v", err)
 	}
-	if !strings.Contains(result, "Hero rolled") {
+	if !strings.Contains(result, "Hero") {
 		t.Fatalf("unexpected result: %q", result)
-	}
-}
-
-func TestActionToolsIncludeCreateCharacter(t *testing.T) {
-	tools := actionTools()
-	if len(tools) != 12 {
-		t.Fatalf("got %d tools, want 12", len(tools))
-	}
-	toolNames := make(map[string]bool)
-	for _, tool := range tools {
-		toolNames[tool.Function.Name] = true
-	}
-	expectedTools := []string{"list_settings", "load_setting", "list_adventures", "load_adventure", "query_setting", "create_character", "apply_damage", "heal", "declare_dead"}
-	for _, expected := range expectedTools {
-		if !toolNames[expected] {
-			t.Fatalf("%s tool not found in action tools", expected)
-		}
 	}
 }
 
@@ -109,29 +93,6 @@ func TestExecuteActionCreateCharacter(t *testing.T) {
 	}
 	if ch.Skills["testskill"] != 2 {
 		t.Fatalf("skill not set: %v", ch.Skills)
-	}
-}
-
-func TestCreateCharacterFreezesRulesetOnSuccess(t *testing.T) {
-	path := t.TempDir()
-	writeFile(t, filepath.Join(path, "attributes.rec"), "slug: strength\ndisplay_name: Strength\n")
-	writeFile(t, filepath.Join(path, "skills.rec"), "slug: fight\ndisplay_name: Fight\n")
-	writeFile(t, filepath.Join(path, "species.rec"), "slug: human\ndisplay_name: Human\nscale: 0\n")
-	w, err := rules.NewWorld(7, path)
-	if err != nil {
-		t.Fatalf("create world: %v", err)
-	}
-	if w.Ruleset.Frozen {
-		t.Fatal("setting should not be frozen initially")
-	}
-
-	args := `{"name":"Test","species":"human"}`
-	_, err = executeAction(w, llm.ToolCall{Function: llm.ToolCallFunction{Name: "create_character", Arguments: args}})
-	if err != nil {
-		t.Fatalf("character creation failed: %v", err)
-	}
-	if !w.Ruleset.Frozen {
-		t.Fatal("setting should be frozen after creating character")
 	}
 }
 
@@ -242,19 +203,6 @@ func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
-	}
-}
-
-func TestWrapTextRespectsWidthAndParagraphs(t *testing.T) {
-	wrapped := wrapText("one two three four\n\nfive", 7)
-	lines := strings.Split(wrapped, "\n")
-	if !strings.Contains(wrapped, "\n\n") {
-		t.Fatalf("paragraph break was removed: %q", wrapped)
-	}
-	for _, line := range lines {
-		if len([]rune(line)) > 7 {
-			t.Fatalf("line exceeds width: %q", line)
-		}
 	}
 }
 

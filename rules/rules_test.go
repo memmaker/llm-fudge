@@ -91,11 +91,6 @@ func TestCreateCharacterRejectsDuplicateSlug(t *testing.T) {
 	if ch1.ID != "hero" {
 		t.Fatalf("expected slug 'hero', got %q", ch1.ID)
 	}
-
-	if !world.Ruleset.Frozen {
-		t.Fatal("setting should be frozen after first character")
-	}
-
 	req2 := CharacterRequest{
 		Slug:    "hero",
 		Name:    "AnotherHero",

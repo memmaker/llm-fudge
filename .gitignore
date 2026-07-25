@@ -1,5 +1,5 @@
 .idea/
 .DS_Store
 .apikey
-./fudge
-./charsheet.txt
+fudge
+charsheet.txt

@@ -9,25 +9,36 @@ import (
 	"strings"
 
 	"fudge/rules"
+	"fudge/ui"
 
 	"github.com/memmaker/gollum/llm"
 )
 
-func actionTools() []llm.Tool {
+func settingCreationTools() []llm.Tool {
 	return []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{Name: "list_settings", Description: "List all available settings.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "load_setting", Description: "Load a specific setting by name.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "list_adventures", Description: "List all available adventures in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "load_adventure", Description: "Load an adventure by name from the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "query_setting", Description: "Query available attributes, skills, species, gifts, and faults in the current setting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with multiple choice options using an interactive menu. REQUIREMENTS: (1) You MUST write a clear prompt/question before calling this tool. The menu will appear directly after your text. (2) A 'Type your answer' fallback is ALWAYS included automatically—do NOT add it yourself.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an unopposed check against a difficulty using a chosen trait.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"trait_type", "trait_slug", "difficulty"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve an opposed check between two actors using independently chosen traits.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one recognized setting file in replace or append mode.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character in the selected setting. The character ID is automatically generated from the name.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "apply_damage", Description: "Apply damage to a character, accumulating scratches and escalating wound levels.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "damage_points": map[string]any{"type": "integer"}}, "required": []string{"character_id", "damage_points"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "create_setting", Description: "Initialize a new setting with a chosen name. Call this FIRST before writing any setting files. The name becomes the folder name and setting identifier (converted to lowercase, spaces to hyphens). Example: 'Haunted Deadlands' becomes 'haunted-deadlands'.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string", "description": "The setting name (will be slugified for folder)"}}, "required": []string{"name"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "write_setting_file", Description: "Write one setting file in .rec format. Valid filenames: species.rec, attributes.rec, skills.rec, gifts.rec, faults.rec. Format: each entry separated by blank line. REQUIRED FIELDS per entry: slug (lowercase+digits+hyphens only, NO underscores), display_name (human-readable name), description (1 sentence). OPTIONAL: scale (0-3, species only). Slug format: use hyphens not underscores, e.g. \"dust-witch\" not \"dust_witch\". Example entry:\nslug: dust-witch\ndisplay_name: Dust Witch\ndescription: Occult wanderers channeling desert spirits.\nscale: 2", Parameters: map[string]any{"type": "object", "properties": map[string]any{"filename": map[string]any{"type": "string"}, "mode": map[string]any{"type": "string", "enum": []string{"replace", "append"}}, "content": map[string]any{"type": "string"}}, "required": []string{"filename", "mode", "content"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. REQUIREMENTS: Write a clear prompt/question before calling this tool. The menu appears after your text. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
+	}
+}
+
+func characterCreationTools() []llm.Tool {
+	return []llm.Tool{
+		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character. The character ID is automatically generated from the name. Only use traits (attributes, skills, gifts, faults) that exist in the setting. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. REQUIREMENTS: Write a clear prompt/question before calling this tool. The menu appears after your text. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
+	}
+}
+
+func gameplayTools() []llm.Tool {
+	return []llm.Tool{
+		{Type: "function", Function: llm.ToolFunction{Name: "output_narration", Description: "Output narration and world state. REQUIRED: Call this as your final action every turn. Do not output any text directly—use only this tool. Arguments: prose (human-readable narration for the player), condensed_state (ultra-dense LLM-readable state: no articles/fluff, compact notation, world facts, character positions, meaningful events only).", Parameters: map[string]any{"type": "object", "properties": map[string]any{"prose": map[string]any{"type": "string", "description": "Human-readable narration for the player"}, "condensed_state": map[string]any{"type": "string", "description": "Ultra-condensed state for LLM context: no articles/fluff, dense notation, world facts only"}}, "required": []string{"prose", "condensed_state"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Resolve an action that doesn't involve direct opposition. Use when: (1) a character attempts something that requires skill with an uncertain outcome but no opponent actively resisting (climbing a wall, solving a puzzle, crafting); (2) difficulty is set (difficulty 1-5 typical). Do NOT use this when another character is actively opposing the action—use opposed_check instead. Narrate the result using only the tool output; do not add your own dice rolls or modify the outcome.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "integer"}, "situational_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}, "reroll": map[string]any{"type": "boolean"}}, "required": []string{"character_id", "trait_type", "trait_slug", "difficulty"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve a direct conflict between two characters (attack, grapple, dodge, deception, resist, etc.). Use when two characters have conflicting intentions. CRITICAL SEQUENCE: (1) If an NPC doesn't exist yet, call create_character FIRST in the same response; (2) THEN immediately call opposed_check with both actor_id and opponent_id (use the character's actual ID). actor_id is whoever initiated the action; opponent_id is whoever reacts. Do NOT narrate the defense separately—the check outcome tells the story. Narrate using only the tool result.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new NPC. CRITICAL: call this BEFORE any check involving that NPC—the character must exist before you can make a check against them. If a player targets an NPC for the first time, create them immediately, THEN call the appropriate check (opposed_check or unopposed_check) in the same response. The character ID is automatically generated from the name. Only use traits (attributes, skills, gifts, faults) that exist in the setting—call query_setting if unsure. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "apply_damage", Description: "Apply damage to a character. Damage accumulates as scratches and escalates wound levels. Use after combat, falling, explosions, etc.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "damage_points": map[string]any{"type": "integer"}}, "required": []string{"character_id", "damage_points"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "heal", Description: "Heal a character by reducing wound levels. Cannot heal the dead.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}, "levels": map[string]any{"type": "integer"}}, "required": []string{"character_id", "levels"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "declare_dead", Description: "Permanently declare a character dead. Dead characters cannot act or be healed.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}}, "required": []string{"character_id"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the user with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. For normal gameplay where the player types an action, just narrate the outcome. Do NOT use this as a generic \"What do you do?\" prompt. REQUIREMENTS: Write a clear prompt/question before calling this tool. The menu appears after your text. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
 	}
 }
 
@@ -54,31 +65,29 @@ func listSettings() (string, error) {
 	return sb.String(), nil
 }
 
-func loadSettingTool(w *rules.World, name string) (string, error) {
+func loadSetting(w *rules.World, name string) error {
 	path := filepath.Join("settings", name)
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("setting not found: %s", name)
+		return fmt.Errorf("setting not found: %s", name)
 	}
 
 	setting, err := rules.LoadSetting(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to load setting: %w", err)
+		return fmt.Errorf("failed to load setting: %w", err)
 	}
 
-	w.Ruleset = setting
-	w.Characters = make(map[string]*rules.Character)
-	w.Player = ""
+	w.Setting = setting
 
-	return fmt.Sprintf("Loaded setting: %s", name), nil
+	return nil
 }
 
 func listAdventures(w *rules.World) (string, error) {
-	if w.Ruleset == nil {
+	if w.Setting == nil {
 		return "", fmt.Errorf("no setting loaded")
 	}
 
-	adventuresPath := filepath.Join(w.Ruleset.Path, "adventures")
+	adventuresPath := filepath.Join(w.Setting.Path, "adventures")
 	entries, err := os.ReadDir(adventuresPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -106,11 +115,11 @@ func listAdventures(w *rules.World) (string, error) {
 }
 
 func loadAdventureTool(w *rules.World, name string) (string, error) {
-	if w.Ruleset == nil {
+	if w.Setting == nil {
 		return "", fmt.Errorf("no setting loaded")
 	}
 
-	adventurePath := filepath.Join(w.Ruleset.Path, "adventures", name+".md")
+	adventurePath := filepath.Join(w.Setting.Path, "adventures", name+".md")
 	content, err := os.ReadFile(adventurePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to load adventure: %w", err)
@@ -120,7 +129,7 @@ func loadAdventureTool(w *rules.World, name string) (string, error) {
 }
 
 func querySetting(w *rules.World) (string, error) {
-	if w.Ruleset == nil {
+	if w.Setting == nil {
 		return "", fmt.Errorf("world has no selected setting")
 	}
 
@@ -128,33 +137,33 @@ func querySetting(w *rules.World) (string, error) {
 	sb.WriteString("Available traits in setting:\n\n")
 
 	sb.WriteString("ATTRIBUTES:\n")
-	for _, attr := range sortedAttributeKeys(w.Ruleset.Attributes) {
-		desc := w.Ruleset.Attributes[attr].Description
+	for _, attr := range sortedAttributeKeys(w.Setting.Attributes) {
+		desc := w.Setting.Attributes[attr].Description
 		sb.WriteString(fmt.Sprintf("  - %s: %s\n", attr, desc))
 	}
 
 	sb.WriteString("\nSKILLS:\n")
-	for _, skill := range sortedSkillKeys(w.Ruleset.Skills) {
-		desc := w.Ruleset.Skills[skill].Description
+	for _, skill := range sortedSkillKeys(w.Setting.Skills) {
+		desc := w.Setting.Skills[skill].Description
 		sb.WriteString(fmt.Sprintf("  - %s: %s\n", skill, desc))
 	}
 
 	sb.WriteString("\nSPECIES:\n")
-	for _, spec := range sortedSpeciesKeys(w.Ruleset.Species) {
-		desc := w.Ruleset.Species[spec].Description
-		scale := w.Ruleset.Species[spec].Scale
+	for _, spec := range sortedSpeciesKeys(w.Setting.Species) {
+		desc := w.Setting.Species[spec].Description
+		scale := w.Setting.Species[spec].Scale
 		sb.WriteString(fmt.Sprintf("  - %s (scale %d): %s\n", spec, scale, desc))
 	}
 
 	sb.WriteString("\nGIFTS:\n")
-	for _, gift := range sortedGiftKeys(w.Ruleset.Gifts) {
-		desc := w.Ruleset.Gifts[gift].Description
+	for _, gift := range sortedGiftKeys(w.Setting.Gifts) {
+		desc := w.Setting.Gifts[gift].Description
 		sb.WriteString(fmt.Sprintf("  - %s: %s\n", gift, desc))
 	}
 
 	sb.WriteString("\nFAULTS:\n")
-	for _, fault := range sortedFaultKeys(w.Ruleset.Faults) {
-		desc := w.Ruleset.Faults[fault].Description
+	for _, fault := range sortedFaultKeys(w.Setting.Faults) {
+		desc := w.Setting.Faults[fault].Description
 		sb.WriteString(fmt.Sprintf("  - %s: %s\n", fault, desc))
 	}
 
@@ -232,6 +241,32 @@ func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, ma
 
 func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 	switch call.Function.Name {
+	case "create_setting":
+		var args struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse create_setting: %w", err)
+		}
+		if args.Name == "" {
+			return "", fmt.Errorf("setting name required")
+		}
+		settingSlug := slugify(args.Name)
+		settingPath := filepath.Join("settings", settingSlug)
+		if err := os.MkdirAll(settingPath, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create setting directory: %w", err)
+		}
+		w.Setting = &rules.SettingInfos{
+			Slug:       settingSlug,
+			Path:       settingPath,
+			Attributes: make(map[string]*rules.Attribute),
+			Skills:     make(map[string]*rules.Skill),
+			Species:    make(map[string]*rules.Species),
+			Gifts:      make(map[string]*rules.Gift),
+			Faults:     make(map[string]*rules.Fault),
+			Powers:     make(map[string]*rules.Power),
+		}
+		return fmt.Sprintf("Setting '%s' created (folder: %s)", args.Name, settingSlug), nil
 	case "user_choice":
 		var args struct {
 			Options []string `json:"options"`
@@ -242,35 +277,14 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if len(args.Options) == 0 {
 			return "", fmt.Errorf("user_choice requires at least one option")
 		}
-		choice, err := showChoiceMenu(args.Options)
+		choice, err := ui.ShowChoiceMenu(args.Options)
 		if err != nil {
 			return "", err
 		}
 		return choice, nil
-	case "list_settings":
-		return listSettings()
-	case "load_setting":
-		var args struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse load_setting: %w", err)
-		}
-		return loadSettingTool(w, args.Name)
-	case "list_adventures":
-		return listAdventures(w)
-	case "load_adventure":
-		var args struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			return "", fmt.Errorf("parse load_adventure: %w", err)
-		}
-		return loadAdventureTool(w, args.Name)
-	case "query_setting":
-		return querySetting(w)
 	case "unopposed_check":
 		var args struct {
+			ActorID             string `json:"actor_id"`
 			TraitType           string `json:"trait_type"`
 			TraitSlug           string `json:"trait_slug"`
 			Difficulty          int    `json:"difficulty"`
@@ -281,25 +295,25 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse unopposed check: %w", err)
 		}
-		if args.TraitType == "" || args.TraitSlug == "" {
-			return "", fmt.Errorf("unopposed check requires trait_type and trait_slug")
+		if args.ActorID == "" || args.TraitType == "" || args.TraitSlug == "" {
+			return "", fmt.Errorf("unopposed check requires character_id, trait_type, and trait_slug")
 		}
-		result, err := w.UnopposedCheck(w.Player, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
+		result, err := w.UnopposedCheck(args.ActorID, args.TraitType, args.TraitSlug, args.Difficulty, args.SituationalModifier, args.AddOne, args.Reroll)
 		if err != nil {
 			return "", err
 		}
-		hero, _ := w.Character(w.Player)
+		actor, _ := w.Character(args.ActorID)
 		var critStr string
 		if result.CritSuccess {
-			critStr = " (CRITICAL SUCCESS!)"
+			critStr = "|CRIT"
 		} else if result.CritFailure {
-			critStr = " (CRITICAL FAILURE!)"
+			critStr = "|FAIL"
 		}
-		successStr := "failure"
+		successStr := "no"
 		if result.Success {
-			successStr = "success"
+			successStr = "ok"
 		}
-		return fmt.Sprintf("%s rolled %+d (total %d against %d): %s%s", hero.Name, result.Roll, result.Total, args.Difficulty, successStr, critStr), nil
+		return fmt.Sprintf("%s|roll%+d|tot%d|diff%d|%s%s", actor.Name, result.Roll, result.Total, args.Difficulty, successStr, critStr), nil
 	case "opposed_check":
 		var args struct {
 			ActorID           string `json:"actor_id"`
@@ -315,12 +329,6 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse opposed check: %w", err)
 		}
-		if args.ActorID == "player" {
-			args.ActorID = w.Player
-		}
-		if args.OpponentID == "player" {
-			args.OpponentID = w.Player
-		}
 		if args.ActorID == "" || args.ActorTraitType == "" || args.ActorTraitSlug == "" || args.OpponentID == "" || args.OpponentTraitType == "" || args.OpponentTraitSlug == "" {
 			return "", fmt.Errorf("opposed check requires actor_id, all trait types/slugs, and opponent_id")
 		}
@@ -332,16 +340,18 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		opponent, _ := w.Character(args.OpponentID)
 		var critStr string
 		if result.ActorCrit {
-			critStr += fmt.Sprintf(" (%s critical success!)", actor.Name)
+			critStr += "|" + actor.Name + "-CRIT"
 		}
 		if result.OpponentCrit {
-			critStr += fmt.Sprintf(" (%s critical success!)", opponent.Name)
+			critStr += "|" + opponent.Name + "-CRIT"
 		}
-		outcomeStr := "tie or loss"
+		outcomeStr := "tie"
 		if result.ActorWins {
-			outcomeStr = fmt.Sprintf("%s wins", actor.Name)
+			outcomeStr = actor.Name
+		} else {
+			outcomeStr = opponent.Name
 		}
-		return fmt.Sprintf("%s scored %d against %s's %d (relative degree %+d): %s%s", actor.Name, result.ActorTotal, opponent.Name, result.OpponentTotal, result.RelativeDegree, outcomeStr, critStr), nil
+		return fmt.Sprintf("%s|%d|vs|%s|%d|deg%+d|win:%s%s", actor.Name, result.ActorTotal, opponent.Name, result.OpponentTotal, result.RelativeDegree, outcomeStr, critStr), nil
 	case "write_setting_file":
 		var args struct {
 			Filename string `json:"filename"`
@@ -351,13 +361,13 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse write setting file: %w", err)
 		}
-		if w.Ruleset == nil {
+		if w.Setting == nil {
 			return "", fmt.Errorf("world has no setting selected")
 		}
 		if args.Filename == "" || args.Mode == "" {
 			return "", fmt.Errorf("write setting file requires filename, mode, and content")
 		}
-		if err := w.Ruleset.WriteFile(args.Filename, args.Mode, []byte(args.Content)); err != nil {
+		if err := w.Setting.WriteFile(args.Filename, args.Mode, []byte(args.Content)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("wrote %s (%s)", args.Filename, args.Mode), nil
@@ -407,7 +417,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			return "", fmt.Errorf("damage points must be non-negative")
 		}
 		result := ch.Wounds.ApplyDamage(damagePoints)
-		return fmt.Sprintf("%s takes damage: %s (scratches: %d, penalty: %+d)", ch.Name, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
+		return fmt.Sprintf("%s|dmg%d|%s|scratch:%d|pen%+d", ch.Name, damagePoints, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), nil
 	case "heal":
 		ch, raw, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
@@ -422,14 +432,14 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			return "", fmt.Errorf("levels to heal must be positive")
 		}
 		result := ch.Wounds.Heal(lvl)
-		return fmt.Sprintf("%s: %s (now at %s, penalty: %+d)", ch.Name, result, ch.Wounds.Level, ch.Wounds.Penalty()), nil
+		return fmt.Sprintf("%s|heal%d|%s|level:%s|pen%+d", ch.Name, lvl, result, ch.Wounds.Level, ch.Wounds.Penalty()), nil
 	case "declare_dead":
 		ch, _, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
 			return "", err
 		}
 		ch.Wounds.DeclareDead()
-		return fmt.Sprintf("%s has been declared dead (death is permanent)", ch.Name), nil
+		return fmt.Sprintf("%s|DEAD", ch.Name), nil
 	default:
 		return "", fmt.Errorf("unknown action tool %q", call.Function.Name)
 	}
