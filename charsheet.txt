@@ -1,21 +1,18 @@
-[1m[36m─── CHARACTER SHEET: Garg the Goblin [36m───[0m
+[1m[36m─── CHARACTER SHEET: Ricky the Woodcutter [36m───[0m
 [36m◆ Location:[0m default
 
 [1m▸ Attributes[0m
-    [32mAgility[0m Great(+2)[0m
+    [32mAgility[0m Fair(+0)[0m
     [32mPerception[0m Good(+1)[0m
-    [31mStrength[0m Mediocre(-1)[0m
+    [32mStrength[0m Great(+2)[0m
 
 [1m▸ Skills[0m
-    [32mAthletics[0m Fair(+0)[0m
+    [32mAthletics[0m Great(+2)[0m
     [32mFight[0m Good(+1)[0m
-    [32mStealth[0m Great(+2)[0m
+    [31mStealth[0m Mediocre(-1)[0m
 
 [1m▸ Wounds[0m
   ○ Scratch | ○ Hurt | ○ Very Hurt | ○ Incap. | ○ Near Death | ○ Dead
-
-[1m▸ Gifts[0m
-  [32m✓[0m night-eyes
 
 [1m▸ Faults[0m
   [31m✗[0m hot-headed

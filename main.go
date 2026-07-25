@@ -676,8 +676,13 @@ func openingBriefing(w *rules.World) string {
 }
 
 // processGameTurn drives the DM until it hands back narration for the player.
-// Tool calls are executed and fed back, so one turn can take several requests.
+// Tool calls (checks, NPC creation, write_state, ...) are all executed and fed
+// back in the same round; only the absence of any narration prose forces
+// another request, since the DM must narrate before it knows what to save.
 func processGameTurn(w *rules.World, client *llm.Client, model string, messages *[]llm.Message) {
+	turnStart := len(*messages)
+	var savedState *stateUpdate
+
 	for attempt := 0; attempt < maxTurnIterations; attempt++ {
 		response, err := streamChat(client, model, *messages, gameplayTools())
 		if err != nil {
@@ -685,57 +690,19 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			return
 		}
 
-		// write_state on its own ends the turn: the prose has already streamed
-		// to the player, and only the condensed state is kept in history.
-		if call, ok := onlyWriteState(response.Message.ToolCalls); ok {
-			state, err := parseStateUpdate(call)
-			switch {
-			case err != nil:
-				fmt.Printf("\nError parsing write_state: %v\n", err)
-			case response.Message.Content == "":
-				// The DM saved state without narrating first—nothing streamed
-				// to the player this turn, so make it try again.
-				*messages = append(*messages, response.Message)
-				*messages = append(*messages, llm.Message{
-					Role:       llm.RoleTool,
-					ToolCallID: call.ID,
-					Name:       call.Function.Name,
-					Content:    "Error: you called write_state without narrating first. Write the turn's narration as plain text, then call write_state again.",
-				})
-				continue
-			default:
-				if debug {
-					fmt.Printf("\n\033[90m[%s]\033[0m\n", state.CondensedState)
-				}
-				*messages = append(*messages, llm.Message{
-					Role:    llm.RoleAssistant,
-					Content: state.CondensedState,
-				})
-				return
-			}
-		}
-
-		if len(response.Message.ToolCalls) == 0 {
-			// The DM narrated but still owes us the write_state call that
-			// closes out the turn.
-			if response.Message.Content != "" {
-				*messages = append(*messages, response.Message)
-			}
-			*messages = append(*messages, llm.Message{
-				Role:    llm.RoleUser,
-				Content: "Call write_state to save this turn's state.",
-			})
-			continue
-		}
-
 		*messages = append(*messages, response.Message)
 
 		for _, toolCall := range response.Message.ToolCalls {
 			var result string
 			if toolCall.Function.Name == "write_state" {
-				result = writeStateRetry(toolCall)
+				state, err := parseStateUpdate(toolCall)
+				if err != nil {
+					result = fmt.Sprintf("Error: could not read your state update (%v).", err)
+				} else {
+					result = "state saved"
+					savedState = &state
+				}
 			} else {
-				var err error
 				result, err = executeAction(w, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
@@ -754,19 +721,36 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 		if err := writeCharsheet(w); err != nil {
 			fmt.Println("\nOutput error:", err)
 		}
+
+		if response.Message.Content == "" {
+			// Nothing streamed to the player yet. If it was pure setup (checks,
+			// NPC creation) the tool results above give it what it needs to
+			// narrate next round; otherwise nudge it to actually narrate.
+			if len(response.Message.ToolCalls) == 0 {
+				*messages = append(*messages, llm.Message{
+					Role:    llm.RoleUser,
+					Content: "Narrate this turn as plain text.",
+				})
+			}
+			continue
+		}
+
+		// Prose streamed to the player: the turn is over. If state was saved,
+		// collapse this turn's exchange down to the condensed line to keep
+		// history compact; otherwise leave the full exchange in place.
+		if savedState != nil {
+			if debug {
+				fmt.Printf("\n\033[90m[%s]\033[0m\n", savedState.CondensedState)
+			}
+			*messages = append((*messages)[:turnStart], llm.Message{
+				Role:    llm.RoleAssistant,
+				Content: savedState.CondensedState,
+			})
+		}
+		return
 	}
 
 	fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
-}
-
-// onlyWriteState returns the write_state call if it is the entire response.
-// Mixed responses go through the tool loop first—state written before this
-// turn's other tool results are known cannot be trusted.
-func onlyWriteState(calls []llm.ToolCall) (llm.ToolCall, bool) {
-	if len(calls) == 1 && calls[0].Function.Name == "write_state" {
-		return calls[0], true
-	}
-	return llm.ToolCall{}, false
 }
 
 func parseStateUpdate(call llm.ToolCall) (stateUpdate, error) {
@@ -778,15 +762,6 @@ func parseStateUpdate(call llm.ToolCall) (stateUpdate, error) {
 		return stateUpdate{}, errors.New("condensed_state is empty")
 	}
 	return args, nil
-}
-
-// writeStateRetry explains why a write_state call was not accepted, so the DM
-// can produce a usable one on the next request.
-func writeStateRetry(call llm.ToolCall) string {
-	if _, err := parseStateUpdate(call); err != nil {
-		return fmt.Sprintf("Error: could not read your state update (%v). Call write_state again with condensed_state.", err)
-	}
-	return "Deferred: you called write_state before this turn's other tool results were known. Read them and call write_state again, as your only tool call."
 }
 
 const llmRequestTimeout = time.Minute
@@ -808,15 +783,17 @@ func streamChatInternal(client *llm.Client, model string, messages []llm.Message
 		tracker.addMessage(msg)
 	}
 
+	if debug {
+		fmt.Printf("\n\033[90m[LLM API call: model=%s messages=%d tools=%d]\033[0m\n", model, len(messages), len(tools))
+	}
+
 	done := make(chan struct{})
 	go ui.ShowLoadingSpinner(llmRequestTimeout, done)
 
 	messageChan, err := client.Stream(ctx, llm.Request{
-		Model:           model,
-		Messages:        messages,
-		Tools:           tools,
-		Temperature:     0.85,
-		ReasoningEffort: llm.ReasoningEffortNone,
+		Model:    model,
+		Messages: messages,
+		Tools:    tools,
 	})
 	close(done)
 	if err != nil {
