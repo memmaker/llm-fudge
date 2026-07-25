@@ -66,6 +66,26 @@ func newUsageTracker(model string) *UsageTracker {
 
 func (ut *UsageTracker) addMessage(msg llm.Message) {
 	ut.estimatedUsage += len(msg.Content) / 4
+	for _, call := range msg.ToolCalls {
+		ut.estimatedUsage += len(call.Function.Arguments) / 4
+	}
+}
+
+// record prefers the provider's own token count, which a non-streaming reply
+// carries, and falls back to estimating from the text when one is missing.
+func (ut *UsageTracker) record(messages []llm.Message, response llm.Response) {
+	if total := response.Usage.TotalTokens; total > 0 {
+		ut.estimatedUsage = total
+		return
+	}
+	if reported := response.Usage.InputTokens + response.Usage.OutputTokens; reported > 0 {
+		ut.estimatedUsage = reported
+		return
+	}
+	for _, msg := range messages {
+		ut.addMessage(msg)
+	}
+	ut.addMessage(response.Message)
 }
 
 func (ut *UsageTracker) getPercentage() int {
@@ -123,13 +143,71 @@ func loadDMPrompt(w *rules.World) (string, error) {
 	return prompts.LoadPrompt("system-prompts/dm.md", w.Setting)
 }
 
+// debugArgLimit caps the arguments shown for a tool call. Narration prose and
+// setting files run to paragraphs, and a debug line is meant to be glanceable.
+// Nothing is lost: /context dumps the arguments in full.
+const debugArgLimit = 160
+
+func truncateForDebug(s string) string {
+	runes := []rune(s)
+	if len(runes) <= debugArgLimit {
+		return s
+	}
+	return string(runes[:debugArgLimit]) + "…"
+}
+
+// debugResponse reports what came back: whether the reply carried prose—text
+// written outside any tool call—which tools it called, and what it cost. Prose
+// is worth calling out on its own line: during gameplay it reaches nobody, since
+// the player only ever reads output_narration.
+func debugResponse(response llm.Response) {
+	if !debug {
+		return
+	}
+
+	calls := "none"
+	if len(response.Message.ToolCalls) > 0 {
+		names := make([]string, 0, len(response.Message.ToolCalls))
+		for _, call := range response.Message.ToolCalls {
+			names = append(names, call.Function.Name)
+		}
+		calls = strings.Join(names, ", ")
+	}
+
+	prose := strings.TrimSpace(response.Message.Content)
+	proseState := "none"
+	if prose != "" {
+		proseState = fmt.Sprintf("%d chars", len([]rune(prose)))
+	}
+
+	// Providers vary in what they report, so only name the parts they sent.
+	tokens := ""
+	switch u := response.Usage; {
+	case u.InputTokens > 0 || u.OutputTokens > 0:
+		total := u.TotalTokens
+		if total == 0 {
+			total = u.InputTokens + u.OutputTokens
+		}
+		tokens = fmt.Sprintf(" tokens=%d(in%d/out%d)", total, u.InputTokens, u.OutputTokens)
+	case u.TotalTokens > 0:
+		tokens = fmt.Sprintf(" tokens=%d", u.TotalTokens)
+	}
+
+	fmt.Printf("\n\033[90m[LLM response: prose=%s calls=%s%s]\033[0m\n", proseState, calls, tokens)
+	if prose != "" {
+		// Collapsed to a single line: a paragraph break in the reply would
+		// otherwise scatter this across the log.
+		fmt.Printf("  \033[90mProse:\033[0m %s\n", truncateForDebug(strings.Join(strings.Fields(prose), " ")))
+	}
+}
+
 func debugToolCall(call llm.ToolCall, result string, err error) {
 	if !debug {
 		return
 	}
 	fmt.Printf("\n\033[1;35m[TOOL]\033[0m \033[1m%s\033[0m\n", call.Function.Name)
 	if call.Function.Arguments != "" {
-		fmt.Printf("  \033[90mArgs:\033[0m %s\n", call.Function.Arguments)
+		fmt.Printf("  \033[90mArgs:\033[0m %s\n", truncateForDebug(call.Function.Arguments))
 	}
 	if err != nil {
 		fmt.Printf("  \033[91mError:\033[0m %s\n", err.Error())
@@ -218,7 +296,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 
 	for {
 		fmt.Println()
-		response, err := streamChat(client, model, clarifyMessages, nil)
+		response, err := chat(client, model, clarifyMessages, nil)
 		if err != nil {
 			return err
 		}
@@ -257,7 +335,7 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 
 	// Agentic loop: continue until LLM stops making tool calls
 	for {
-		response, err := streamChat(client, model, messages, settingCreationTools())
+		response, err := chat(client, model, messages, settingCreationTools())
 		if err != nil {
 			return err
 		}
@@ -342,7 +420,7 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 	// The adventure arrives through write_adventure, which persists it and sets
 	// w.AdventureContent. Loop so a rejected write can be corrected.
 	for attempt := 0; attempt < maxAdventureAttempts && w.AdventureContent == ""; attempt++ {
-		response, err := streamChatSilent(client, model, messages, adventureCreationTools())
+		response, err := chatSilent(client, model, messages, adventureCreationTools())
 		if err != nil {
 			return err
 		}
@@ -435,7 +513,7 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 
 	for {
 		fmt.Println()
-		response, err := streamChat(client, model, messages, characterCreationTools())
+		response, err := chat(client, model, messages, characterCreationTools())
 		if err != nil {
 			fmt.Println("\nLLM error:", err)
 			return
@@ -464,19 +542,24 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 				fmt.Println("Error writing char sheet:", err)
 			}
 
+			// The character exists, so setup is over. Handing the LLM another
+			// turn here only buys a paragraph of congratulation that the opening
+			// scene is about to narrate over anyway.
+			if len(w.Characters) > 0 {
+				if pc, err := w.Character(w.Player); err == nil {
+					fmt.Printf("\n%s is ready.\n", pc.Name)
+				}
+				return
+			}
+
 			fmt.Println()
-			response, err = streamChat(client, model, messages, characterCreationTools())
+			response, err = chat(client, model, messages, characterCreationTools())
 			if err != nil {
 				fmt.Println("\nLLM error:", err)
 				return
 			}
 			fmt.Println()
 			messages = append(messages, response.Message)
-		}
-
-		// Check if character is created
-		if len(w.Characters) > 0 {
-			return
 		}
 
 		// Get player input
@@ -651,14 +734,22 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 	}
 }
 
-type stateUpdate struct {
+// narrationOutput is the payload of an output_narration call: the prose goes to
+// the player, the condensed state stays in our context in its place.
+type narrationOutput struct {
+	Prose          string `json:"prose"`
 	CondensedState string `json:"condensed_state"`
 }
 
 // openingBriefing gives the DM the adventure it must open with, plus the player
-// character it was created without knowing about.
+// character it was created without knowing about. Setup is over and gameplay
+// starts here, so the instruction leads and closes the message: everything
+// between the two is reference material, not something to reply about.
 func openingBriefing(w *rules.World) string {
 	var b strings.Builder
+	b.WriteString("Character creation is finished and play begins now. This is turn one: there is no player input to react to, you open the game.\n\n")
+	b.WriteString("Your entire reply is the first scene, passed as the prose argument of output_narration. Put the player character in it and stop where they can act. Do not acknowledge, summarize, or comment on the briefing below—play it.\n\n")
+
 	b.WriteString("ADVENTURE BRIEFING (the player has not read this):\n\n")
 	b.WriteString(w.AdventureContent)
 	b.WriteString("\n\n")
@@ -671,20 +762,43 @@ func openingBriefing(w *rules.World) string {
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString("Open the adventure: narrate the first scene as plain text, then call write_state. Put the player character in it and stop where they can act. Do not summarize the briefing—play it.")
+	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response: one output_narration call carrying the opening prose and, as condensed_state, the full baseline of everything that prose establishes. Narrate the opening scene now.")
 	return b.String()
 }
 
 // processGameTurn drives the DM until it hands back narration for the player.
-// Tool calls (checks, NPC creation, write_state, ...) are all executed and fed
-// back in the same round; only the absence of any narration prose forces
-// another request, since the DM must narrate before it knows what to save.
+// Everything the player reads arrives through output_narration, so nothing is
+// streamed straight to them: tool calls (checks, NPC creation, ...) are executed
+// and fed back in the same round, and a response without narration forces
+// another request, since the DM must see the results before it can narrate them.
 func processGameTurn(w *rules.World, client *llm.Client, model string, messages *[]llm.Message) {
 	turnStart := len(*messages)
-	var savedState *stateUpdate
+
+	// A turn can narrate more than once—prose, a choice menu, then the prose
+	// reacting to it—so every condensed_state it produced is kept and the whole
+	// exchange collapses onto all of them at once. Collapsing onto the last one
+	// alone would throw away everything the earlier narration recorded.
+	var condensedStates []string
+	var narrated bool
+
+	collapseTurn := func() {
+		if len(condensedStates) == 0 {
+			// Nothing was condensed, so the exchange itself is the only record
+			// of what happened; leave it in place.
+			return
+		}
+		state := strings.Join(condensedStates, "\n")
+		if debug {
+			fmt.Printf("\033[90m[%s]\033[0m\n\n", state)
+		}
+		*messages = append((*messages)[:turnStart], llm.Message{
+			Role:    llm.RoleAssistant,
+			Content: state,
+		})
+	}
 
 	for attempt := 0; attempt < maxTurnIterations; attempt++ {
-		response, err := streamChat(client, model, *messages, gameplayTools())
+		response, err := chatSilent(client, model, *messages, gameplayTools())
 		if err != nil {
 			fmt.Println("\nLLM error:", err)
 			return
@@ -692,29 +806,35 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 
 		*messages = append(*messages, response.Message)
 
+		// The calls in a response arrive in no guaranteed order, so the turn is
+		// replayed in the order the player experiences it: first everything
+		// that decides what happened, then the prose about it, and only then
+		// the menu that asks them what happens next.
+		var narration *narrationOutput
+		results := make(map[string]string, len(response.Message.ToolCalls))
+
 		for _, toolCall := range response.Message.ToolCalls {
 			var result string
-			if toolCall.Function.Name == "write_state" {
-				state, err := parseStateUpdate(toolCall)
-				if err != nil {
-					result = fmt.Sprintf("Error: could not read your state update (%v).", err)
+			switch toolCall.Function.Name {
+			case "user_choice":
+				continue
+			case "output_narration":
+				parsed, parseErr := parseNarration(toolCall)
+				if parseErr != nil {
+					result = fmt.Sprintf("Error: could not read your narration (%v). The player was shown nothing—call output_narration again.", parseErr)
 				} else {
-					result = "state saved"
-					savedState = &state
+					result = "narration shown to player"
+					narration = &parsed
 				}
-			} else {
+				debugToolCall(toolCall, result, nil)
+			default:
 				result, err = executeAction(w, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
 				}
 			}
-			*messages = append(*messages, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Function.Name,
-				Content:    result,
-			})
+			results[toolCall.ID] = result
 		}
 
 		// Update charsheet after all mutations
@@ -722,120 +842,158 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			fmt.Println("\nOutput error:", err)
 		}
 
-		if response.Message.Content == "" {
-			// Nothing streamed to the player yet. If it was pure setup (checks,
-			// NPC creation) the tool results above give it what it needs to
-			// narrate next round; otherwise nudge it to actually narrate.
-			if len(response.Message.ToolCalls) == 0 {
+		if narration != nil {
+			fmt.Println(ui.WrapText(narration.Prose, ui.TerminalWidth()))
+			fmt.Println()
+			narrated = true
+			if narration.CondensedState != "" {
+				condensedStates = append(condensedStates, narration.CondensedState)
+			}
+		}
+
+		// A choice menu blocks on the player, so it runs under the prose that
+		// poses the question rather than ahead of it.
+		var answeredChoice bool
+		for _, toolCall := range response.Message.ToolCalls {
+			if toolCall.Function.Name != "user_choice" {
+				continue
+			}
+			result, choiceErr := executeAction(w, toolCall)
+			debugToolCall(toolCall, result, choiceErr)
+			if choiceErr != nil {
+				result = "Error: " + choiceErr.Error()
+			} else {
+				answeredChoice = true
+			}
+			results[toolCall.ID] = result
+		}
+
+		for _, toolCall := range response.Message.ToolCalls {
+			*messages = append(*messages, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: toolCall.ID,
+				Name:       toolCall.Function.Name,
+				Content:    results[toolCall.ID],
+			})
+		}
+
+		if narration == nil {
+			// Setup calls (checks, NPC creation): their results above give the
+			// DM what it needs to narrate next round.
+			if len(response.Message.ToolCalls) > 0 {
+				continue
+			}
+			// Prose written as a plain reply reaches nobody. Say so rather than
+			// resending an identical context and hoping for a different answer.
+			if response.Message.Content != "" {
 				*messages = append(*messages, llm.Message{
 					Role:    llm.RoleUser,
-					Content: "Narrate this turn as plain text.",
+					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration. Send this turn's narration again through output_narration.",
 				})
+				continue
 			}
+			break
+		}
+
+		// The player just picked an option, so the turn is not over: handing
+		// back to the prompt now would leave their answer unanswered, and the
+		// collapse below would drop it from history unread.
+		if answeredChoice {
 			continue
 		}
 
-		// Prose streamed to the player: the turn is over. If state was saved,
-		// collapse this turn's exchange down to the condensed line to keep
-		// history compact; otherwise leave the full exchange in place.
-		if savedState != nil {
-			if debug {
-				fmt.Printf("\n\033[90m[%s]\033[0m\n", savedState.CondensedState)
-			}
-			*messages = append((*messages)[:turnStart], llm.Message{
-				Role:    llm.RoleAssistant,
-				Content: savedState.CondensedState,
-			})
-		}
+		collapseTurn()
+		return
+	}
+
+	// Out of rounds. The player has already read narration, so end the turn on
+	// that rather than scolding them for a turn that did happen.
+	if narrated {
+		collapseTurn()
 		return
 	}
 
 	fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
 }
 
-func parseStateUpdate(call llm.ToolCall) (stateUpdate, error) {
-	var args stateUpdate
+func parseNarration(call llm.ToolCall) (narrationOutput, error) {
+	var args narrationOutput
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		return stateUpdate{}, err
+		return narrationOutput{}, err
 	}
-	if args.CondensedState == "" {
-		return stateUpdate{}, errors.New("condensed_state is empty")
+	if strings.TrimSpace(args.Prose) == "" {
+		return narrationOutput{}, errors.New("prose is empty")
 	}
 	return args, nil
 }
 
 const llmRequestTimeout = time.Minute
 
-func streamChat(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	return streamChatInternal(client, model, messages, tools, true)
+// chat sends one request and prints the reply's text. Gameplay narration does
+// not come back as text—it rides in an output_narration call—so this is for the
+// setup phases, where the LLM really is talking to the user directly.
+func chat(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	return chatInternal(client, model, messages, tools, true)
 }
 
-func streamChatSilent(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	return streamChatInternal(client, model, messages, tools, false)
+// chatSilent sends one request and prints nothing: the caller decides what, if
+// anything, reaches the player.
+func chatSilent(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	return chatInternal(client, model, messages, tools, false)
 }
 
-func streamChatInternal(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool, printOutput bool) (llm.Response, error) {
+// startSpinner runs the loading spinner until the returned stop function is
+// called. Stopping waits for the spinner to clear its line: the reply is printed
+// the instant the request returns, so a frame drawn a moment later would land on
+// top of it.
+func startSpinner() func() {
+	done := make(chan struct{})
+	cleared := make(chan struct{})
+	go func() {
+		defer close(cleared)
+		ui.ShowLoadingSpinner(llmRequestTimeout, done)
+	}()
+	return func() {
+		close(done)
+		<-cleared
+	}
+}
+
+func chatInternal(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool, printOutput bool) (llm.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
 	defer cancel()
 
-	tracker := newUsageTracker(model)
-	for _, msg := range messages {
-		tracker.addMessage(msg)
-	}
-
 	if debug {
-		fmt.Printf("\n\033[90m[LLM API call: model=%s messages=%d tools=%d]\033[0m\n", model, len(messages), len(tools))
+		fmt.Printf("\n\033[90m[LLM request: model=%s messages=%d tools=%d]\033[0m\n", model, len(messages), len(tools))
 	}
 
-	done := make(chan struct{})
-	go ui.ShowLoadingSpinner(llmRequestTimeout, done)
+	stopSpinner := startSpinner()
 
-	messageChan, err := client.Stream(ctx, llm.Request{
+	response, err := client.Chat(ctx, llm.Request{
 		Model:    model,
 		Messages: messages,
 		Tools:    tools,
 	})
-	close(done)
+	stopSpinner()
 	if err != nil {
 		return llm.Response{}, err
 	}
 
-	var accumulatedMessage llm.Message
-	accumulatedMessage.Role = llm.RoleAssistant
-
-	buffer := ""
-	width := ui.TerminalWidth()
-
-	for msg := range messageChan {
-		accumulatedMessage.Content += msg.Content
-		if msg.Content != "" && printOutput {
-			buffer += msg.Content
-
-			// Process complete lines, leaving partial content in buffer
-			lines := strings.Split(buffer, "\n")
-
-			// Print all complete lines (all but the last one)
-			for i := 0; i < len(lines)-1; i++ {
-				wrapped := ui.WrapLine(lines[i], width)
-				fmt.Println(strings.Join(wrapped, "\n"))
-			}
-
-			// Keep the last incomplete line in buffer
-			buffer = lines[len(lines)-1]
-		}
-		if len(msg.ToolCalls) > 0 {
-			accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, msg.ToolCalls...)
-		}
+	// Providers may leave the role off a reply; everything downstream appends
+	// this message straight back into the history, where it has to be assistant.
+	if response.Message.Role == "" {
+		response.Message.Role = llm.RoleAssistant
 	}
 
-	// Print any remaining buffered content
-	if buffer != "" && printOutput {
-		wrapped := ui.WrapLine(buffer, width)
-		fmt.Println(strings.Join(wrapped, "\n"))
+	debugResponse(response)
+
+	if printOutput && response.Message.Content != "" {
+		fmt.Println(ui.WrapText(response.Message.Content, ui.TerminalWidth()))
 	}
 
-	tracker.addMessage(accumulatedMessage)
+	tracker := newUsageTracker(model)
+	tracker.record(messages, response)
 	ui.DisplayContextUsage(tracker.getPercentage(), debug)
 
-	return llm.Response{Message: accumulatedMessage}, nil
+	return response, nil
 }
