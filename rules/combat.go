@@ -99,8 +99,11 @@ type AttackResult struct {
 	AmmoTracked bool
 	AmmoLeft    int
 	AmmoMax     int
-	Thrown      bool
-	ThrownLeft  int
+	// Thrown records that the weapon left the hand. It is still on ThrownBy's
+	// sheet: the engine cannot know where it landed, so the move is the DM's,
+	// and the rendered result asks for it in as many words.
+	Thrown   bool
+	ThrownBy string
 }
 
 // prepareAttack settles everything an attack needs before a die is rolled: that
@@ -285,7 +288,15 @@ func (w *World) resolveBlow(res *AttackResult, actor, target *Character, weapon 
 }
 
 // spendShot takes what the swing cost off the sheet: the round out of the
-// magazine, or the whole knife out of the hand.
+// magazine.
+//
+// A thrown weapon is reported and not removed. It has certainly left the hand,
+// but where it came to rest is a fact only the prose holds — buried in the
+// target, skidding under a table, out of a window into the alley — and the
+// engine learns that when the DM moves it, one call, in the response that
+// narrates the throw. Taking it off the sheet here would mean guessing a
+// destination, and an item this engine cannot place is an item it would have to
+// destroy.
 func (w *World) spendShot(res *AttackResult, actor *Character, weapon *Item, thrown bool) {
 	if weapon == nil {
 		return
@@ -298,12 +309,7 @@ func (w *World) spendShot(res *AttackResult, actor *Character, weapon *Item, thr
 	}
 	if thrown {
 		res.Thrown = true
-		// The weapon is downrange now, wherever the prose puts it. Getting it
-		// back is a matter of walking over and picking it up: add_weapon again.
-		_, left, err := actor.RemoveItem(weapon.Name, 1)
-		if err == nil {
-			res.ThrownLeft = left
-		}
+		res.ThrownBy = actor.Name
 	}
 }
 
@@ -383,7 +389,7 @@ func (r *AttackResult) String() string {
 		}
 	}
 	if r.Thrown {
-		fmt.Fprintf(&b, "|thrown:%s left the hand|has:%d", r.WeaponName, r.ThrownLeft)
+		fmt.Fprintf(&b, "|thrown:%s left %s's hand and is STILL ON THEIR SHEET — move_item it to where your prose says it landed", r.WeaponName, r.ThrownBy)
 	}
 	return b.String()
 }

@@ -1,0 +1,35 @@
+ADR 003: Locations, engine-held position, and item conservation
+Status: Accepted
+Supersedes: ADR 002 §5 (the `at:` half only) and the "A move Action" entry under Out of Scope in docs/engine-held-context-spec.md
+
+Context
+- Measured failure: a player threw a dagger and told the DM they retrieved it. The DM narrated the retrieval and never called `add_weapon`, so the engine went on reporting a sheet with no dagger on it. The prompt already said what to do — dm.md §Possessions is explicit, and `add_item`'s own description ends "an object you only narrate is not carried" — so this is not a wording problem, and rewriting the wording would not have fixed it.
+- Retrieval was also the most expensive call in the schema: `spendShot` deleted the thrown weapon outright, so getting it back meant restating name, description, damage, damage attribute and ranged flag from memory, for an object the engine could no longer describe. A call that costs that much and can be silently skipped is a call that gets skipped.
+- The engine had nowhere to put an object that was not in somebody's hands. `remove_item` was therefore doing double duty as "destroyed" and "changed hands", and every change of hands was a create/destroy pair that could half-succeed.
+- ADR 002 §5 removed `at:` from `ToString()` on the grounds that "the engine does not actually track movement". That was true of the engine as it stood — `Character.Location` was written once at `create_character` and defaulted to the string `"default"` — but it was a statement about a missing call, not a principle. The charsheet's "Present:" list was wrong for the same reason, and ADR 002 recorded it as pre-existing and untouched.
+
+Decision
+1. **Locations are first-class engine entities**: slug, name, description, optional parent. Minted from the name like a character id, and refused as duplicates, so one place has one slug forever.
+2. **Every item is in exactly one place** — a character's inventory or a location's floor. `move_item` changes which. `add_item`/`add_weapon`/`add_armor` bring something into the world for the first time and accept a location as a destination; `remove_item` now means destroyed, not "changed hands".
+3. **`move_item` is the only call for changing hands** — picking up, dropping, giving, looting, stashing, retrieving. It carries the item across whole, so ratings, wording and ammunition survive a move that a create/destroy pair would have lost. Ratings are copied by value: a partial move leaves two stacks, and two stacks must not share a magazine.
+4. **Position is engine-owned.** `output_narration` carries a required `location`, and the engine moves the player there. `move_character` moves everyone else; `create_character` defaults an NPC to the current scene. `at` joins the engine-owned keys stripped from ledger lines keyed to a character, and returns to `ToString()`. This reverses ADR 002 §5 on the narrow ground that the engine now maintains the fact.
+5. **A narration naming an unknown location is refused**, before the player sees anything, with the error listing every location that exists — the same shape as `character not found`. Rejection at `output_narration` is the only mechanism that has ever forced DM behaviour, and it is what makes slug drift (`cellar`, `the-cellar`, `wine-cellar` for one room) structurally impossible rather than something the prompt argues against.
+6. **Items at a location are keyed by name and spot together.** `location_description` is short prose saying where in the place a thing rests; two daggers in two corners stay two entries, one pile of arrows stays a count. A name matching more than one stack is refused with every candidate and its spot listed.
+7. **Nesting is organisational.** Parent links structure the map and let the block render the scene in full and everything else as one line each. They carry no reach: an item is taken only from the exact location a character stands in, because "at the tavern" does not say whether that is the taproom or the landing.
+8. **A location's description is what the place permanently is.** What has *become* true of it — door barred, fire lit, body in the corner — stays in the world ledger. This keeps ADR 002's one-fact-one-home rule intact across the new type.
+9. **A thrown weapon is reported, not moved.** `spendShot` no longer removes it. Where it landed — buried in the target, under a table, out of a window — is a fact only the prose holds, so the DM moves it in the response that narrates the throw, and the attack result says so in as many words rather than reporting a bare `has:0`.
+10. **Coins stay a scalar on characters.** Money at a location is an ordinary item — a purse, a strongbox — converted with `add_coins` when somebody opens it.
+11. Turn one creates its own location: characters start with an empty location, the `"default"` string is deleted, and the opening briefing asks for `create_location` before `output_narration` in the same response.
+12. Non-narration tool calls in a response are executed **before** the narration is read, so `create_location` + `output_narration` work in one round whatever order the model emitted them in. The last round of a turn keeps `create_location` beside the narration — it resolves nothing, and without it a turn whose scene had moved could not be narrated at all.
+
+Consequences
+- The block grows a **LOCATIONS** section: every slug as one line in tree order, the scene expanded with its description, who is standing in it, and what lies about with spots and ratings. Cost is roughly one line per place plus one per dropped stack; conservation keeps that small, since a dead bandit's rifle stays on the bandit, who is in the ROSTER.
+- The charsheet's "Present:" list and `Location:` line become correct for the first time, and the sheet shows the location's name rather than its slug.
+- A forgotten `move_item` after a throw leaves the roster asserting the player still carries a weapon they threw. This is knowingly accepted: option A (engine auto-places at the thrower's location) was considered and rejected in favour of the DM owning where things land. The attack result's instruction is the only mitigation, and if drift persists this is the first decision to revisit.
+- `remove_item` changing meaning is a silent semantic break for any prompt or habit that used it to hand something over. dm.md says so explicitly; the tool description says so twice.
+- Nothing here is persisted — the world is still in memory only — so locations live and die with the process like the rest of the world.
+
+Rationale
+- The same argument as ADR 001 and ADR 002: move a correctness problem out of a probabilistic system and into a deterministic one. The prompt had already been pushed as far as prose can go.
+- Conservation is what makes the record trustworthy. Under create/destroy, a missing item is indistinguishable from a bug; under conservation, a thing you cannot find is somewhere else.
+- Position is owned by whoever maintains it. ADR 002 was right to refuse a fact the engine could not keep true, and is superseded only because that ceased to be so.

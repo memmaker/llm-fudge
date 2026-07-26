@@ -262,8 +262,12 @@ func TestEmptyWeaponCannotFire(t *testing.T) {
 	}
 }
 
-// A thrown weapon leaves the hand whatever it hits, so it comes off the sheet.
-func TestThrownWeaponLeavesTheSheet(t *testing.T) {
+// A thrown weapon leaves the hand, but the engine does not decide where it
+// lands: it may be buried in the target, skittering under a table or out of a
+// window into the alley, and only the prose knows which. So the engine reports
+// the throw and leaves the sheet alone, and the DM moves it once it has read
+// the result and knows what it is narrating.
+func TestThrowingIsReportedButLeavesTheSheetToTheDM(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, map[string]int{"strength": 1}, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
@@ -272,16 +276,31 @@ func TestThrownWeaponLeavesTheSheet(t *testing.T) {
 	res := &AttackResult{ActorName: kyle.Name, TargetName: bandit.Name, Hit: true, RelativeDegree: 3}
 	w.resolveBlow(res, kyle, bandit, knives, true)
 
-	if got := kyle.Inventory["throwing-knife"].Count; got != 1 {
-		t.Errorf("knives left = %d, want 1", got)
+	if got := kyle.Inventory["throwing-knife"].Count; got != 2 {
+		t.Errorf("knives left = %d, want both still on the sheet", got)
 	}
-	if !res.Thrown || res.ThrownLeft != 1 {
+	if !res.Thrown {
 		t.Errorf("the throw was not recorded: %+v", res)
 	}
-	// The last one thrown empties the stack entirely.
-	w.resolveBlow(&AttackResult{}, kyle, bandit, knives, true)
-	if _, held := kyle.Inventory["throwing-knife"]; held {
-		t.Error("the last knife thrown should leave the sheet")
+}
+
+// The result line is the text the DM reads at the moment it is about to
+// narrate, so it states the outstanding move rather than a bare fact it would
+// have to draw the conclusion from.
+func TestThrownResultAsksForTheMove(t *testing.T) {
+	w := combatWorld()
+	kyle := fighter(w, "kyle", "Kyle", 0, nil, nil)
+	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
+	knife, _ := kyle.AddWeapon("Throwing Knife", "Balanced.", 1, Weapon{Damage: 0})
+
+	res := &AttackResult{ActorName: kyle.Name, TargetName: bandit.Name, Hit: true, RelativeDegree: 3}
+	w.resolveBlow(res, kyle, bandit, knife, true)
+
+	line := res.String()
+	for _, want := range []string{"Throwing Knife", "move_item", "Kyle"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("result = %q, want it to mention %q", line, want)
+		}
 	}
 }
 

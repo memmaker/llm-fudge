@@ -76,9 +76,16 @@ func (s *session) engineState() string {
 	b.WriteString("You do not write them, and what is absent here is not carried or not true.\n\n")
 	b.WriteString(roster(s.world))
 
+	b.WriteString("\n\nLOCATIONS — every place the engine holds, nested as the world is. Name one of\n")
+	b.WriteString("these slugs as your narration's location; anything else is refused. The scene\n")
+	b.WriteString("expands: what it is, who is standing in it, what lies about. Items elsewhere\n")
+	b.WriteString("are listed under the place they lie in.\n\n")
+	b.WriteString(locations(s.world))
+
 	b.WriteString("\n\nWORLD — what only your prose knows, merged from every world_update you have\n")
 	b.WriteString("sent. @tN marks the turn an entry was last set; recall it to see how it got\n")
-	b.WriteString("that way. Where characters are standing lives here, not in the roster.\n\n")
+	b.WriteString("that way. What has become true of a place lives here; where the place is and\n")
+	b.WriteString("who is standing in it do not.\n\n")
 	if rendered := s.ledger.Render(); rendered != "" {
 		b.WriteString(rendered)
 	} else {
@@ -119,6 +126,64 @@ func roster(w *rules.World) string {
 		blocks = append(blocks, w.Characters[id].ToString())
 	}
 	return strings.Join(blocks, "\n\n")
+}
+
+// locations renders the world's map: every place, nested under its parent, with
+// what lies in each. Only the scene spells itself out in full — its description
+// and who is standing in it — because that is the one place the DM is writing
+// about, and a block that described every room every turn would grow with the
+// map for no reading anybody does.
+//
+// Every slug appears, expanded or not. It has to: a narration naming a location
+// the engine does not hold is refused, so the DM reads its slugs off here rather
+// than guessing at one and spending a round finding out.
+func locations(w *rules.World) string {
+	if len(w.Locations) == 0 {
+		return "(no locations exist yet — create one with create_location before you narrate)"
+	}
+
+	scene := w.Scene()
+	rendered := make(map[string]bool, len(w.Locations))
+	var b strings.Builder
+	var walk func(parent string, depth int)
+	walk = func(parent string, depth int) {
+		for _, loc := range w.Children(parent) {
+			rendered[loc.ID] = true
+			pad := strings.Repeat("  ", depth)
+			fmt.Fprintf(&b, "%s%s|%s", pad, loc.ID, loc.Name)
+			if loc.ID == scene {
+				b.WriteString("  <-- SCENE")
+			}
+			b.WriteString("\n")
+			if loc.ID == scene {
+				if loc.Description != "" {
+					fmt.Fprintf(&b, "%s  desc:%s\n", pad, loc.Description)
+				}
+				if present := w.CharactersAt(loc.ID); len(present) > 0 {
+					fmt.Fprintf(&b, "%s  here:%s\n", pad, strings.Join(present, ", "))
+				}
+			}
+			for _, line := range loc.ItemLines() {
+				fmt.Fprintf(&b, "%s  %s\n", pad, line)
+			}
+			walk(loc.ID, depth+1)
+		}
+	}
+	walk("", 0)
+
+	// A location whose parent was somehow lost would vanish from a walk that
+	// only ever descends from the roots, and a slug the DM cannot see is a slug
+	// it will be refused for using. Nothing should reach this, since a parent
+	// must exist before its child is created and locations are never deleted —
+	// but the map is the DM's only view, so orphans are shown rather than lost.
+	// What was rendered is tracked rather than searched for in the text: an item
+	// resting "on the bar" would otherwise pass for the location `bar`.
+	for _, id := range w.LocationIDs() {
+		if !rendered[id] {
+			fmt.Fprintf(&b, "%s|%s (parent %s is missing)\n", id, w.Locations[id].Name, w.Locations[id].Parent)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // timeline renders the recent past as the player and the DM made it: what was

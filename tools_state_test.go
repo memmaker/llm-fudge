@@ -109,17 +109,13 @@ func TestCharacterToString(t *testing.T) {
 		"wounds:hurt", "penalty:-1", "fudge-points:3",
 		"attributes:grit+1", "skills:shootin+2", "gifts:quick-draw", "faults:wanted",
 		"coins:40", "Peacemaker x2|A nicked .45.",
+		// Position is stated now that the engine maintains it: the narration
+		// names the scene every turn and move_character moves everybody else.
+		"at:dryfall",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ToString missing %q:\n%s", want, got)
 		}
-	}
-
-	// Location is set here and still must not appear. Nothing ever moves it, so
-	// stating it would put a fact the engine cannot keep true inside the block
-	// the DM reads as authoritative. Where a character stands is the ledger's.
-	if strings.Contains(got, "dryfall") || strings.Contains(got, "at:") {
-		t.Errorf("ToString asserts a position it does not track:\n%s", got)
 	}
 
 	// An incapacitated character cannot act at all, and the DM has to know that
@@ -228,18 +224,21 @@ func TestCreateCharacterReturnsCharacterState(t *testing.T) {
 
 // Prose never enters the context — the condensed state replaces it — so a
 // narration that carries no state would leave the turn with no record at all.
-// It is refused here, before the player is shown anything, so the DM can send
-// the turn again with its memory attached.
+// A narration with no location is as unusable: position is the engine's, and
+// this call is what maintains it. Both are refused here, before the player is
+// shown anything, so the DM can send the turn again complete.
 func TestNarrationRequiresWorldUpdate(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		args string
 		ok   bool
 	}{
-		{"both", `{"prose":"The clerk shrugs.","world_update":"clerk|refused:handgun-ammo"}`, true},
-		{"no state", `{"prose":"The clerk shrugs."}`, false},
-		{"blank state", `{"prose":"The clerk shrugs.","world_update":"  "}`, false},
-		{"no prose", `{"world_update":"clerk|refused:handgun-ammo"}`, false},
+		{"all three", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":"clerk|refused:handgun-ammo"}`, true},
+		{"no state", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, false},
+		{"blank state", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":"  "}`, false},
+		{"no prose", `{"location":"gun-shop","world_update":"clerk|refused:handgun-ammo"}`, false},
+		{"no location", `{"prose":"The clerk shrugs.","world_update":"clerk|refused:handgun-ammo"}`, false},
+		{"blank location", `{"prose":"The clerk shrugs.","location":" ","world_update":"clerk|refused:handgun-ammo"}`, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := parseNarration(inventoryCall("output_narration", c.args))

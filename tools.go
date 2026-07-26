@@ -41,12 +41,17 @@ func characterCreationTools() []llm.Tool {
 // added as plain gear cannot be swung.
 func inventoryTools() []llm.Tool {
 	characterID := map[string]any{"type": "string", "description": "Whose possessions change. Omit it to mean the player character—during character creation their id does not exist yet."}
+	// A destination is a character or a place, never both and never one field
+	// holding either: both namespaces are slugs, so an NPC called Mira and a
+	// room called Mira would be indistinguishable in the one place it matters.
+	location := map[string]any{"type": "string", "description": "Create the item lying at this location instead of in somebody's hands—a crate already in the cellar, a body's gear on the ground, a sword in the stone. Give the location's slug, and give location_description with it. Leave both out to give the item to a character."}
+	locationDescription := map[string]any{"type": "string", "description": "Where in that location the thing rests, in a few words: \"on the top shelf\", \"half-buried in ash\", \"nailed above the door\". Required whenever location is given."}
 	return []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{Name: "add_weapon", Description: "Give a character a weapon. Use this instead of add_item for anything meant to be attacked with—the damage rating you set here is what the attack tools do their arithmetic with, and a blade recorded as plain gear cannot be swung at all. Rate the weapon by what it is (Fudge damage factors): -1 bare fist, +0 a knife or small club, +1 a sword or hand axe, +2 a large one-handed or light two-handed weapon, +3 a heavy two-handed weapon, +1 more for a genuinely sharp edge. Firearms: +0 to +1 derringer, +2 to +3 handgun, +5 or more for a powerful two-hander, +10 for a bazooka. Set damage_attribute for anything driven by muscle (sword, axe, bow, thrown spear) so the wielder's own strength counts; leave it out for anything with its own power source, where the weapon hits the same however weak the hand holding it.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "name": map[string]any{"type": "string", "description": "The weapon's name as the player will read it, e.g. \"Blaster Pistol\"."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this particular weapon."}, "damage": map[string]any{"type": "integer", "description": "Damage rating: the weapon's own contribution to a hit. See the guidance above."}, "ranged": map[string]any{"type": "boolean", "description": "True for anything fired or shot from a distance (gun, bow, crossbow). False for hand-to-hand weapons. Defaults to false."}, "damage_attribute": map[string]any{"type": "string", "description": "Slug of the attribute added to damage for muscle-powered weapons—the setting's strength-like attribute. Omit for firearms, energy weapons and anything else that does not depend on the wielder's build."}, "ammo_capacity": map[string]any{"type": "integer", "description": "How many shots it holds when full. Ranged only. Omit or 0 to not count shots at all, which is fine for a bow whose arrows you would rather not tally."}, "ammo": map[string]any{"type": "integer", "description": "How many shots are in it right now. Defaults to full."}, "ammo_item": map[string]any{"type": "string", "description": "The name of the item a reload spends, e.g. \"Power Cell\". Add that item separately with add_item—reloading fails when they carry none, and a character with a full magazine and no spares is one firefight from empty."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description", "damage"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "add_armor", Description: "Give a character armor. Use this instead of add_item for anything worn as protection—the rating you set here is subtracted from every blow that lands on them. Rate it by what it is made of: +1 light non-metal (padded, leather), +2 heavy non-metal or light metal (mail shirt, flak vest), +3 medium metal, +4 heavy metal (full plate), +5 or more for powered or science-fiction armor. Armor goes on worn: it protects from the moment you record it. Pass worn false for a piece being hauled rather than used—salvage in a pack, a breastplate looted off a body and not yet put on.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "name": map[string]any{"type": "string", "description": "The armor's name as the player will read it, e.g. \"Flak Vest\"."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this particular piece."}, "protection": map[string]any{"type": "integer", "description": "Protection rating: how much it takes off a blow. See the guidance above."}, "worn": map[string]any{"type": "boolean", "description": "Whether it is being worn. Defaults to true. Only worn armor protects, and only the single best worn piece counts—layering does not add up."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description", "protection"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "add_weapon", Description: "Give a character a weapon. Use this instead of add_item for anything meant to be attacked with—the damage rating you set here is what the attack tools do their arithmetic with, and a blade recorded as plain gear cannot be swung at all. Rate the weapon by what it is (Fudge damage factors): -1 bare fist, +0 a knife or small club, +1 a sword or hand axe, +2 a large one-handed or light two-handed weapon, +3 a heavy two-handed weapon, +1 more for a genuinely sharp edge. Firearms: +0 to +1 derringer, +2 to +3 handgun, +5 or more for a powerful two-hander, +10 for a bazooka. Set damage_attribute for anything driven by muscle (sword, axe, bow, thrown spear) so the wielder's own strength counts; leave it out for anything with its own power source, where the weapon hits the same however weak the hand holding it.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "location": location, "location_description": locationDescription, "name": map[string]any{"type": "string", "description": "The weapon's name as the player will read it, e.g. \"Blaster Pistol\"."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this particular weapon."}, "damage": map[string]any{"type": "integer", "description": "Damage rating: the weapon's own contribution to a hit. See the guidance above."}, "ranged": map[string]any{"type": "boolean", "description": "True for anything fired or shot from a distance (gun, bow, crossbow). False for hand-to-hand weapons. Defaults to false."}, "damage_attribute": map[string]any{"type": "string", "description": "Slug of the attribute added to damage for muscle-powered weapons—the setting's strength-like attribute. Omit for firearms, energy weapons and anything else that does not depend on the wielder's build."}, "ammo_capacity": map[string]any{"type": "integer", "description": "How many shots it holds when full. Ranged only. Omit or 0 to not count shots at all, which is fine for a bow whose arrows you would rather not tally."}, "ammo": map[string]any{"type": "integer", "description": "How many shots are in it right now. Defaults to full."}, "ammo_item": map[string]any{"type": "string", "description": "The name of the item a reload spends, e.g. \"Power Cell\". Add that item separately with add_item—reloading fails when they carry none, and a character with a full magazine and no spares is one firefight from empty."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description", "damage"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "add_armor", Description: "Give a character armor. Use this instead of add_item for anything worn as protection—the rating you set here is subtracted from every blow that lands on them. Rate it by what it is made of: +1 light non-metal (padded, leather), +2 heavy non-metal or light metal (mail shirt, flak vest), +3 medium metal, +4 heavy metal (full plate), +5 or more for powered or science-fiction armor. Armor goes on worn: it protects from the moment you record it. Pass worn false for a piece being hauled rather than used—salvage in a pack, a breastplate looted off a body and not yet put on.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "location": location, "location_description": locationDescription, "name": map[string]any{"type": "string", "description": "The armor's name as the player will read it, e.g. \"Flak Vest\"."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this particular piece."}, "protection": map[string]any{"type": "integer", "description": "Protection rating: how much it takes off a blow. See the guidance above."}, "worn": map[string]any{"type": "boolean", "description": "Whether it is being worn. Defaults to true. Only worn armor protects, and only the single best worn piece counts—layering does not add up."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description", "protection"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "equip_armor", Description: "Put armor on or take it off. Armor is already worn when you add it, so this is for the moments the fiction turns on it: stripping a corpse and shrugging into what it wore, peeling off a soaked coat, being stripped of a shield by captors. Armor that is not worn protects nobody.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "name": map[string]any{"type": "string", "description": "The armor's name as it was added."}, "worn": map[string]any{"type": "boolean", "description": "True to put it on, false to take it off."}}, "required": []string{"name", "worn"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "add_item", Description: "Give a character an item. Call it whenever something enters their hands: starting equipment at creation, loot, a purchase, a gift, salvage. An item they already carry stacks onto the entry they have rather than opening a second one, so use the same name you used before. The description is what the player reads on their sheet, so write one concrete line about this particular thing—what it is, what shape it is in, where it came from—not a catalogue entry. Items are recorded here and nowhere else: an object you only narrate is not carried.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "name": map[string]any{"type": "string", "description": "The item's name as the player will read it, e.g. \"Blaster Pistol\". Name the thing itself, without the count."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this item."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "remove_item", Description: "Take an item away from a character: spent, sold, given away, stolen, broken, left behind. Use the name it is carried under. Removing the last of a stack drops it from the sheet entirely. The call fails if they do not carry that many—read the error and narrate what they actually have rather than insisting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "name": map[string]any{"type": "string", "description": "The item's name as it was added."}, "count": map[string]any{"type": "integer", "description": "How many are lost. Defaults to 1."}}, "required": []string{"name"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "add_item", Description: "Bring an item into the world: starting equipment at creation, a purchase, a reward, a gift from off-screen, something found that was never recorded before. It goes into a character's hands, or—with location and location_description—onto the ground somewhere. An item they already carry stacks onto the entry they have, so use the same name you used before. The description is what the player reads on their sheet, so write one concrete line about this particular thing—what it is, what shape it is in, where it came from—not a catalogue entry. This is for things that did NOT exist a moment ago: anything already on a sheet or lying somewhere is moved with move_item, which carries its ratings and wording across intact. Items are recorded here and nowhere else: an object you only narrate does not exist.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "location": location, "location_description": locationDescription, "name": map[string]any{"type": "string", "description": "The item's name as the player will read it, e.g. \"Blaster Pistol\". Name the thing itself, without the count."}, "description": map[string]any{"type": "string", "description": "One short concrete sentence describing this item."}, "count": map[string]any{"type": "integer", "description": "How many are gained. Defaults to 1."}}, "required": []string{"name", "description"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "remove_item", Description: "Destroy an item: drunk, eaten, burned, smashed, fired off as the last charge, dissolved, spent for good. It ceases to exist. This is NOT how something changes hands—an item sold, given, dropped, stolen or left behind still exists and belongs somewhere, so move_item it to whoever or wherever has it now. Destroying something that merely moved is how a world loses things. Works on a character's inventory, or on a location's floor with location and location_description. The call fails if there are not that many—read the error and narrate what is actually there rather than insisting.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "location": location, "location_description": locationDescription, "name": map[string]any{"type": "string", "description": "The item's name as it was recorded."}, "count": map[string]any{"type": "integer", "description": "How many are destroyed. Defaults to 1."}}, "required": []string{"name"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "add_coins", Description: "Credit a character's purse: starting money at creation, a reward, a sale, found treasure. Coins are the setting's ordinary currency, whatever it is called there.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "amount": map[string]any{"type": "integer", "description": "How many coins are gained. Must be positive."}}, "required": []string{"amount"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "remove_coins", Description: "Debit a character's purse: a purchase, a bribe, a toll, a theft. A purse never goes negative, so the call fails when they cannot afford it—when it does, they cannot pay, and the scene goes differently.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": characterID, "amount": map[string]any{"type": "integer", "description": "How many coins are spent. Must be positive."}}, "required": []string{"amount"}}}},
 	}
@@ -73,6 +78,14 @@ func combatTools() []llm.Tool {
 	}
 }
 
+// createLocationTool is built on its own because the round that has to end a
+// turn is offered it beside the narration: a scene that has moved somewhere new
+// cannot be narrated until the place exists, and that round has no other call
+// left to make it with.
+func createLocationTool() llm.Tool {
+	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "create_location", Description: "Register a place the story has reached: a room, a street, a clearing, a ship's hold. Every narration names the location it happened in, and only a location that exists can be named—so the moment your prose moves the scene somewhere new, create it in that same response, before output_narration. The id is minted from the name and comes back in the reply; it is also listed in LOCATIONS every turn, so read slugs off there rather than inventing them. Do NOT create a second location for a place that already has one—one room, one slug. Split a place into child locations only when the fiction actually treats them separately: a tavern and its cellar, a keep and its courtyard, not every corner of one room.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string", "description": "The place's name as the player would hear it, e.g. \"The Rusty Anchor\"."}, "description": map[string]any{"type": "string", "description": "What this place permanently IS, in one or two concrete sentences: its shape, its light, what it is for. Not what is currently happening in it and not who is in it—those change, and they belong in world_update."}, "parent": map[string]any{"type": "string", "description": "The slug of the location this one sits inside, if any: a cellar's parent is the tavern above it. The parent must already exist. Nesting is for orientation and does not affect reach—an item is only ever picked up from the exact location a character stands in."}}, "required": []string{"name", "description"}}}}
+}
+
 // narrationTool is the one call a turn cannot end without, so it is built on its
 // own: a turn that has spent every resolution round it is allowed still has to be
 // narrated, and it is offered this and nothing else.
@@ -81,12 +94,13 @@ func narrationTool() llm.Tool {
 	// output_narration rather than a tool of its own: a separate tool is a
 	// separate round-trip, and the DM ended its turn with the narration instead of
 	// ever getting there. Required, so every narrated scene produces one.
-	narrationDescription := "Show the turn's narration to the player. This is the ONLY channel to them: they read the prose argument and nothing else—no dice, no tool names, no tool results, and no text you write outside this call. Text written as a plain reply reaches nobody. Every turn ends with exactly one output_narration, and the turn is not over until you call it. Call it only once you know what happened: if a check, a new NPC, damage or healing decides the outcome, make those calls first with no narration, read the results when they come back, and narrate in your next response. It must be your LAST tool call, after every state-changing call, so it can reflect their outcome. Argument prose: the narration the player reads. Argument world_update (REQUIRED): the facts your prose just established, merged into the WORLD ledger you can see in ENGINE STATE."
+	narrationDescription := "Show the turn's narration to the player. This is the ONLY channel to them: they read the prose argument and nothing else—no dice, no tool names, no tool results, and no text you write outside this call. Text written as a plain reply reaches nobody. Every turn ends with exactly one output_narration, and the turn is not over until you call it. Call it only once you know what happened: if a check, a new NPC, damage or healing decides the outcome, make those calls first with no narration, read the results when they come back, and narrate in your next response. It must be your LAST tool call, after every state-changing call, so it can reflect their outcome. Argument prose: the narration the player reads. Argument location (REQUIRED): the slug of the place this scene happens in. Argument world_update (REQUIRED): the facts your prose just established, merged into the WORLD ledger you can see in ENGINE STATE."
 	narrationProperties := map[string]any{
 		"prose":        map[string]any{"type": "string", "description": "The turn's narration exactly as the player will read it: normal, descriptive, engaging prose in full sentences. It must carry everything the tool calls established, since the player sees none of them. No titles or speaker prefixes (no \"DM:\"), no meta-commentary, no mention of dice, difficulty or mechanics, and no \"What do you do?\"—narrate and stop."},
-		"world_update": map[string]any{"type": "string", "description": "Required, never empty. The facts your prose just established, keyed by entity: `catnip|at:cellar|holding:dagger; door|state:locked`. Merged into the WORLD ledger field by field, so restating something unchanged is harmless—write anything you are unsure of rather than gambling that it was recorded. Use `!fact` to retract one (`combat|!engaged|over`) and `entity|GONE` to drop an entry. Wounds, Fudge Points, coins, possessions, traits and ids belong to the engine, which renders them in ROSTER and ignores them here; where a character is standing is yours. Prefer `key:value` over bare words, since a keyed fact overwrites cleanly next time it moves. First call of a game: full baseline of the opening scene—NPCs, location, features, hooks—since nothing is recorded yet."},
+		"location":     map[string]any{"type": "string", "description": "Required. The slug of the place this scene happens in, taken from LOCATIONS in ENGINE STATE. It is how the engine knows where the player character is standing, so it must be where the prose actually leaves them—if they walked somewhere during the turn, name where they ended up. A slug that does not exist is refused and the player sees nothing, so when the scene moves somewhere new, call create_location in this same response first and use the id it returns."},
+		"world_update": map[string]any{"type": "string", "description": "Required, never empty. The facts your prose just established, keyed by entity: `door|state:locked; mira|attitude:impatient`. Merged into the WORLD ledger field by field, so restating something unchanged is harmless—write anything you are unsure of rather than gambling that it was recorded. Use `!fact` to retract one (`combat|!engaged|over`) and `entity|GONE` to drop an entry. Wounds, Fudge Points, coins, possessions, traits, ids and where characters are standing all belong to the engine, which renders them in ROSTER and LOCATIONS and ignores them here. Prefer `key:value` over bare words, since a keyed fact overwrites cleanly next time it moves. First call of a game: full baseline of the opening scene—NPCs, features, hooks—since nothing is recorded yet."},
 	}
-	narrationRequired := []string{"prose", "world_update"}
+	narrationRequired := []string{"prose", "location", "world_update"}
 
 	if imgGen {
 		narrationDescription += " Argument img_gen (REQUIRED): the prompt for an image generation AI depicting the scene this prose just narrated. Write it for every narration—it is not optional and not something to save for dramatic moments."
@@ -97,11 +111,17 @@ func narrationTool() llm.Tool {
 	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "output_narration", Description: narrationDescription, Parameters: map[string]any{"type": "object", "properties": narrationProperties, "required": narrationRequired}}}
 }
 
-// narrationOnlyTools is the tool set a turn ends on. Withholding everything else
-// is what makes the ending certain: there is no call left to make except the one
-// that hands the player their turn.
+// narrationOnlyTools is the tool set a turn ends on. Withholding the engine is
+// what makes the ending certain: there is nothing left to resolve with, so the
+// only move is the one that hands the player their turn.
+//
+// create_location stays, because it is not a way to keep resolving — it settles
+// nothing and rolls nothing — and without it a turn whose scene has moved
+// somewhere new cannot be narrated at all: the narration would name a slug that
+// does not exist, be refused, and the turn would be lost on its last round for
+// want of a call it was not allowed to make.
 func narrationOnlyTools() []llm.Tool {
-	return []llm.Tool{narrationTool()}
+	return []llm.Tool{narrationTool(), createLocationTool()}
 }
 
 func gameplayTools() []llm.Tool {
@@ -116,6 +136,9 @@ func gameplayTools() []llm.Tool {
 		{Type: "function", Function: llm.ToolFunction{Name: "declare_dead", Description: "Permanently declare a character dead. Dead characters cannot act or be healed.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string"}}, "required": []string{"character_id"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "recall", Description: "Look up a turn from earlier in this session. Everything ever played is kept—what the player typed, what the engine resolved, what you narrated word for word—but only the last few turns ride in ENGINE STATE, so this is how you reach the rest. Use it when you need something you cannot see: what an NPC actually said, the exact terms of a deal, what a room looked like the first time. Every WORLD entry carries the turn it was last set (@t12), so to learn how a fact came about, recall that turn. Otherwise search by keyword. Ask for include_prose when you need the words themselves rather than what changed. This costs you one of the turn's calls like anything else, so spend it on something you will use—and if it comes back empty, then it did not happen: say so in the fiction rather than inventing it.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string", "description": "Words to search for across player input, recorded changes and narration. Omit when asking for a turn by number."}, "turn": map[string]any{"type": "integer", "description": "A turn number to fetch, e.g. the 12 from an @t12 marker in WORLD."}, "to": map[string]any{"type": "integer", "description": "End of a turn range, when you want several turns around one moment. Requires turn."}, "include_prose": map[string]any{"type": "boolean", "description": "Return the narration itself, not just what changed. Costly—ask only when the wording matters."}, "limit": map[string]any{"type": "integer", "description": "How many turns to return. Defaults to a few."}}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the player with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. For normal gameplay where the player types an action, just narrate the outcome. Do NOT use this as a generic \"What do you do?\" prompt. REQUIREMENTS: call output_narration in the same response, with prose that poses the question—the menu is shown underneath it. The player's answer comes back to you as this tool's result, and the turn continues: narrate what their choice leads to. Never include a 'Type your answer' option—it's added automatically.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
+		createLocationTool(),
+		{Type: "function", Function: llm.ToolFunction{Name: "move_item", Description: "Move an item to whoever or wherever has it now. This is the ONE call for every change of hands: picking something up, dropping it, handing it over, looting a body, stashing it, retrieving a knife you threw. It carries the thing itself across—its ratings, its wording, its ammunition—so a weapon retrieved is a weapon that still fights the same. Never destroy and re-create an item to move it: that loses its ratings and, if only half the pair lands, loses the item. Name the item and one destination; the source is worked out for you, and you only state it when the same name exists in more than one place, which the error will tell you.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"item": map[string]any{"type": "string", "description": "The item's name as it is recorded, e.g. \"Throwing Knife\"."}, "to_character": map[string]any{"type": "string", "description": "The character id receiving it. Give this or to_location, never both."}, "to_location": map[string]any{"type": "string", "description": "The location slug it comes to rest at. Give this or to_character, never both."}, "location_description": map[string]any{"type": "string", "description": "Where in that location it comes to rest, in a few words: \"quivering in the door frame\", \"under the overturned table\". Required with to_location—it is the one thing about the landing only your prose knows."}, "from_character": map[string]any{"type": "string", "description": "Only when the item's name exists in more than one place: the character id it is coming from."}, "from_location": map[string]any{"type": "string", "description": "Only when the item's name exists in more than one place: the location slug it is coming from."}, "from_location_description": map[string]any{"type": "string", "description": "Only when one location holds two lots of the same thing in different spots: the spot to take from, worded as it is recorded."}, "count": map[string]any{"type": "integer", "description": "How many move. Defaults to 1."}}, "required": []string{"item"}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "move_character", Description: "Put an NPC somewhere. The world does not hold still, so use it when somebody walks out, arrives, is dragged off, flees, or follows the player to the next room—an NPC left where you created them will still be standing there ten turns later, and the engine will keep saying so. The player character is NOT moved with this: they go wherever your narration's location says the scene is.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string", "description": "Who moves, by character id."}, "location": map[string]any{"type": "string", "description": "The location slug they are now in. It must already exist."}}, "required": []string{"character_id", "location"}}}},
 	}
 
 	tools = append(tools, combatTools()...)
@@ -168,6 +191,14 @@ func writeImagePrompt(prompt string) error {
 	return os.WriteFile("img-gen.md", []byte(prompt), 0o644)
 }
 
+// writeNarration persists the prose the player was just shown. Like the image
+// prompt beside it, each narration replaces the file rather than appending: this
+// is the text on screen right now, and the run's full history is the archive's
+// job, not this file's.
+func writeNarration(prose string) error {
+	return os.WriteFile("narration.txt", []byte(prose), 0o644)
+}
+
 func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, map[string]interface{}, error) {
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonArgs), &raw); err != nil {
@@ -182,6 +213,77 @@ func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, ma
 		return nil, nil, err
 	}
 	return ch, raw, nil
+}
+
+// itemDestination is where an add_ or remove_ call reaches: somebody's hands or
+// a spot on the ground. It exists so the four calls that create and destroy
+// items do not each grow two versions of themselves, and so a location
+// destination is validated identically wherever it turns up.
+type itemDestination struct {
+	character *rules.Character
+	location  *rules.Location
+	where     string
+}
+
+// destination reads the holder a call names. A location wins when one is given,
+// since character_id otherwise falls back to the player and every ground-level
+// call would quietly land in the player's pockets instead.
+func destination(w *rules.World, characterID, locationID, where string) (*itemDestination, error) {
+	if locationID == "" {
+		ch, err := targetCharacter(w, characterID)
+		if err != nil {
+			return nil, err
+		}
+		return &itemDestination{character: ch}, nil
+	}
+	if characterID != "" {
+		return nil, fmt.Errorf("name one holder: character_id or location, not both")
+	}
+	loc, err := w.Location(locationID)
+	if err != nil {
+		return nil, err
+	}
+	// The spot is not demanded here. Creating something needs one and AddItem
+	// says so itself; destroying something does not, because the name alone
+	// usually finds it and the lookup asks for a spot only when two stacks of
+	// that name are lying about.
+	return &itemDestination{location: loc, where: where}, nil
+}
+
+// add puts a newly created stack where the call said. The character's state is
+// returned with it, as every mutating call does; a location has no sheet, so its
+// half reports the spot instead.
+func (d *itemDestination) add(proto *rules.Item, count int) (string, error) {
+	if d.location != nil {
+		item, err := d.location.AddItem(proto, d.where, count)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s|+%d %s (%s)|lies:%s|total:%d", d.location.Name, count, item.Name, item.Kind(), item.Where, item.Count), nil
+	}
+	before := d.character.ToString()
+	item, err := d.character.Accept(proto, count)
+	if err != nil {
+		return "", err
+	}
+	return withState(fmt.Sprintf("%s|+%d %s (%s)|has:%d", d.character.Name, count, item.Name, item.Kind(), item.Count), before, d.character), nil
+}
+
+// remove destroys a stack, or part of one, wherever it is held.
+func (d *itemDestination) remove(name string, count int) (string, error) {
+	if d.location != nil {
+		item, left, err := d.location.RemoveItem(name, d.where, count)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s|destroyed %d %s|left:%d", d.location.Name, count, item.Name, left), nil
+	}
+	before := d.character.ToString()
+	item, left, err := d.character.RemoveItem(name, count)
+	if err != nil {
+		return "", err
+	}
+	return withState(fmt.Sprintf("%s|destroyed %d %s|has:%d", d.character.Name, count, item.Name, left), before, d.character), nil
 }
 
 // targetCharacter resolves the character a call names, falling back to the
@@ -494,9 +596,81 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		before := ch.ToString()
 		ch.Wounds.DeclareDead()
 		return withState(fmt.Sprintf("%s|DEAD", ch.Name), before, ch), nil
+	case "create_location":
+		var args struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Parent      string `json:"parent"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse create_location: %w", err)
+		}
+		loc, err := w.CreateLocation(args.Name, args.Description, args.Parent)
+		if err != nil {
+			return "", err
+		}
+		line := fmt.Sprintf("%s|id:%s", loc.Name, loc.ID)
+		if loc.Parent != "" {
+			line += "|in:" + loc.Parent
+		}
+		return line, nil
+	case "move_character":
+		var args struct {
+			CharacterID string `json:"character_id"`
+			Location    string `json:"location"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse move_character: %w", err)
+		}
+		ch, err := w.MoveCharacter(args.CharacterID, args.Location)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s|now at:%s", ch.Name, ch.Location), nil
+	case "move_item":
+		var args struct {
+			Item          string `json:"item"`
+			ToCharacter   string `json:"to_character"`
+			ToLocation    string `json:"to_location"`
+			Where         string `json:"location_description"`
+			FromCharacter string `json:"from_character"`
+			FromLocation  string `json:"from_location"`
+			FromWhere     string `json:"from_location_description"`
+			Count         int    `json:"count"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("parse move_item: %w", err)
+		}
+		res, err := w.MoveItem(rules.MoveRequest{
+			Item:          args.Item,
+			ToCharacter:   args.ToCharacter,
+			ToLocation:    args.ToLocation,
+			Where:         args.Where,
+			FromCharacter: args.FromCharacter,
+			FromLocation:  args.FromLocation,
+			FromWhere:     args.FromWhere,
+			Count:         args.Count,
+		})
+		if err != nil {
+			return "", err
+		}
+		line := fmt.Sprintf("%d %s|%s -> %s", res.Count, res.Item.Name, res.From, res.To)
+		if res.Item.Where != "" {
+			line += "|lies:" + res.Item.Where
+		}
+		// Both sheets moved, but only the receiving one is stated: a move is one
+		// fact, and the roster restates the other side next turn anyway.
+		if args.ToCharacter != "" {
+			if ch, err := w.Character(args.ToCharacter); err == nil {
+				line += "\n" + ch.ToString()
+			}
+		}
+		return line, nil
 	case "add_item", "remove_item":
 		var args struct {
 			CharacterID string `json:"character_id"`
+			Location    string `json:"location"`
+			Where       string `json:"location_description"`
 			Name        string `json:"name"`
 			Description string `json:"description"`
 			Count       int    `json:"count"`
@@ -504,29 +678,22 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse %s: %w", call.Function.Name, err)
 		}
-		ch, err := targetCharacter(w, args.CharacterID)
+		dest, err := destination(w, args.CharacterID, args.Location, args.Where)
 		if err != nil {
 			return "", err
 		}
 		if args.Count == 0 {
 			args.Count = 1
 		}
-		before := ch.ToString()
 		if call.Function.Name == "add_item" {
-			item, err := ch.AddItem(args.Name, args.Description, args.Count)
-			if err != nil {
-				return "", err
-			}
-			return withState(fmt.Sprintf("%s|+%d %s|has:%d", ch.Name, args.Count, item.Name, item.Count), before, ch), nil
+			return dest.add(&rules.Item{Name: args.Name, Description: args.Description}, args.Count)
 		}
-		item, left, err := ch.RemoveItem(args.Name, args.Count)
-		if err != nil {
-			return "", err
-		}
-		return withState(fmt.Sprintf("%s|-%d %s|has:%d", ch.Name, args.Count, item.Name, left), before, ch), nil
+		return dest.remove(args.Name, args.Count)
 	case "add_weapon":
 		var args struct {
 			CharacterID     string `json:"character_id"`
+			Location        string `json:"location"`
+			Where           string `json:"location_description"`
 			Name            string `json:"name"`
 			Description     string `json:"description"`
 			Damage          int    `json:"damage"`
@@ -540,7 +707,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse add_weapon: %w", err)
 		}
-		ch, err := targetCharacter(w, args.CharacterID)
+		dest, err := destination(w, args.CharacterID, args.Location, args.Where)
 		if err != nil {
 			return "", err
 		}
@@ -556,8 +723,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if args.Count == 0 {
 			args.Count = 1
 		}
-		before := ch.ToString()
-		item, err := ch.AddWeapon(args.Name, args.Description, args.Count, rules.Weapon{
+		proto, err := rules.NewWeaponItem(args.Name, args.Description, rules.Weapon{
 			Damage:          args.Damage,
 			Ranged:          args.Ranged,
 			DamageAttribute: attr,
@@ -568,10 +734,12 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return withState(fmt.Sprintf("%s|+%d %s (weapon)|has:%d", ch.Name, args.Count, item.Name, item.Count), before, ch), nil
+		return dest.add(proto, args.Count)
 	case "add_armor":
 		var args struct {
 			CharacterID string `json:"character_id"`
+			Location    string `json:"location"`
+			Where       string `json:"location_description"`
 			Name        string `json:"name"`
 			Description string `json:"description"`
 			Protection  int    `json:"protection"`
@@ -581,7 +749,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 			return "", fmt.Errorf("parse add_armor: %w", err)
 		}
-		ch, err := targetCharacter(w, args.CharacterID)
+		dest, err := destination(w, args.CharacterID, args.Location, args.Where)
 		if err != nil {
 			return "", err
 		}
@@ -591,12 +759,11 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		// Armor is worn unless the DM says otherwise: the common case by far is a
 		// character who has it on, and armor recorded as cargo protects nobody.
 		worn := args.Worn == nil || *args.Worn
-		before := ch.ToString()
-		item, err := ch.AddArmor(args.Name, args.Description, args.Count, rules.Armor{Protection: args.Protection, Worn: worn})
+		proto, err := rules.NewArmorItem(args.Name, args.Description, rules.Armor{Protection: args.Protection, Worn: worn})
 		if err != nil {
 			return "", err
 		}
-		return withState(fmt.Sprintf("%s|+%d %s (armor)|has:%d", ch.Name, args.Count, item.Name, item.Count), before, ch), nil
+		return dest.add(proto, args.Count)
 	case "equip_armor":
 		var args struct {
 			CharacterID string `json:"character_id"`

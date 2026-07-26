@@ -87,12 +87,34 @@ type Armor struct {
 // and plain gear carries neither. They hold the ratings combat needs, so a hit
 // is resolved from what the character actually carries rather than from a
 // severity the DM guessed at.
+//
+// Where is set only while the item lies at a location: it is the short prose
+// saying where in that place it rests. A carried thing lies nowhere, so picking
+// one up clears it.
 type Item struct {
 	Name        string
 	Description string
 	Count       int
 	Weapon      *Weapon
 	Armor       *Armor
+	Where       string
+}
+
+// clone copies an item and the ratings hanging off it, so the copy shares
+// nothing with the original. Count and Where are left to whoever places it:
+// how many moved and where they came to rest are the move's business, not the
+// original's.
+func (it *Item) clone() *Item {
+	copied := &Item{Name: it.Name, Description: it.Description}
+	if it.Weapon != nil {
+		weapon := *it.Weapon
+		copied.Weapon = &weapon
+	}
+	if it.Armor != nil {
+		armor := *it.Armor
+		copied.Armor = &armor
+	}
+	return copied
 }
 
 // Kind names what an item is, for messages that have to tell a sword from a
@@ -130,6 +152,7 @@ type World struct {
 	AdventureContent string
 	Player           string
 	Characters       map[string]*Character
+	Locations        map[string]*Location
 	Seed             int64
 	Rng              *rand.Rand
 }
@@ -144,6 +167,7 @@ func NewWorld(seed int64, settingPath string) (*World, error) {
 		Seed:       seed,
 		Rng:        rand.New(rand.NewSource(seed)),
 		Characters: make(map[string]*Character),
+		Locations:  make(map[string]*Location),
 	}, nil
 }
 
@@ -268,10 +292,17 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 		}
 		skills[keyLower] = val
 	}
-	// location default
+	// An NPC is created because they have just walked into the story, so the
+	// scene is where they are unless the DM says otherwise — and the scene is
+	// wherever the player stands, since every narration puts them somewhere.
+	// The empty string is the honest answer before play opens: during character
+	// creation no location exists yet, and the first narration is what places
+	// everybody.
 	loc := req.Location
 	if loc == "" {
-		loc = "default"
+		loc = w.Scene()
+	} else if _, err := w.Location(loc); err != nil {
+		return nil, err
 	}
 	// validate and populate gifts
 	gifts := make([]string, 0, len(req.Gifts))
@@ -324,10 +355,11 @@ func (c *Character) AddItem(name, description string, count int) (*Item, error) 
 	return c.addStack(name, description, count, "gear", nil)
 }
 
-// AddWeapon puts a rated weapon into the inventory. Restocking one the character
-// already carries stacks onto it and leaves the ratings — and a partly emptied
-// magazine — as they stand, so a second knife does not silently reload the first.
-func (c *Character) AddWeapon(name, description string, count int, weapon Weapon) (*Item, error) {
+// NewWeaponItem builds a rated weapon, settling its magazine: an unstated load
+// means full, and no weapon holds more than its capacity. It exists apart from
+// the inventory because a weapon can now be created lying on the ground as
+// readily as in somebody's hands, and both routes must rate it the same way.
+func NewWeaponItem(name, description string, weapon Weapon) (*Item, error) {
 	if weapon.AmmoCapacity < 0 || weapon.Ammo < 0 {
 		return nil, fmt.Errorf("ammunition cannot be negative")
 	}
@@ -340,16 +372,47 @@ func (c *Character) AddWeapon(name, description string, count int, weapon Weapon
 	if weapon.Ammo > weapon.AmmoCapacity {
 		weapon.Ammo = weapon.AmmoCapacity
 	}
-	return c.addStack(name, description, count, "weapon", func(it *Item) { it.Weapon = &weapon })
+	return &Item{Name: name, Description: description, Weapon: &weapon}, nil
+}
+
+// NewArmorItem builds a rated piece of armor.
+func NewArmorItem(name, description string, armor Armor) (*Item, error) {
+	if armor.Protection < 0 {
+		return nil, fmt.Errorf("armor protection cannot be negative")
+	}
+	return &Item{Name: name, Description: description, Armor: &armor}, nil
+}
+
+// AddWeapon puts a rated weapon into the inventory. Restocking one the character
+// already carries stacks onto it and leaves the ratings — and a partly emptied
+// magazine — as they stand, so a second knife does not silently reload the first.
+func (c *Character) AddWeapon(name, description string, count int, weapon Weapon) (*Item, error) {
+	proto, err := NewWeaponItem(name, description, weapon)
+	if err != nil {
+		return nil, err
+	}
+	return c.Accept(proto, count)
 }
 
 // AddArmor puts a rated piece of armor into the inventory, worn unless the
 // caller says otherwise.
 func (c *Character) AddArmor(name, description string, count int, armor Armor) (*Item, error) {
-	if armor.Protection < 0 {
-		return nil, fmt.Errorf("armor protection cannot be negative")
+	proto, err := NewArmorItem(name, description, armor)
+	if err != nil {
+		return nil, err
 	}
-	return c.addStack(name, description, count, "armor", func(it *Item) { it.Armor = &armor })
+	return c.Accept(proto, count)
+}
+
+// Accept takes a stack into the inventory, keeping the ratings and the wording
+// it arrives with. It is the inventory's counterpart to Location.AddItem, and
+// the reason a retrieved weapon comes back able to fight: nothing about it is
+// restated along the way, so nothing about it can be restated wrongly.
+func (c *Character) Accept(proto *Item, count int) (*Item, error) {
+	return c.addStack(proto.Name, proto.Description, count, proto.Kind(), func(it *Item) {
+		it.Weapon = proto.Weapon
+		it.Armor = proto.Armor
+	})
 }
 
 // addStack is the one place an inventory entry is opened or grown. rate fills in

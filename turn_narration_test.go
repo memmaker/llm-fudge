@@ -39,13 +39,26 @@ func narrationOffered(tools []llm.Tool) bool {
 	return false
 }
 
+// onlyNarration reports the tool set of a turn's last round: the narration, and
+// create_location beside it, which is there so a scene that moved somewhere new
+// can still be narrated. Nothing that resolves anything.
 func onlyNarration(tools []llm.Tool) bool {
-	return len(tools) == 1 && narrationOffered(tools)
+	if !narrationOffered(tools) {
+		return false
+	}
+	for _, tool := range tools {
+		switch tool.Function.Name {
+		case "output_narration", "create_location":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func narrationCall(state string) llm.Response {
 	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","world_update":"`+state+`"}`),
+		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","location":"forge","world_update":"`+state+`"}`),
 	}}}
 }
 
@@ -70,8 +83,17 @@ func gameStart() []llm.Message {
 
 const playerLine = "I ask the smith about the amulet."
 
+// testWorld opens with a forge already on the map, because every narration has
+// to name a location the engine holds and most tests here are about something
+// else entirely.
 func testWorld() *rules.World {
-	return &rules.World{Characters: map[string]*rules.Character{}, Rng: rand.New(rand.NewSource(1))}
+	w := &rules.World{
+		Characters: map[string]*rules.Character{},
+		Locations:  map[string]*rules.Location{},
+		Rng:        rand.New(rand.NewSource(1)),
+	}
+	w.CreateLocation("Forge", "Hot, dark, ringing with hammer work.", "")
+	return w
 }
 
 // narrated reports whether the turn reached the player. The history cannot
@@ -144,6 +166,28 @@ func TestLastCallIsSpentOnTheNarration(t *testing.T) {
 	forced := dm.seen[maxTurnRequests-1]
 	if !strings.Contains(forced[len(forced)-1].Content, "output_narration") {
 		t.Error("the DM was not told why its tools were gone")
+	}
+}
+
+// The prose the player read is also on disk, where anything watching the game
+// from outside the terminal can pick it up. The turn writes it, not the archive:
+// the file is the scene on screen right now.
+func TestTurnWritesTheNarrationToFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		return narrationCall("grimwald-the-smith|at:forge")
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	written, err := os.ReadFile("narration.txt")
+	if err != nil {
+		t.Fatalf("the turn narrated but wrote no narration.txt: %v", err)
+	}
+	if got := string(written); got != "The smith looks up from the anvil." {
+		t.Errorf("narration.txt holds %q, want the prose the player was shown", got)
 	}
 }
 

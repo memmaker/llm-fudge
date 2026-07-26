@@ -811,10 +811,12 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 }
 
 // narrationOutput is the payload of an output_narration call: the prose goes to
-// the player and then to the archive, the world update goes to the ledger, and
-// the image prompt—present only under --img-gen—goes to img-gen.md.
+// the player, then to narration.txt and the archive, the world update goes to
+// the ledger, and the image prompt—present only under --img-gen—goes to
+// img-gen.md.
 type narrationOutput struct {
 	Prose       string `json:"prose"`
+	Location    string `json:"location"`
 	WorldUpdate string `json:"world_update"`
 	ImgGen      string `json:"img_gen"`
 }
@@ -838,7 +840,7 @@ func openingBriefing(w *rules.World) string {
 	b.WriteString(w.AdventureContent)
 	b.WriteString("\n\n")
 
-	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response: one output_narration call carrying the opening prose and, as world_update, the full baseline of everything that prose establishes. The player character is in the ROSTER above, with everything they carry—put them in the scene as the engine holds them. Narrate the opening scene now.")
+	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response, and it holds two calls. First create_location for the place the scene opens in: no location exists yet, and a narration can only name one that does. Then one output_narration carrying the opening prose, that location's slug as its location, and as world_update the full baseline of everything the prose establishes. The player character is in the ROSTER above, with everything they carry—put them in the scene as the engine holds them. Narrate the opening scene now.")
 	return b.String()
 }
 
@@ -921,20 +923,15 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		var narration *narrationOutput
 		results := make(map[string]string, len(response.Message.ToolCalls))
 
+		// Everything that changes the world runs before the narration is read,
+		// whatever order the model emitted them in. A turn that walks somewhere
+		// new creates the location and narrates it in one response, and the
+		// narration names a slug the create call has to have minted already.
 		for _, toolCall := range response.Message.ToolCalls {
 			var result string
 			switch toolCall.Function.Name {
-			case "user_choice":
+			case "user_choice", "output_narration":
 				continue
-			case "output_narration":
-				parsed, parseErr := parseNarration(toolCall)
-				if parseErr != nil {
-					result = fmt.Sprintf("Error: could not read your narration (%v). The player was shown nothing—call output_narration again.", parseErr)
-				} else {
-					result = "narration shown to player"
-					narration = &parsed
-				}
-				debugToolCall(toolCall, result, nil)
 			case "recall":
 				result = s.recall(toolCall)
 				debugToolCall(toolCall, result, nil)
@@ -950,6 +947,35 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 				// does not: the roster states that, currently, every turn.
 				log.events = append(log.events, toolCall.Function.Name+"|"+resultHeadline(result))
 			}
+			results[toolCall.ID] = result
+		}
+
+		// Now the narration, which the calls above have made sense of.
+		for _, toolCall := range response.Message.ToolCalls {
+			if toolCall.Function.Name != "output_narration" {
+				continue
+			}
+			var result string
+			parsed, parseErr := parseNarration(toolCall)
+			// The scene has to happen somewhere the engine holds, or the
+			// position it is about to record is a slug that means nothing.
+			// Refusing costs one silent round; letting it through costs the
+			// engine its grip on where everybody is.
+			_, locErr := s.world.Location(parsed.Location)
+			switch {
+			case parseErr != nil:
+				result = fmt.Sprintf("Error: could not read your narration (%v). The player was shown nothing—call output_narration again.", parseErr)
+			case locErr != nil:
+				result = fmt.Sprintf("Error: %v. The player was shown nothing—create the location if it is new, then call output_narration again with a slug that exists.", locErr)
+			default:
+				// Through the engine's own move, so that how a character
+				// changes place has one home. A world with no player yet is not
+				// an error here: the setup phases narrate before anybody exists.
+				s.world.MoveCharacter(s.world.Player, parsed.Location)
+				result = "narration shown to player"
+				narration = &parsed
+			}
+			debugToolCall(toolCall, result, nil)
 			results[toolCall.ID] = result
 		}
 
@@ -973,6 +999,11 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 			fmt.Println(ui.WrapText(narration.Prose, ui.TerminalWidth()))
 			fmt.Println()
+			// The player has read the scene already, so a failed write is worth
+			// reporting but not worth stopping the turn for.
+			if err := writeNarration(narration.Prose); err != nil {
+				fmt.Println("\nNarration file error:", err)
+			}
 			// A missing prompt is not worth interrupting play over: the player
 			// has already read the scene, and the next turn writes a new one.
 			if narration.ImgGen != "" {
@@ -1173,7 +1204,7 @@ func retryDelay(failures int) time.Duration {
 // narrationDemand rides on the last call a turn is allowed. The tools are gone by
 // the time the DM reads it, so the message says why rather than leaving it to
 // discover that its next call does not exist.
-const narrationDemand = "Stop resolving and narrate. This is the last call of this turn: the checks, the dice and the rest of the engine are no longer available to you, output_narration is the only call you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it as always. If this response does not carry the narration, the player loses the turn."
+const narrationDemand = "Stop resolving and narrate. This is the last call of this turn: the checks, the dice and the rest of the engine are no longer available to you, output_narration is what you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it as always, and location: name a slug that exists in LOCATIONS, or call create_location in this same response first if the scene has moved somewhere new—create_location is the one other call you still have. If this response does not carry the narration, the player loses the turn."
 
 func parseNarration(call llm.ToolCall) (narrationOutput, error) {
 	var args narrationOutput
@@ -1182,6 +1213,13 @@ func parseNarration(call llm.ToolCall) (narrationOutput, error) {
 	}
 	if strings.TrimSpace(args.Prose) == "" {
 		return narrationOutput{}, errors.New("prose is empty")
+	}
+	// Position rides on the narration because the narration is the one call a
+	// turn cannot skip. A scene that does not say where it happened would leave
+	// the engine asserting the player is wherever they were last seen, which is
+	// exactly the stale fact the roster used to refuse to state.
+	if strings.TrimSpace(args.Location) == "" {
+		return narrationOutput{}, errors.New("location is empty: name the slug of the place this scene happens in")
 	}
 	// The prose is dropped the moment the turn collapses, so a narration without
 	// state would leave nothing behind at all. Rejecting it here — before the

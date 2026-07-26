@@ -5,7 +5,11 @@ Glossary
 - Character: An actor in the world (player, NPC, monster). Contains stats, health, and inventory.
 - NPC: Non-player character; a character controlled by the GM (LLM).
 - Monster: A character representing a foe in combat or conflict.
-- Item: An object that can be equipped or used by a character.
+- Item: An object that can be equipped or used by a character. Every item is in exactly one place — a Character's inventory or a Location — and moves between them rather than being destroyed and re-created (see Conservation).
+- Location: A place the world holds (room, street, clearing), identified by a slug and optionally nested inside a parent. Holds the items lying in it. Nesting is organisational only and grants no reach between places.
+- Scene: The Location the story is currently in, which is wherever the player character stands. Set by the required `location` argument of every narration.
+- Spot: The short prose on an item lying at a Location saying where in that place it rests ("quivering in the door frame"). Part of the item's identity there: two stacks merge only when name and spot both match.
+- Conservation: The rule that changing hands never creates or destroys. `move_item` relocates; `add_*` is only for something entering the world; `remove_item` means destroyed.
 - Die/Roll: A dice-based randomization mechanism used by rules (e.g., 4d6).
 - RNG: Random Number Generator; seeded to produce deterministic results per World seed.
 - LLM: Large Language Model that acts as the DM/Narrator.

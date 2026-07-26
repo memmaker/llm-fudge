@@ -37,13 +37,13 @@ func TestMergeGrammar(t *testing.T) {
 	}{
 		{
 			name:    "a keyed field replaces only itself and leaves the rest of the entry standing",
-			updates: []string{"vance-kade|at:alley|disposition:hostile", "vance-kade|at:bar"},
-			want:    "vance-kade|at:bar|disposition:hostile @t2",
+			updates: []string{"vance-kade|mood:sour|disposition:hostile", "vance-kade|mood:cheerful"},
+			want:    "vance-kade|mood:cheerful|disposition:hostile @t2",
 		},
 		{
 			name:    "a new field joins an entry without disturbing what is already on it",
-			updates: []string{"vance-kade|at:alley|disposition:hostile", "vance-kade|holding:knife"},
-			want:    "vance-kade|at:alley|disposition:hostile|holding:knife @t2",
+			updates: []string{"vance-kade|mood:sour|disposition:hostile", "vance-kade|holding:knife"},
+			want:    "vance-kade|mood:sour|disposition:hostile|holding:knife @t2",
 		},
 		{
 			name:    "a bare flag is added once however often it is reported",
@@ -122,8 +122,8 @@ func TestMergeGrammar(t *testing.T) {
 		},
 		{
 			name:    "whitespace around separators is insignificant and keys are lowercased",
-			updates: []string{"  Bar | dim  ;  VANCE-KADE | at : alley  "},
-			want:    "bar|dim @t1\nvance-kade|at:alley @t1",
+			updates: []string{"  Bar | dim  ;  VANCE-KADE | mood : sour  "},
+			want:    "bar|dim @t1\nvance-kade|mood:sour @t1",
 		},
 		{
 			name:    "the same key reported twice in one report merges in reading order",
@@ -173,10 +173,10 @@ func TestEngineOwnedFieldsAreStrippedFromCharacterEntries(t *testing.T) {
 	for _, field := range owned {
 		t.Run(field, func(t *testing.T) {
 			l := New()
-			l.Apply("vance-kade|at:alley", 1, charSet("vance-kade"))
+			l.Apply("vance-kade|mood:sour", 1, charSet("vance-kade"))
 			notes := l.Apply("vance-kade|"+field+":something", 2, charSet("vance-kade"))
 
-			if got, want := l.Render(), "vance-kade|at:alley @t1"; got != want {
+			if got, want := l.Render(), "vance-kade|mood:sour @t1"; got != want {
 				t.Errorf("Render() = %q, want %q", got, want)
 			}
 			if len(notes) != 1 {
@@ -199,10 +199,10 @@ func TestEngineOwnedNamesAreStrippedAsFlagsAndRetractionsToo(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			l := New()
-			l.Apply("vance-kade|at:alley", 1, charSet("vance-kade"))
+			l.Apply("vance-kade|mood:sour", 1, charSet("vance-kade"))
 			notes := l.Apply(tc.update, 2, charSet("vance-kade"))
 
-			if got, want := l.Render(), "vance-kade|at:alley @t1"; got != want {
+			if got, want := l.Render(), "vance-kade|mood:sour @t1"; got != want {
 				t.Errorf("Render() = %q, want %q", got, want)
 			}
 			if len(notes) != 1 {
@@ -214,9 +214,9 @@ func TestEngineOwnedNamesAreStrippedAsFlagsAndRetractionsToo(t *testing.T) {
 
 func TestStrippingLeavesTheRestOfTheLineIntact(t *testing.T) {
 	l := New()
-	notes := l.Apply("vance-kade|wounds:scratch|at:alley|hostile|coins:12", 3, charSet("vance-kade"))
+	notes := l.Apply("vance-kade|wounds:scratch|mood:sour|hostile|coins:12", 3, charSet("vance-kade"))
 
-	if got, want := l.Render(), "vance-kade|at:alley|hostile @t3"; got != want {
+	if got, want := l.Render(), "vance-kade|mood:sour|hostile @t3"; got != want {
 		t.Errorf("Render() = %q, want %q", got, want)
 	}
 	if len(notes) != 2 {
@@ -224,18 +224,30 @@ func TestStrippingLeavesTheRestOfTheLineIntact(t *testing.T) {
 	}
 }
 
-// Position is the exception that motivated the exception list: Character.Location
-// is written once at creation and never updated, so the engine cannot be the
-// authority on where anybody is and the ledger has to be.
-func TestPositionIsNotEngineOwned(t *testing.T) {
+// Position used to be the exception that motivated the exception list, because
+// Character.Location was written once at creation and never updated. The engine
+// maintains it now — narration states the scene, move_character moves everyone
+// else — so it is stripped like any other fact the roster states.
+func TestPositionIsEngineOwned(t *testing.T) {
 	l := New()
 	notes := l.Apply("vance-kade|at:alley", 1, charSet("vance-kade"))
 
-	if got, want := l.Render(), "vance-kade|at:alley @t1"; got != want {
-		t.Errorf("Render() = %q, want %q", got, want)
+	if got := l.Render(); got != "" {
+		t.Errorf("Render() = %q, want position discarded", got)
 	}
-	if len(notes) != 0 {
-		t.Errorf("notes = %v, want none", notes)
+	if len(notes) != 1 {
+		t.Errorf("notes = %v, want one discard note", notes)
+	}
+}
+
+// Only for characters, though. A place has no sheet, so a report about where a
+// location sits is the ledger's to keep.
+func TestPositionOfANonCharacterSurvives(t *testing.T) {
+	l := New()
+	l.Apply("bar|at:dock-road", 1, charSet("vance-kade"))
+
+	if got, want := l.Render(), "bar|at:dock-road @t1"; got != want {
+		t.Errorf("Render() = %q, want %q", got, want)
 	}
 }
 
@@ -306,10 +318,10 @@ func TestTurnMarkers(t *testing.T) {
 			name:  "a line the stripper empties leaves the marker where it was",
 			chars: []string{"vance-kade"},
 			updates: map[int]string{
-				4: "vance-kade|at:alley",
+				4: "vance-kade|mood:sour",
 				9: "vance-kade|wounds:scratch",
 			},
-			want: "vance-kade|at:alley @t4",
+			want: "vance-kade|mood:sour @t4",
 		},
 	}
 
@@ -400,7 +412,7 @@ func TestMalformedLinesPreserveTheirFactWithoutCorruptingNeighbours(t *testing.T
 // rendered its entries in map order would rewrite the prefix on every turn for
 // no reason, quite apart from making the tests above meaningless.
 func TestRenderIsDeterministic(t *testing.T) {
-	report := "bar|dim|crowded|at:dock-road;vance-kade|at:alley|disposition:hostile|armed;" +
+	report := "bar|dim|crowded|at:dock-road;vance-kade|mood:sour|disposition:hostile|armed;" +
 		"combat|samantha-vs-vance-kade|engaged;alley|dark|wet;dock-road|busy;" +
 		"harbour|fogbound;rumour|shipment-tonight;watch|patrolling;innkeeper|nervous"
 

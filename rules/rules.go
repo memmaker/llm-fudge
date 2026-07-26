@@ -419,12 +419,14 @@ func sortedKeys(m map[string]int) []string {
 // possessions, where silence would read as "the engine did not say" rather than
 // "they have none".
 //
-// Position is not among the fields. Location is written once, when a character
-// is created, and nothing ever moves it — there is no call that does — so the
-// engine would be asserting a position that stopped being true the first time
-// the fiction walked anybody anywhere. A block the DM reads as authoritative
-// must not carry a fact the engine does not actually track, so where a
-// character stands is left to the world ledger, which does track it.
+// Position is among the fields, and used not to be. Location was once written
+// at creation and never moved — there was no call that did — so the engine
+// would have been asserting a position that stopped being true the first time
+// the fiction walked anybody anywhere, and where a character stood was left to
+// the world ledger instead. It is stated here now because the engine finally
+// tracks it: every narration names the location it happened in, and
+// move_character moves anyone the scene leaves behind. A fact the engine keeps
+// current is a fact the roster owns.
 func (c *Character) ToString() string {
 	var b strings.Builder
 
@@ -433,6 +435,9 @@ func (c *Character) ToString() string {
 		fmt.Fprintf(&b, "|%s", c.Species)
 	}
 	fmt.Fprintf(&b, "|scale:%+d", c.Scale)
+	if c.Location != "" {
+		fmt.Fprintf(&b, "|at:%s", c.Location)
+	}
 	if c.Description != "" {
 		fmt.Fprintf(&b, "\ndesc:%s", c.Description)
 	}
@@ -548,7 +553,7 @@ func StateFileText(w *World) string {
 	// Header bar
 	fmt.Fprintf(&b, "%s%s\u2500\u2500\u2500 CHARACTER SHEET: %s %s\u2500\u2500\u2500%s\n",
 		Cbold, Ccyan, ch.Name, Ccyan, Creset)
-	fmt.Fprintf(&b, "%s\u25c6 Location:%s %s\n\n", Ccyan, Creset, ch.Location)
+	fmt.Fprintf(&b, "%s\u25c6 Location:%s %s\n\n", Ccyan, Creset, w.LocationName(ch.Location))
 
 	// Attributes
 	fmt.Fprintf(&b, "%s\u25b8 Attributes%s\n", Cbold, Creset)

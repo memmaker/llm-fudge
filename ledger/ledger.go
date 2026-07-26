@@ -32,10 +32,16 @@ const unparsedKey = "unparsed"
 // point — measured sessions show the DM reporting wounds it does not own, and
 // no amount of prompt wording stopped it.
 //
-// `at` is deliberately absent. Character.Location is written once at creation
-// and never updated, so the engine is not in a position to own position; that
-// fact belongs here.
+// `at` used to be deliberately absent, because Character.Location was written
+// once at creation and never updated: the engine was in no position to own a
+// fact it did not maintain. It maintains it now — every narration names the
+// location it happened in, and move_character moves anyone the scene leaves
+// behind — so position has gone the way of wounds and coins, and a line saying
+// where somebody stands is discarded here like any other engine fact. Where a
+// character is is in the roster; what has changed about the place they are
+// standing in is still this ledger's.
 var engineOwned = map[string]bool{
+	"at":           true,
 	"wounds":       true,
 	"scratches":    true,
 	"fudge-points": true,
