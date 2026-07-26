@@ -108,15 +108,15 @@ func TestInventoryToolsRejectImpossibleMoves(t *testing.T) {
 	}
 }
 
-// Both flows expose the inventory tools: creation to outfit the character,
-// play to keep the sheet true as things change hands.
+// Both flows expose the inventory tools: creation to outfit the character, the
+// record phase to keep the sheet true as things change hands.
 func TestInventoryToolsOfferedInBothFlows(t *testing.T) {
 	for _, c := range []struct {
 		flow  string
 		tools []llm.Tool
 	}{
 		{"character creation", characterCreationTools()},
-		{"gameplay", gameplayTools()},
+		{"record phase", recordTools()},
 	} {
 		offered := map[string]bool{}
 		for _, tool := range c.tools {

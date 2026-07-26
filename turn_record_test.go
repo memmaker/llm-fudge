@@ -97,7 +97,13 @@ func TestTheEngineRecordsItsOwnEvents(t *testing.T) {
 	if len(recorded) != 1 {
 		t.Fatal("the turn was not archived")
 	}
-	if len(recorded[0].Events) != 1 || !strings.Contains(recorded[0].Events[0], "roll_on_table") {
+	var rolled bool
+	for _, event := range recorded[0].Events {
+		if strings.Contains(event, "roll_on_table") {
+			rolled = true
+		}
+	}
+	if !rolled {
 		t.Errorf("the roll the engine resolved is not in the record: %+v", recorded[0].Events)
 	}
 }

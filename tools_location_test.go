@@ -18,23 +18,28 @@ func placedWorld(t *testing.T) *rules.World {
 
 // The three calls that hold the map together have to be on the table during
 // play, and nowhere else: there is no world to place anything in while a
-// character is still being rolled up.
+// character is still being rolled up. Which half of a turn they belong to is
+// what the split decides — minting a place is a precondition of narrating in it,
+// while moving a thing or a person is the prose being written down.
 func TestMapToolsAreOfferedDuringPlayOnly(t *testing.T) {
-	inPlay := map[string]bool{}
-	for _, tool := range gameplayTools() {
-		inPlay[tool.Function.Name] = true
-	}
-	atCreation := map[string]bool{}
-	for _, tool := range characterCreationTools() {
-		atCreation[tool.Function.Name] = true
-	}
+	consult := toolNames(consultTools())
+	record := toolNames(recordTools())
+	atCreation := toolNames(characterCreationTools())
 
 	for _, name := range []string{"create_location", "move_item", "move_character"} {
-		if !inPlay[name] {
-			t.Errorf("gameplay does not offer %s", name)
+		if !consult[name] && !record[name] {
+			t.Errorf("neither half of a turn offers %s", name)
 		}
 		if atCreation[name] {
 			t.Errorf("character creation should not offer %s", name)
+		}
+	}
+	if !consult["create_location"] {
+		t.Error("a scene cannot be narrated somewhere the consult phase was not allowed to create")
+	}
+	for _, name := range []string{"move_item", "move_character"} {
+		if consult[name] {
+			t.Errorf("%s records what the prose said and must wait for it", name)
 		}
 	}
 }

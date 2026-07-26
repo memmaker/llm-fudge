@@ -92,8 +92,8 @@ func TestMergeGrammar(t *testing.T) {
 		},
 		{
 			name:    "a flag that later takes a value becomes a field in the same place",
-			updates: []string{"guard|alert|at:gate", "guard|alert:very"},
-			want:    "guard|alert:very|at:gate @t2",
+			updates: []string{"guard|alert|watching:gate", "guard|alert:very"},
+			want:    "guard|alert:very|watching:gate @t2",
 		},
 		{
 			name:    "a bare flag never overwrites the value a field of that name already holds",
@@ -240,13 +240,38 @@ func TestPositionIsEngineOwned(t *testing.T) {
 	}
 }
 
-// Only for characters, though. A place has no sheet, so a report about where a
-// location sits is the ledger's to keep.
-func TestPositionOfANonCharacterSurvives(t *testing.T) {
+// And not only for characters. Position is the one engine-owned name that means
+// the same thing on a line about a *thing*, and a WORLD entry reading
+// `parchment|at:bar-counter` is indistinguishable from a record of where the
+// parchment is. It is not one — nothing in this ledger is — and a session was
+// lost to the difference: the DM read that line back as proof the parchment had
+// been recorded, and so never recorded it. Where anything is belongs to the
+// roster and to LOCATIONS, put there by the engine's own calls.
+func TestPositionOfANonCharacterIsAlsoEngineOwned(t *testing.T) {
 	l := New()
-	l.Apply("bar|at:dock-road", 1, charSet("vance-kade"))
+	notes := l.Apply("parchment|at:bar-counter|state:sealed", 1, charSet("vance-kade"))
 
-	if got, want := l.Render(), "bar|at:dock-road @t1"; got != want {
+	if got, want := l.Render(), "parchment|state:sealed @t1"; got != want {
+		t.Errorf("Render() = %q, want the position stripped and the rest kept: %q", got, want)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("notes = %v, want one discard note", notes)
+	}
+	// The note has to point at the calls that do own it, or the DM reads it as
+	// the fact being unwanted rather than as being recorded elsewhere.
+	if !strings.Contains(notes[0], "add_item") {
+		t.Errorf("note = %q, want it to name where a thing's position actually lives", notes[0])
+	}
+}
+
+// Every other engine-owned name still depends on the key being a character. A
+// door has no wounds and a job has no coins, so the field name on its own says
+// nothing about who owns the fact.
+func TestOtherEngineFieldsStaySafeOnNonCharacters(t *testing.T) {
+	l := New()
+	l.Apply("bar|coins:till-full|wounds:gouged-bartop", 1, charSet("vance-kade"))
+
+	if got, want := l.Render(), "bar|coins:till-full|wounds:gouged-bartop @t1"; got != want {
 		t.Errorf("Render() = %q, want %q", got, want)
 	}
 }

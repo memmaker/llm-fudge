@@ -16,9 +16,17 @@ import (
 // model is a scripted DM. It records the tool set it was offered each round, so
 // a test can see the moment the turn stopped asking for resolution and started
 // demanding the narration.
+//
+// The two halves of a turn are scripted separately, because they are asked
+// different questions: reply answers the resolution rounds, record answers the
+// bookkeeping round that follows the prose. Most tests here are about the first
+// half and leave record nil, which means "the prose moved nothing" — the phase
+// closes on its first round and the turn ends.
 type model struct {
 	reply  func(round int, tools []llm.Tool) llm.Response
+	record func(round int, tools []llm.Tool) llm.Response
 	rounds int
+	books  int
 	tools  [][]llm.Tool
 	seen   [][]llm.Message
 }
@@ -26,6 +34,13 @@ type model struct {
 func (m *model) chat(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	m.tools = append(m.tools, tools)
 	m.seen = append(m.seen, append([]llm.Message(nil), messages...))
+	if bookkeeping(tools) {
+		m.books++
+		if m.record == nil {
+			return nothingToRecord(), nil
+		}
+		return m.record(m.books-1, tools), nil
+	}
 	m.rounds++
 	return m.reply(m.rounds-1, tools), nil
 }
@@ -37,6 +52,20 @@ func narrationOffered(tools []llm.Tool) bool {
 		}
 	}
 	return false
+}
+
+// bookkeeping reports the tool set of the round that runs after the player has
+// read the scene. It is told apart by what is missing: every resolution round is
+// offered output_narration, and the bookkeeping round never is — there is
+// nothing left to say to the player by then.
+func bookkeeping(tools []llm.Tool) bool {
+	return len(tools) > 0 && !narrationOffered(tools)
+}
+
+// nothingToRecord is what a DM answers when its prose moved nothing the engine
+// does not already hold: no calls, one line saying so.
+func nothingToRecord() llm.Response {
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "Nothing moved that the engine does not already hold."}}
 }
 
 // onlyNarration reports the tool set of a turn's last round: the narration, and
@@ -371,14 +400,36 @@ func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-	if len(dm.seen) < 2 {
-		t.Fatalf("wanted a turn of at least two rounds, got %d", len(dm.seen))
+	if dm.rounds < 2 {
+		t.Fatalf("wanted a turn of at least two resolution rounds, got %d", dm.rounds)
 	}
 	first, _ := blockOf(t, dm.seen[0])
-	for round, request := range dm.seen[1:] {
+	for round, request := range dm.seen[1:dm.rounds] {
 		if got, _ := blockOf(t, request); got != first {
 			t.Errorf("the block changed on round %d of the same turn", round+2)
 		}
+	}
+}
+
+// The bookkeeping round is the exception, and has to be: the turn's own calls
+// have moved the roster since the resolution rounds read it, and this is the
+// round that names items and characters off it.
+func TestTheBookkeepingRoundGetsAFreshBlock(t *testing.T) {
+	dm := &model{reply: resolvingThenNarrating("bar|patrons:scattered")}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if dm.books != 1 {
+		t.Fatalf("the turn ran %d bookkeeping rounds, want exactly one", dm.books)
+	}
+	resolving, _ := blockOf(t, dm.seen[0])
+	recording, _ := blockOf(t, dm.seen[len(dm.seen)-1])
+	if recording == resolving {
+		t.Error("the bookkeeping round read the block the turn started with")
+	}
+	if !strings.Contains(recording, "bar|patrons:scattered") {
+		t.Errorf("the bookkeeping block does not carry what the narration just established:\n%s", recording)
 	}
 }
 

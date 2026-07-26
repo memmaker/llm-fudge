@@ -59,6 +59,22 @@ var engineOwned = map[string]bool{
 	"cannot-act":   true,
 }
 
+// positionOwned names the fields the engine owns whatever the line is keyed to.
+// Everything else in engineOwned is only the engine's when the key names a
+// character: a door has no wounds and a job has no coins, so the field name on
+// its own means nothing there and the line is harmless.
+//
+// Position is the exception, because it is the one thing a line about an
+// *object* can assert that the engine also maintains — and a WORLD entry reading
+// `parchment|at:bar-counter` is indistinguishable from a record of where the
+// parchment is. It is not one. Things are in the roster and in LOCATIONS, put
+// there by add_item and move_item, and nowhere else. Letting this through cost a
+// session a parchment: the DM read its own ledger back as proof the thing was
+// already recorded, and so never recorded it.
+var positionOwned = map[string]bool{
+	"at": true,
+}
+
 type tokenKind int
 
 const (
@@ -169,8 +185,12 @@ func (l *Ledger) applyLine(line string, turn int, isCharacter func(key string) b
 		if !ok {
 			notes = append(notes, fmt.Sprintf("ledger: %s: token %q is not `k:v`, `flag` or `!name`, kept verbatim", key, raw))
 		}
-		if character && engineOwned[tok.name] {
-			notes = append(notes, fmt.Sprintf("ledger: %s: discarded %q — the rules library owns %s and renders it in the roster", key, raw, tok.name))
+		if engineOwned[tok.name] && (character || positionOwned[tok.name]) {
+			where := "the roster"
+			if !character {
+				where = "LOCATIONS — if this names a thing the story will keep handling, it belongs to the engine through add_item and move_item"
+			}
+			notes = append(notes, fmt.Sprintf("ledger: %s: discarded %q — the rules library owns %s and renders it in %s", key, raw, tok.name, where))
 			continue
 		}
 		kept = append(kept, tok)

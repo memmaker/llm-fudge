@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"fudge/rules"
-
-	"github.com/memmaker/gollum/llm"
 )
 
 // combatants sets up a gunfight: a capable player character and a bandit to
@@ -237,31 +235,29 @@ func TestItemKindsDoNotCollide(t *testing.T) {
 	}
 }
 
-// Combat is played, not created: the attack calls belong to gameplay, while
-// outfitting a character with gear happens in both flows.
+// Combat is played, not created: the attack calls belong to the half of a turn
+// that still does not know how the blow landed, while outfitting a character
+// with gear is bookkeeping and happens in both flows.
 func TestCombatToolsOfferedWherePlayed(t *testing.T) {
-	offered := func(tools []llm.Tool) map[string]bool {
-		names := map[string]bool{}
-		for _, tool := range tools {
-			names[tool.Function.Name] = true
+	consult := toolNames(consultTools())
+	for _, name := range []string{"opposed_attack", "unopposed_attack", "reload_weapon"} {
+		if !consult[name] {
+			t.Errorf("the consult phase does not offer %s", name)
 		}
-		return names
 	}
 
-	play := offered(gameplayTools())
-	for _, name := range []string{"opposed_attack", "unopposed_attack", "reload_weapon"} {
-		if !play[name] {
-			t.Errorf("gameplay does not offer %s", name)
-		}
-	}
-	creation := offered(characterCreationTools())
+	creation, record := toolNames(characterCreationTools()), toolNames(recordTools())
 	for _, name := range []string{"add_weapon", "add_armor", "equip_armor"} {
-		if !creation[name] || !play[name] {
-			t.Errorf("%s must be offered in both character creation and gameplay", name)
+		if !creation[name] || !record[name] {
+			t.Errorf("%s must be offered in both character creation and the record phase", name)
 		}
 	}
-	// The attack tools would have nothing to fight over during creation.
+	// The attack tools would have nothing to fight over during creation, and
+	// nothing left to settle once the scene is on screen.
 	if creation["opposed_attack"] {
 		t.Error("character creation should not offer attacks")
+	}
+	if record["opposed_attack"] {
+		t.Error("the record phase should not be able to start a fight")
 	}
 }
