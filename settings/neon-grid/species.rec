@@ -1,0 +1,19 @@
+slug: baseline-human
+display_name: Baseline Human
+description: Unaugmented or lightly augmented people navigating a world dominated by technology.
+scale: 0
+
+slug: augmented-human
+display_name: Augmented Human
+description: Individuals enhanced with cyberware, gaining power at the cost of humanity.
+scale: 0
+
+slug: clone
+display_name: Clone
+description: Lab-grown humans engineered for specific purposes and often owned by corporations.
+scale: 0
+
+slug: ai-construct
+display_name: AI Construct
+description: Digital intelligences that exist within networks and act through systems and proxies.
+scale: 0

@@ -1,0 +1,1 @@
+Neon-lit streets pulse beneath towering megacorporate spires, where data is currency and identity is fluid. Console cowboys dive into the grid while augmented enforcers patrol a world of chrome, vice, and corporate control. Survival means staying sharp, staying connected, and never trusting the system.

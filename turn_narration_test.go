@@ -1,0 +1,419 @@
+package main
+
+import (
+	"io"
+	"math/rand"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"fudge/rules"
+
+	"github.com/memmaker/gollum/llm"
+)
+
+// model is a scripted DM. It records the tool set it was offered each round, so
+// a test can see the moment the turn stopped asking for resolution and started
+// demanding the narration.
+type model struct {
+	reply  func(round int, tools []llm.Tool) llm.Response
+	rounds int
+	tools  [][]llm.Tool
+	seen   [][]llm.Message
+}
+
+func (m *model) chat(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	m.tools = append(m.tools, tools)
+	m.seen = append(m.seen, append([]llm.Message(nil), messages...))
+	m.rounds++
+	return m.reply(m.rounds-1, tools), nil
+}
+
+func narrationOffered(tools []llm.Tool) bool {
+	for _, tool := range tools {
+		if tool.Function.Name == "output_narration" {
+			return true
+		}
+	}
+	return false
+}
+
+func onlyNarration(tools []llm.Tool) bool {
+	return len(tools) == 1 && narrationOffered(tools)
+}
+
+func narrationCall(state string) llm.Response {
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","world_update":"`+state+`"}`),
+	}}}
+}
+
+// stalling is a response that resolves something and narrates nothing — the shape
+// of a DM that would spend a turn forever if the loop let it.
+func stalling() llm.Response {
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+		call("t", "roll_on_table", `{"table":"weather"}`),
+	}}}
+}
+
+// gameStart is the entire history a session carries between turns: the system
+// prompt and the opening briefing, and nothing else ever. The player's line is
+// not part of it — the turn takes that as an argument and drops it again when it
+// folds the turn into the session.
+func gameStart() []llm.Message {
+	return []llm.Message{
+		{Role: llm.RoleSystem, Content: "system"},
+		{Role: llm.RoleUser, Content: "briefing"},
+	}
+}
+
+const playerLine = "I ask the smith about the amulet."
+
+func testWorld() *rules.World {
+	return &rules.World{Characters: map[string]*rules.Character{}, Rng: rand.New(rand.NewSource(1))}
+}
+
+// narrated reports whether the turn reached the player. The history cannot
+// answer that any more — it keeps nothing — so the archive does, which is where
+// a turn goes now.
+func narrated(s *session) bool {
+	recorded := s.archive.Recent(1)
+	return len(recorded) == 1 && recorded[0].Prose != ""
+}
+
+// noBackoff runs the retry path at full speed: the pause is there for a network,
+// and a test has no network to be polite to.
+func noBackoff(t *testing.T) {
+	t.Helper()
+	previous := requestRetryDelay
+	requestRetryDelay = time.Millisecond
+	t.Cleanup(func() { requestRetryDelay = previous })
+}
+
+func capture(t *testing.T, run func()) string {
+	t.Helper()
+	stdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+	run()
+	os.Stdout = stdout
+	w.Close()
+	return <-done
+}
+
+// A DM that keeps resolving does not get to spend the turn doing it. The last
+// call of the budget has the engine taken off the table, so the turn still ends
+// on a narration rather than on the budget running out.
+func TestLastCallIsSpentOnTheNarration(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if onlyNarration(tools) {
+			return narrationCall("grimwald-the-smith|at:forge")
+		}
+		return stalling()
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if !narrated(s) {
+		t.Fatal("the turn ended without narration")
+	}
+	if dm.rounds != maxTurnRequests {
+		t.Errorf("the turn made %d calls, want the narration demanded on call %d", dm.rounds, maxTurnRequests)
+	}
+	for i, tools := range dm.tools[:maxTurnRequests-1] {
+		if len(tools) < 2 {
+			t.Errorf("call %d was denied the toolkit while the turn could still resolve", i+1)
+		}
+	}
+	if !onlyNarration(dm.tools[maxTurnRequests-1]) {
+		t.Error("the last call still offered tools other than the narration")
+	}
+
+	// The demand is made in words, not only by withdrawing the tools: a DM whose
+	// calls silently vanish reads that as a fault and retries them.
+	forced := dm.seen[maxTurnRequests-1]
+	if !strings.Contains(forced[len(forced)-1].Content, "output_narration") {
+		t.Error("the DM was not told why its tools were gone")
+	}
+}
+
+// The budget is the whole budget: a turn that has not been narrated by the last
+// call is over, and it fails loudly rather than leaving the player waiting on a
+// scene that is not coming.
+func TestTurnErrorsOutWhenTheBudgetRunsOut(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		return stalling()
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	before := len(messages)
+	out := capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if dm.rounds != maxTurnRequests {
+		t.Errorf("the turn made %d calls, want it capped at %d", dm.rounds, maxTurnRequests)
+	}
+	if !strings.Contains(out, "did not narrate this turn") {
+		t.Errorf("the failure was not reported to the player: %q", out)
+	}
+	if len(messages) != before {
+		t.Errorf("the failed turn left %d messages behind, want none", len(messages)-before)
+	}
+}
+
+// A hiccup with budget left is worth a second try: the call is spent, but the
+// turn is not, and the player still gets their scene.
+func TestHiccupIsRetriedWhileBudgetRemains(t *testing.T) {
+	noBackoff(t)
+
+	var attempts int
+	chat := func(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return llm.Response{}, io.ErrUnexpectedEOF
+		}
+		return narrationCall("catnip|at:tavern"), nil
+	}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(chat, &messages, playerLine) })
+
+	if !narrated(s) {
+		t.Fatal("a turn was lost to a hiccup that cleared on the next call")
+	}
+}
+
+// Failed calls come out of the same budget as successful ones — a request that
+// errored cost the same round trip — so an outage ends the turn instead of being
+// retried through it.
+func TestFailedCallsSpendTheBudget(t *testing.T) {
+	noBackoff(t)
+
+	var attempts int
+	chat := func(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+		attempts++
+		return llm.Response{}, io.ErrUnexpectedEOF
+	}
+
+	messages, s := gameStart(), newSession(testWorld())
+	before := len(messages)
+	out := capture(t, func() { s.processGameTurn(chat, &messages, playerLine) })
+
+	if attempts != maxTurnRequests {
+		t.Errorf("made %d calls, want the budget of %d", attempts, maxTurnRequests)
+	}
+	if !strings.Contains(out, "did not narrate this turn") {
+		t.Errorf("the failure was not reported to the player: %q", out)
+	}
+	if len(messages) != before {
+		t.Errorf("the failed turn left %d messages behind, want none", len(messages)-before)
+	}
+}
+
+// The wait between retries grows, then stops growing.
+func TestRetryDelayBacksOffToACeiling(t *testing.T) {
+	if retryDelay(1) >= retryDelay(2) {
+		t.Error("the wait must grow with consecutive failures")
+	}
+	if got := retryDelay(1000); got != maxRetryDelay {
+		t.Errorf("retryDelay(1000) = %s, want the ceiling %s", got, maxRetryDelay)
+	}
+}
+
+// Prose written outside the call reaches nobody. The DM is told so and asked
+// again, and the player is shown the turn only once it arrives through
+// output_narration.
+func TestProseWrittenOutsideTheCallIsNotATurn(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if round == 0 {
+			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "The smith sets down his hammer."}}
+		}
+		return narrationCall("grimwald-the-smith|at:forge")
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	out := capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if strings.Contains(out, "sets down his hammer") {
+		t.Error("text written outside the call was shown to the player")
+	}
+	if !strings.Contains(out, "looks up from the anvil") {
+		t.Errorf("the narration never reached the player: %q", out)
+	}
+	// The correction goes back to the DM rather than the same context a second
+	// time: a request that has not changed has no reason to answer differently.
+	second := dm.seen[1]
+	if !strings.Contains(second[len(second)-1].Content, "output_narration") {
+		t.Error("the DM was not told its reply went nowhere")
+	}
+}
+
+// A reply with neither calls nor text costs the turn a call like any other, and
+// gets told what was missing.
+func TestEmptyRepliesAreAnsweredAndCharged(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if round == 0 {
+			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant}}
+		}
+		return narrationCall("catnip|at:tavern")
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if !narrated(s) {
+		t.Fatal("the turn ended unnarrated")
+	}
+	if dm.rounds != 2 {
+		t.Errorf("made %d calls, want the empty reply to have cost one", dm.rounds)
+	}
+	second := dm.seen[1]
+	if !strings.Contains(second[len(second)-1].Content, "empty") {
+		t.Error("the DM was not told its reply was empty")
+	}
+}
+
+// blockOf returns the ENGINE STATE message from a request the DM was shown, and
+// says where it sat. Position matters as much as presence: the two messages
+// above it are what stays byte-identical and cached all session.
+func blockOf(t *testing.T, request []llm.Message) (string, int) {
+	t.Helper()
+	for i, msg := range request {
+		if msg.Role == llm.RoleSystem && strings.Contains(msg.Content, "ENGINE STATE") {
+			return msg.Content, i
+		}
+	}
+	t.Fatalf("no ENGINE STATE block in a request of %d messages", len(request))
+	return "", -1
+}
+
+// The block reaches the DM as a system message pinned directly after the
+// briefing, with the turn's live messages below it.
+func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
+	dm := &model{reply: resolvingThenNarrating("catnip|at:tavern")}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	for round, request := range dm.seen {
+		block, at := blockOf(t, request)
+		if at != pinnedMessages {
+			t.Errorf("round %d: block sits at index %d, want %d", round+1, at, pinnedMessages)
+		}
+		if request[0].Content != "system" || request[1].Content != "briefing" {
+			t.Errorf("round %d: the cached prefix was disturbed: %q, %q", round+1, request[0].Content, request[1].Content)
+		}
+		if !strings.Contains(block, "ROSTER") || !strings.Contains(block, "WORLD") || !strings.Contains(block, "TIMELINE") {
+			t.Errorf("round %d: block is missing a section:\n%s", round+1, block)
+		}
+	}
+}
+
+// Built once and held. A block rebuilt per round would move the cached prefix
+// on every request of a turn, and tell the DM nothing the tool results below it
+// are not already telling it.
+func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
+	dm := &model{reply: resolvingThenNarrating("catnip|at:tavern")}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if len(dm.seen) < 2 {
+		t.Fatalf("wanted a turn of at least two rounds, got %d", len(dm.seen))
+	}
+	first, _ := blockOf(t, dm.seen[0])
+	for round, request := range dm.seen[1:] {
+		if got, _ := blockOf(t, request); got != first {
+			t.Errorf("the block changed on round %d of the same turn", round+2)
+		}
+	}
+}
+
+// Between turns it is rebuilt, and that is where last turn's report shows up.
+func TestBlockIsRebuiltBetweenTurns(t *testing.T) {
+	dm := &model{reply: resolvingThenNarrating("bar|patrons:scattered")}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+	firstTurnRounds := len(dm.seen)
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, "I look around") })
+
+	opening, _ := blockOf(t, dm.seen[0])
+	later, _ := blockOf(t, dm.seen[firstTurnRounds])
+	if opening == later {
+		t.Error("the block did not change between turns")
+	}
+	if !strings.Contains(later, "bar|patrons:scattered") {
+		t.Errorf("what turn one established is not in turn two's block:\n%s", later)
+	}
+}
+
+// recall is an ordinary gameplay call, and like every other it is off the table
+// on the round that has to end the turn.
+func TestRecallIsOfferedDuringPlayButNotOnTheLastRound(t *testing.T) {
+	offers := func(tools []llm.Tool, name string) bool {
+		for _, tool := range tools {
+			if tool.Function.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if onlyNarration(tools) {
+			return narrationCall("catnip|at:tavern")
+		}
+		return stalling()
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if !offers(dm.tools[0], "recall") {
+		t.Error("recall was not offered during play")
+	}
+	if offers(dm.tools[maxTurnRequests-1], "recall") {
+		t.Error("recall was still on the table on the round that had to narrate")
+	}
+}
+
+// A recall spends a round like anything else. The budget exists to bound what
+// one line of player input can cost, and a lookup is a round trip like any other.
+func TestRecallCostsARoundOfTheBudget(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if round == 0 {
+			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+				call("r", "recall", `{"query":"amulet"}`),
+			}}}
+		}
+		return narrationCall("catnip|at:tavern")
+	}}
+
+	messages, s := gameStart(), newSession(testWorld())
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if dm.rounds != 2 {
+		t.Errorf("the turn made %d calls, want the recall to have cost one", dm.rounds)
+	}
+	if !narrated(s) {
+		t.Fatal("the turn did not survive a recall")
+	}
+	// The answer was handed back in the round that asked, and went no further.
+	answered := dm.seen[1]
+	if !strings.Contains(answered[len(answered)-1].Content, "no archived turn") {
+		t.Errorf("the recall was not answered in the round that asked:\n%+v", answered[len(answered)-1])
+	}
+	if len(messages) != 2 {
+		t.Errorf("the recall answer outlived its turn: %d messages", len(messages))
+	}
+}

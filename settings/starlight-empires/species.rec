@@ -1,0 +1,24 @@
+slug: human
+display_name: Human
+description: Adaptable and ambitious generalists found across nearly every corner of the galaxy.
+scale: 0
+
+slug: synth
+display_name: Synth
+description: Artificial beings of metal and code, valued for precision but often mistrusted.
+scale: 0
+
+slug: zyrran
+display_name: Zyrran
+description: Insectoid hive-minded aliens who excel at coordination and collective strategy.
+scale: 0
+
+slug: velari
+display_name: Velari
+description: Graceful, long-lived beings with a natural attunement to the cosmic field.
+scale: 0
+
+slug: brakk
+display_name: Brakk
+description: Large, physically powerful warriors known for their resilience and directness.
+scale: 2

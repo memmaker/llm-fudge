@@ -1,0 +1,1 @@
+A grounded, present-day world where ordinary people navigate work, relationships, and personal challenges without magic or the supernatural. Conflict arises from human choices, social dynamics, and real-world pressures, from quiet personal struggles to tense confrontations. The focus is on realism, consequence, and the complexity of everyday life.

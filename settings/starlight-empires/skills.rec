@@ -1,0 +1,19 @@
+slug: piloting
+display_name: Piloting
+description: Operating spacecraft and performing complex maneuvers.
+
+slug: blasters
+display_name: Blasters
+description: Using ranged energy weapons effectively in combat.
+
+slug: tech
+display_name: Tech
+description: Hacking, repair, and engineering of advanced systems.
+
+slug: diplomacy
+display_name: Diplomacy
+description: Negotiation, persuasion, and reading social situations.
+
+slug: survival
+display_name: Survival
+description: Enduring and navigating hostile environments and conditions.

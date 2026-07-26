@@ -1,0 +1,19 @@
+slug: physique
+display_name: Physique
+description: Raw strength, endurance, and physical toughness.
+
+slug: agility
+display_name: Agility
+description: Speed, reflexes, and coordination.
+
+slug: mind
+display_name: Mind
+description: Intelligence, reasoning, and technical aptitude.
+
+slug: presence
+display_name: Presence
+description: Charisma, leadership, and force of personality.
+
+slug: will
+display_name: Will
+description: Mental resilience, focus, and resistance to influence.

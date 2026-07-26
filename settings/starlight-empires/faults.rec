@@ -1,0 +1,11 @@
+slug: wanted
+display_name: Wanted
+description: You are actively hunted by a powerful faction or authority.
+
+slug: code-of-honor
+display_name: Code of Honor
+description: You follow strict personal rules that can complicate choices.
+
+slug: overconfident
+display_name: Overconfident
+description: You take unnecessary risks and underestimate threats.

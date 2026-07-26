@@ -1,0 +1,1 @@
+A sprawling space opera of rival empires, scrappy rebels, and freebooting crews navigating a galaxy alive with ancient mysteries and cutting-edge technology. Adventure, politics, and personal drama collide among the stars, where fortunes are made, loyalties are tested, and hidden powers stir beneath the surface.

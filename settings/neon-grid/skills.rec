@@ -1,0 +1,19 @@
+slug: firearms
+display_name: Firearms
+description: Skill with guns of all types.
+
+slug: hacking
+display_name: Hacking
+description: Intruding into and manipulating digital systems.
+
+slug: streetwise
+display_name: Streetwise
+description: Knowledge of the underworld and its connections.
+
+slug: tech
+display_name: Tech
+description: Building, modifying, and repairing technology.
+
+slug: stealth
+display_name: Stealth
+description: Moving unseen and avoiding detection.

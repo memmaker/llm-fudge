@@ -81,28 +81,37 @@ func resolveTrait(ch *Character, traitType string, trait string) (int, bool) {
 	}
 }
 
-// validateCheckInputs checks all inputs before consuming any RNG or resources
-func (w *World) validateCheckInputs(actorID string, traitType string, traitSlug string, addOne bool, reroll bool) error {
-	if _, err := w.Character(actorID); err != nil {
-		return err
+// validateCheckInputs checks all inputs before consuming any RNG or resources,
+// and hands back the actor it resolved: the id a caller passed may be a name or
+// a shorthand, so the character found here is the one the roll must use.
+func (w *World) validateCheckInputs(actorID string, traitType string, traitSlug string, addOne bool, reroll bool) (*Character, error) {
+	ch, err := w.Character(actorID)
+	if err != nil {
+		return nil, err
 	}
 	if traitType != TraitTypeAttribute && traitType != TraitTypeSkill {
-		return fmt.Errorf("invalid trait type: %s", traitType)
+		return nil, fmt.Errorf("invalid trait type: %s", traitType)
 	}
 	// Normalize trait slug at input boundary
 	traitSlug = strings.ToLower(traitSlug)
-	_, ok := resolveTrait(w.Characters[actorID], traitType, traitSlug)
+	_, ok := resolveTrait(ch, traitType, traitSlug)
 	if !ok {
-		return fmt.Errorf("unknown %s: %s", traitType, traitSlug)
+		return nil, fmt.Errorf("unknown %s: %s", traitType, traitSlug)
 	}
-	ch := w.Characters[actorID]
-	if addOne && ch.FudgePoints < 1 {
-		return fmt.Errorf("insufficient Fudge Points for add_one")
+	// Each option spends its own point, so asking for both costs two. Checked as
+	// a total rather than one at a time: a character with a single point left
+	// could otherwise buy both and finish the check in debt.
+	cost := 0
+	if addOne {
+		cost++
 	}
-	if reroll && ch.FudgePoints < 1 {
-		return fmt.Errorf("insufficient Fudge Points for reroll")
+	if reroll {
+		cost++
 	}
-	return nil
+	if ch.FudgePoints < cost {
+		return nil, fmt.Errorf("%s has %d Fudge Points, and this check would spend %d", ch.Name, ch.FudgePoints, cost)
+	}
+	return ch, nil
 }
 
 func (w *World) unopposedRoll(ch *Character, traitType string, trait string, mod int, dice DiceMethod) (int, int, int) {
@@ -125,6 +134,13 @@ type CheckResult struct {
 	Roll        int
 	CritSuccess bool
 	CritFailure bool
+
+	// Rerolled records that a Fudge Point bought a second roll, and
+	// DiscardedRoll is the one that lost out. The discarded roll is worth
+	// reporting: "the shot that would have gone wide" is a better sentence than
+	// a number that appeared from nowhere.
+	Rerolled      bool
+	DiscardedRoll int
 }
 
 // unopposedRollEx rolls and returns raw results with critical detection
@@ -157,11 +173,11 @@ func (w *World) unopposedRollEx(ch *Character, traitType string, trait string, m
 // UnopposedCheck resolves an unopposed check with full Fudge Point support
 func (w *World) UnopposedCheck(actorID string, traitType string, traitSlug string, difficulty int, situationalModifier int, addOne bool, reroll bool) (*CheckResult, error) {
 	// Validate all inputs before consuming resources
-	if err := w.validateCheckInputs(actorID, traitType, traitSlug, addOne, reroll); err != nil {
+	ch, err := w.validateCheckInputs(actorID, traitType, traitSlug, addOne, reroll)
+	if err != nil {
 		return nil, err
 	}
 
-	ch := w.Characters[actorID]
 	if !ch.Wounds.CanAct() {
 		return nil, fmt.Errorf("%s is incapacitated and cannot act", ch.Name)
 	}
@@ -179,6 +195,23 @@ func (w *World) UnopposedCheck(actorID string, traitType string, traitSlug strin
 
 	// Execute the roll
 	result := w.unopposedRollEx(ch, traitType, traitSlug, situationalModifier, addOneBonus, Dice4DF)
+
+	// A rerolled check is rolled twice and the better of the two kept. The point
+	// is committed before any dice are known — reroll is an argument on the call,
+	// not a reaction to the result — and a second roll that simply replaced the
+	// first would buy nothing whatever in expectation. Taking the better is what
+	// makes a Fudge Point spent blind worth spending, and it is the only reading
+	// of "reroll a bad result" (§1.3.6) that survives being declared up front.
+	if reroll {
+		second := w.unopposedRollEx(ch, traitType, traitSlug, situationalModifier, addOneBonus, Dice4DF)
+		discarded := second
+		if second.Roll > result.Roll {
+			result, discarded = second, result
+		}
+		result.Rerolled = true
+		result.DiscardedRoll = discarded.Roll
+	}
+
 	result.Success = result.Total >= difficulty
 
 	return &result, nil
@@ -236,24 +269,23 @@ func (w *World) OpposedCheck(actorID string, actorTraitType string, actorTraitSl
 	opponentID string, opponentTraitType string, opponentTraitSlug string, opponentMod int, addOne bool) (*OpposedResult, error) {
 
 	// Validate all inputs before consuming resources
-	if err := w.validateCheckInputs(actorID, actorTraitType, actorTraitSlug, addOne, false); err != nil {
+	actor, err := w.validateCheckInputs(actorID, actorTraitType, actorTraitSlug, addOne, false)
+	if err != nil {
 		return nil, err
 	}
 
 	opponentTraitSlug = strings.ToLower(opponentTraitSlug)
-	if _, err := w.Character(opponentID); err != nil {
+	opponent, err := w.Character(opponentID)
+	if err != nil {
 		return nil, err
 	}
 	if opponentTraitType != TraitTypeAttribute && opponentTraitType != TraitTypeSkill {
 		return nil, fmt.Errorf("invalid opponent trait type: %s", opponentTraitType)
 	}
-	_, ok := resolveTrait(w.Characters[opponentID], opponentTraitType, opponentTraitSlug)
+	_, ok := resolveTrait(opponent, opponentTraitType, opponentTraitSlug)
 	if !ok {
 		return nil, fmt.Errorf("unknown opponent %s: %s", opponentTraitType, opponentTraitSlug)
 	}
-
-	actor := w.Characters[actorID]
-	opponent := w.Characters[opponentID]
 
 	if !actor.Wounds.CanAct() || !opponent.Wounds.CanAct() {
 		return nil, fmt.Errorf("an incapacitated character cannot make an opposed check")
@@ -321,22 +353,34 @@ func characterMarkdown(ch *Character) string {
 	fmt.Fprintf(&b, "**Coins:** %d\n\n", ch.Coins)
 	if len(ch.Inventory) > 0 {
 		fmt.Fprintf(&b, "#### Inventory\n\n")
-		for _, it := range sortedKeys(ch.Inventory) {
-			n := ch.Inventory[it]
-			if n > 1 {
-				fmt.Fprintf(&b, "- %s x%d\n", it, n)
-			} else {
-				fmt.Fprintf(&b, "- %s\n", it)
+		for _, it := range sortedInventory(ch.Inventory) {
+			fmt.Fprintf(&b, "- %s", itemLabel(it))
+			if ratings := itemRatings(it); ratings != "" {
+				fmt.Fprintf(&b, " (%s)", ratings)
 			}
+			if it.Description != "" {
+				fmt.Fprintf(&b, " — %s", it.Description)
+			}
+			fmt.Fprintln(&b)
 		}
 		fmt.Fprintln(&b)
 	}
 	return b.String()
 }
 
+// itemLabel renders an item as name plus count, dropping the count for a lone
+// item so a sheet does not read "Blaster Pistol x1".
+func itemLabel(it *Item) string {
+	if it.Count > 1 {
+		return fmt.Sprintf("%s x%d", it.Name, it.Count)
+	}
+	return it.Name
+}
+
 const (
 	Creset  = "\033[0m"
 	Cbold   = "\033[1m"
+	Cdim    = "\033[2m"
 	Cred    = "\033[31m"
 	Cgreen  = "\033[32m"
 	Cyellow = "\033[33m"
@@ -363,6 +407,97 @@ func sortedKeys(m map[string]int) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// ToString renders a character as condensed state, in the same dense notation
+// the DM writes its own memory in. It is the engine's answer to "what is true
+// about this character right now", and it is what the DM is handed instead of
+// the character sheet — which it cannot read — and instead of its own notes,
+// which drift as a session runs long.
+//
+// Every field is stated on its own line; anything empty is left out, except
+// possessions, where silence would read as "the engine did not say" rather than
+// "they have none".
+//
+// Position is not among the fields. Location is written once, when a character
+// is created, and nothing ever moves it — there is no call that does — so the
+// engine would be asserting a position that stopped being true the first time
+// the fiction walked anybody anywhere. A block the DM reads as authoritative
+// must not carry a fact the engine does not actually track, so where a
+// character stands is left to the world ledger, which does track it.
+func (c *Character) ToString() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "%s|id:%s", c.Name, c.ID)
+	if c.Species != "" {
+		fmt.Fprintf(&b, "|%s", c.Species)
+	}
+	fmt.Fprintf(&b, "|scale:%+d", c.Scale)
+	if c.Description != "" {
+		fmt.Fprintf(&b, "\ndesc:%s", c.Description)
+	}
+
+	fmt.Fprintf(&b, "\nwounds:%s", strings.ToLower(c.Wounds.Level.String()))
+	if c.Wounds.Scratches > 0 {
+		fmt.Fprintf(&b, "|scratches:%d/3", c.Wounds.Scratches)
+	}
+	if p := c.Wounds.Penalty(); p != 0 {
+		fmt.Fprintf(&b, "|penalty:%+d (already applied to rolls)", p)
+	}
+	if !c.Wounds.CanAct() {
+		b.WriteString("|cannot-act")
+	}
+
+	fmt.Fprintf(&b, "\nfudge-points:%d", c.FudgePoints)
+
+	writeTraits := func(label string, traits map[string]int) {
+		if len(traits) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "\n%s:", label)
+		for i, k := range sortedKeys(traits) {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, "%s%+d", k, traits[k])
+		}
+	}
+	writeTraits("attributes", c.Attributes)
+	writeTraits("skills", c.Skills)
+	if len(c.Gifts) > 0 {
+		fmt.Fprintf(&b, "\ngifts:%s", strings.Join(c.Gifts, ","))
+	}
+	if len(c.Faults) > 0 {
+		fmt.Fprintf(&b, "\nfaults:%s", strings.Join(c.Faults, ","))
+	}
+
+	fmt.Fprintf(&b, "\ncoins:%d", c.Coins)
+	if len(c.Inventory) == 0 {
+		b.WriteString("\ncarrying:nothing")
+		return b.String()
+	}
+	b.WriteString("\ncarrying:")
+	for _, it := range sortedInventory(c.Inventory) {
+		fmt.Fprintf(&b, "\n- %s", itemLabel(it))
+		if detail := itemDetail(it); detail != "" {
+			fmt.Fprintf(&b, "|%s", detail)
+		}
+		if it.Description != "" {
+			fmt.Fprintf(&b, "|%s", it.Description)
+		}
+	}
+	return b.String()
+}
+
+// sortedInventory orders an inventory by item name so the sheet reads the same
+// way every time it is rewritten.
+func sortedInventory(inv map[string]*Item) []*Item {
+	items := make([]*Item, 0, len(inv))
+	for _, it := range inv {
+		items = append(items, it)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items
 }
 
 func fmtTrait(name string, val int) string {
@@ -464,13 +599,15 @@ func StateFileText(w *World) string {
 
 	// Inventory
 	if len(ch.Inventory) > 0 {
-		fmt.Fprintf(&b, "\n%s\u25b8 Inventory%s\n", Cbold, Creset)
-		for _, it := range sortedKeys(ch.Inventory) {
-			n := ch.Inventory[it]
-			if n > 1 {
-				fmt.Fprintf(&b, "  \u2022 %s x%d\n", it, n)
-			} else {
-				fmt.Fprintf(&b, "  \u2022 %s\n", it)
+		fmt.Fprintf(&b, "%s\u25b8 Inventory%s\n", Cbold, Creset)
+		for _, it := range sortedInventory(ch.Inventory) {
+			fmt.Fprintf(&b, "  \u2022 %s", itemLabel(it))
+			if ratings := itemRatings(it); ratings != "" {
+				fmt.Fprintf(&b, " %s(%s)%s", Ccyan, ratings, Creset)
+			}
+			fmt.Fprintln(&b)
+			if it.Description != "" {
+				fmt.Fprintf(&b, "    %s%s%s\n", Cdim, it.Description, Creset)
 			}
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"fudge/archive"
 	"fudge/prompts"
 	"fudge/rules"
 	"fudge/ui"
@@ -27,9 +28,26 @@ var imgGen bool
 const (
 	// maxAdventureAttempts caps the retries when the LLM won't save the adventure.
 	maxAdventureAttempts = 3
-	// maxTurnIterations caps the tool-call rounds spent on a single game turn.
-	maxTurnIterations = 6
+	// maxTurnRequests is every request a single game turn may make of the model,
+	// failed ones included. The last of them is spent demanding the narration, so
+	// a turn has maxTurnRequests-1 rounds to resolve whatever it needs and one to
+	// end on. A turn still unnarrated after that is an error.
+	maxTurnRequests = 5
+	// maxRetryDelay is the ceiling on the wait between retried requests.
+	maxRetryDelay = 30 * time.Second
+	// pinnedMessages is how many messages sit above the ENGINE STATE block and
+	// never change again: the DM prompt and the opening briefing, built once in
+	// runGamePhase. They are the whole of the history between turns, and being
+	// byte-identical all session is what makes them worth caching. Anything
+	// added to that pair has to be counted here too, or the block would be
+	// pinned above it.
+	pinnedMessages = 2
 )
+
+// requestRetryDelay is the pause before retrying a failed request, multiplied by
+// the number of failures so far. A variable so tests can drive the retry path
+// without waiting out a backoff written for a network.
+var requestRetryDelay = 2 * time.Second
 
 // Model context window sizes in tokens
 var contextWindowSizes = map[string]int{
@@ -218,11 +236,19 @@ func debugToolCall(call llm.ToolCall, result string, err error) {
 	if err != nil {
 		fmt.Printf("  \033[91mError:\033[0m %s\n", err.Error())
 	} else if result != "" {
+		// A state-changing tool answers with its headline and then the whole
+		// character underneath. That block is for the DM; a debug line is meant
+		// to be glanceable, and the sheet it repeats is in charsheet.txt.
+		headline := resultHeadline(result)
+		if headline != result {
+			headline += " \033[90m+state\033[0m"
+		}
 		// For dice-rolling tools, also display roll breakdown
-		if call.Function.Name == "unopposed_check" || call.Function.Name == "opposed_check" {
-			fmt.Printf("  \033[92mDice:\033[0m %s\n", result)
-		} else {
-			fmt.Printf("  \033[92mResult:\033[0m %s\n", result)
+		switch call.Function.Name {
+		case "unopposed_check", "opposed_check", "opposed_attack", "unopposed_attack":
+			fmt.Printf("  \033[92mDice:\033[0m %s\n", headline)
+		default:
+			fmt.Printf("  \033[92mResult:\033[0m %s\n", headline)
 		}
 	}
 }
@@ -517,6 +543,27 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 		{Role: llm.RoleUser, Content: initialMessage},
 	}
 
+	// Creation ends once the character exists and carries something. Their gear
+	// usually lands one response after they do — the id add_item needs only
+	// comes back in the create_character result — so the response that creates
+	// them buys exactly one follow-up turn to outfit them, and creation ends
+	// after that whether or not they took it. Handing the model any turn beyond
+	// that only buys a paragraph of congratulation that the opening scene is
+	// about to narrate over anyway.
+	characterCreated := false
+	creationDone := func() bool {
+		pc, err := w.Character(w.Player)
+		if err != nil {
+			return false
+		}
+		if len(pc.Inventory) > 0 || pc.Coins > 0 || characterCreated {
+			fmt.Printf("\n%s is ready.\n", pc.Name)
+			return true
+		}
+		characterCreated = true // spend the one follow-up turn
+		return false
+	}
+
 	for {
 		fmt.Println()
 		response, err := chat(client, model, messages, characterCreationTools())
@@ -548,13 +595,7 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 				fmt.Println("Error writing char sheet:", err)
 			}
 
-			// The character exists, so setup is over. Handing the LLM another
-			// turn here only buys a paragraph of congratulation that the opening
-			// scene is about to narrate over anyway.
-			if len(w.Characters) > 0 {
-				if pc, err := w.Character(w.Player); err == nil {
-					fmt.Printf("\n%s is ready.\n", pc.Name)
-				}
+			if creationDone() {
 				return
 			}
 
@@ -566,6 +607,13 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 			}
 			fmt.Println()
 			messages = append(messages, response.Message)
+		}
+
+		// The model ended its turn on plain text. If that was the follow-up turn
+		// after create_character, the character stands equipped or not and there
+		// is nothing left to ask the player.
+		if creationDone() {
+			return
 		}
 
 		// Get player input
@@ -620,7 +668,7 @@ func slugify(s string) string {
 	return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
 }
 
-func handleMetaCommand(line string, messages *[]llm.Message) {
+func (s *session) handleMetaCommand(line string, messages *[]llm.Message) {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
 		return
@@ -632,7 +680,7 @@ func handleMetaCommand(line string, messages *[]llm.Message) {
 		fmt.Println("Session ended.")
 		os.Exit(0)
 	case "/context":
-		err := dumpContextToFile("context.txt", messages)
+		err := s.dumpContextToFile("context.txt", messages)
 		if err != nil {
 			fmt.Printf("Error writing context: %v\n", err)
 		} else {
@@ -646,7 +694,12 @@ func handleMetaCommand(line string, messages *[]llm.Message) {
 	}
 }
 
-func dumpContextToFile(filename string, messages *[]llm.Message) error {
+// dumpContextToFile writes what the DM is working from. The messages are only
+// part of that now and, between turns, much the smaller part: the block is the
+// DM's entire memory of the session, and the archive is the record of how it
+// came to hold what it holds. A dump of the messages alone would show a session
+// that appears to have just started.
+func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -655,7 +708,15 @@ func dumpContextToFile(filename string, messages *[]llm.Message) error {
 
 	writer := &strings.Builder{}
 
-	writer.WriteString("=== MESSAGE CONTEXT ===\n\n")
+	writer.WriteString("=== ENGINE STATE, as the DM last saw it ===\n\n")
+	if s.lastBlock != "" {
+		writer.WriteString(s.lastBlock)
+	} else {
+		writer.WriteString("(no turn has been played yet)")
+	}
+	writer.WriteString("\n\n=== ARCHIVE ===\n\n")
+	writer.WriteString(s.archive.Dump())
+	writer.WriteString("\n\n=== MESSAGE CONTEXT ===\n\n")
 	writer.WriteString(fmt.Sprintf("Total messages: %d\n\n", len(*messages)))
 
 	for i, msg := range *messages {
@@ -706,15 +767,25 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 		return
 	}
 
+	// These two are the whole of the history between turns, and they never
+	// change again: everything a turn produces is folded into the session and
+	// dropped. That is what keeps them byte-identical, and cached, all session.
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
 		{Role: llm.RoleUser, Content: openingBriefing(w)},
 	}
 
+	s := newSession(w)
+
+	chat := func(msgs []llm.Message, tools []llm.Tool) (llm.Response, error) {
+		return chatSilent(client, model, msgs, tools)
+	}
+
 	// Setup is done and the character exists—open the scene right away instead
-	// of making the player prod us for it.
+	// of making the player prod us for it. There is no player line to react to,
+	// so the turn opens on the briefing alone.
 	fmt.Println()
-	processGameTurn(w, client, model, &messages)
+	s.processGameTurn(chat, &messages, "")
 
 	for {
 		// Get player input
@@ -730,29 +801,34 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 
 		// Handle meta commands
 		if strings.HasPrefix(line, "/") {
-			handleMetaCommand(line, &messages)
+			s.handleMetaCommand(line, &messages)
 			continue
 		}
 
-		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: line})
 		fmt.Println()
-		processGameTurn(w, client, model, &messages)
+		s.processGameTurn(chat, &messages, line)
 	}
 }
 
 // narrationOutput is the payload of an output_narration call: the prose goes to
-// the player, the condensed state stays in our context in its place, and the
-// image prompt—present only under --img-gen—goes to img-gen.md.
+// the player and then to the archive, the world update goes to the ledger, and
+// the image prompt—present only under --img-gen—goes to img-gen.md.
 type narrationOutput struct {
-	Prose          string `json:"prose"`
-	CondensedState string `json:"condensed_state"`
-	ImgGen         string `json:"img_gen"`
+	Prose       string `json:"prose"`
+	WorldUpdate string `json:"world_update"`
+	ImgGen      string `json:"img_gen"`
 }
 
-// openingBriefing gives the DM the adventure it must open with, plus the player
-// character it was created without knowing about. Setup is over and gameplay
-// starts here, so the instruction leads and closes the message: everything
-// between the two is reference material, not something to reply about.
+// openingBriefing gives the DM the adventure it must open with. Setup is over
+// and gameplay starts here, so the instruction leads and closes the message:
+// everything between the two is reference material, not something to reply
+// about.
+//
+// The player character is not in it. This message is written once and then
+// never again, which is exactly wrong for a character who is about to start
+// spending coins and taking wounds — a snapshot here would be contradicting the
+// roster by the second turn. The roster states them instead, rebuilt every turn,
+// and it is in front of the DM before this briefing is ever read.
 func openingBriefing(w *rules.World) string {
 	var b strings.Builder
 	b.WriteString("Character creation is finished and play begins now. This is turn one: there is no player input to react to, you open the game.\n\n")
@@ -762,68 +838,79 @@ func openingBriefing(w *rules.World) string {
 	b.WriteString(w.AdventureContent)
 	b.WriteString("\n\n")
 
-	if pc, err := w.Character(w.Player); err == nil {
-		b.WriteString(fmt.Sprintf("PLAYER CHARACTER: %s|id:%s|species:%s", pc.Name, pc.ID, pc.Species))
-		if pc.Description != "" {
-			b.WriteString("|" + pc.Description)
-		}
-		b.WriteString("\n\n")
-	}
-
-	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response: one output_narration call carrying the opening prose and, as condensed_state, the full baseline of everything that prose establishes. Narrate the opening scene now.")
+	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response: one output_narration call carrying the opening prose and, as world_update, the full baseline of everything that prose establishes. The player character is in the ROSTER above, with everything they carry—put them in the scene as the engine holds them. Narrate the opening scene now.")
 	return b.String()
 }
 
-// processGameTurn drives the DM until it hands back narration for the player.
+// chatRound is one request to the model. The turn loop takes it as an argument
+// rather than the client, because "a turn always ends narrated" is a property of
+// the loop and not of any provider, and a loop holding its own client cannot be
+// asked to prove it.
+type chatRound func(messages []llm.Message, tools []llm.Tool) (llm.Response, error)
+
+// processGameTurn drives the DM until it hands back narration for the player, or
+// until the turn has spent the maxTurnRequests calls it is allowed — a turn ends
+// narrated or it ends in an error, and either way it ends inside this function.
 // Everything the player reads arrives through output_narration, so nothing is
 // streamed straight to them: tool calls (checks, NPC creation, ...) are executed
 // and fed back in the same round, and a response without narration forces
 // another request, since the DM must see the results before it can narrate them.
-func processGameTurn(w *rules.World, client *llm.Client, model string, messages *[]llm.Message) {
+func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playerInput string) {
+	s.turn++
+
+	// Built once, here, and held for the rest of the turn. A turn takes two
+	// requests more often than one, and a block rebuilt per request would move
+	// the cached prefix every time — while telling the DM nothing it is not
+	// about to be told anyway, since a call that moves a character answers with
+	// that character's state in the same round.
+	block := s.engineState()
+	s.lastBlock = block
+
 	turnStart := len(*messages)
-
-	// A turn can narrate more than once—prose, a choice menu, then the prose
-	// reacting to it—so every condensed_state it produced is kept and the whole
-	// exchange collapses onto all of them at once. Collapsing onto the last one
-	// alone would throw away everything the earlier narration recorded.
-	var condensedStates []string
-	var proses []string
-	var narrated bool
-
-	// collapseTurn always rewrites the turn down to a single assistant message.
-	// Everything else it replaces is noise to the next request: tool-call JSON,
-	// image prompts, tool results, and the retry scaffolding below, which cost
-	// far more tokens than the record they leave behind.
-	collapseTurn := func() {
-		record := strings.Join(condensedStates, "\n")
-		if record == "" {
-			// The DM omitted condensed_state, so there is no delta to keep and
-			// the prose is the only record of what happened. Keep that rather
-			// than a marker: the omission is as often an oversight as a turn
-			// where genuinely nothing changed, and prose we drop is gone.
-			record = strings.Join(proses, "\n\n")
-		}
-		if record == "" {
-			// Nothing narrated at all (a turn that ran out of rounds). Drop the
-			// exchange; the player was told, and there is nothing to remember.
-			*messages = (*messages)[:turnStart]
-			return
-		}
-		if debug {
-			fmt.Printf("\033[90m[%s]\033[0m\n\n", record)
-		}
-		*messages = append((*messages)[:turnStart], llm.Message{
-			Role:    llm.RoleAssistant,
-			Content: record,
-		})
+	if playerInput != "" {
+		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
-	for attempt := 0; attempt < maxTurnIterations; attempt++ {
-		response, err := chatSilent(client, model, *messages, gameplayTools())
-		if err != nil {
-			fmt.Println("\nLLM error:", err)
-			return
+	// What the turn leaves behind. None of it stays in the history: the engine's
+	// headlines and the prose go to the archive, the reported facts go to the
+	// ledger, and the messages themselves are dropped where they stand.
+	var log turnLog
+
+	// A turn gets maxTurnRequests calls to the model and no more. Every one counts,
+	// a call that came back an error included: the budget is there to bound what a
+	// single line of player input can cost, and a request that failed cost the
+	// same round trip as one that worked.
+	//
+	// The last call is not a resolution round. The engine comes off the table so
+	// that the only call left is the narration, because the turn has to end and
+	// this is the last chance it has to end properly.
+	var failures int
+
+	for request := 1; request <= maxTurnRequests; request++ {
+		tools := gameplayTools()
+		if request == maxTurnRequests {
+			tools = narrationOnlyTools()
+			// Said in words as well as by withdrawing the tools: a request whose
+			// tools quietly vanish reads as a malfunction from the inside, and a
+			// malfunction is answered by trying the call again.
+			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: narrationDemand})
 		}
+
+		response, err := chat(withEngineState(block, *messages), tools)
+		if err != nil {
+			// The call is spent either way. What is left of the budget decides
+			// whether there is any point waiting: a hiccup with rounds to spare is
+			// worth retrying, and the last call is not.
+			failures++
+			fmt.Printf("\nLLM error: %v\n", err)
+			if request == maxTurnRequests {
+				break
+			}
+			fmt.Printf("Retrying in %s (%d of %d calls left).\n", retryDelay(failures), maxTurnRequests-request, maxTurnRequests)
+			time.Sleep(retryDelay(failures))
+			continue
+		}
+		failures = 0
 
 		*messages = append(*messages, response.Message)
 
@@ -848,29 +935,44 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 					narration = &parsed
 				}
 				debugToolCall(toolCall, result, nil)
+			case "recall":
+				result = s.recall(toolCall)
+				debugToolCall(toolCall, result, nil)
 			default:
-				result, err = executeAction(w, toolCall)
+				result, err = executeAction(s.world, toolCall)
 				debugToolCall(toolCall, result, err)
 				if err != nil {
 					result = "Error: " + err.Error()
 				}
+				// The headline is the engine's own account of what happened, and
+				// the archive keeps it so that events survive whether or not the
+				// DM thought them worth reporting. The character state under it
+				// does not: the roster states that, currently, every turn.
+				log.events = append(log.events, toolCall.Function.Name+"|"+resultHeadline(result))
 			}
 			results[toolCall.ID] = result
 		}
 
 		// Update charsheet after all mutations
-		if err := writeCharsheet(w); err != nil {
+		if err := writeCharsheet(s.world); err != nil {
 			fmt.Println("\nOutput error:", err)
 		}
 
 		if narration != nil {
+			// Reported facts reach the ledger the moment they land, rather than
+			// at the end of the turn: a turn can narrate more than once — a
+			// choice menu makes it — and the second narration is written by a DM
+			// that should already be able to see what the first one established.
+			for _, note := range s.ledger.Apply(narration.WorldUpdate, s.turn, s.isCharacter) {
+				if debug {
+					fmt.Printf("\033[90m[ledger: %s]\033[0m\n", note)
+				}
+			}
+			log.shown = append(log.shown, narration.Prose)
+			log.updates = append(log.updates, narration.WorldUpdate)
+
 			fmt.Println(ui.WrapText(narration.Prose, ui.TerminalWidth()))
 			fmt.Println()
-			narrated = true
-			proses = append(proses, narration.Prose)
-			if narration.CondensedState != "" {
-				condensedStates = append(condensedStates, narration.CondensedState)
-			}
 			// A missing prompt is not worth interrupting play over: the player
 			// has already read the scene, and the next turn writes a new one.
 			if narration.ImgGen != "" {
@@ -887,12 +989,16 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			if toolCall.Function.Name != "user_choice" {
 				continue
 			}
-			result, choiceErr := executeAction(w, toolCall)
+			result, choiceErr := executeAction(s.world, toolCall)
 			debugToolCall(toolCall, result, choiceErr)
 			if choiceErr != nil {
 				result = "Error: " + choiceErr.Error()
 			} else {
 				answeredChoice = true
+				// What they picked is player input like any other, so it joins
+				// the line that opened the turn rather than becoming a turn of
+				// its own — the turn is still the same one.
+				log.choices = append(log.choices, result)
 			}
 			results[toolCall.ID] = result
 		}
@@ -908,23 +1014,27 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 
 		if narration == nil {
 			// Setup calls (checks, NPC creation): their results above give the
-			// DM what it needs to narrate next round.
+			// DM what it needs to narrate next round. This is the round the turn
+			// is allowed a finite number of.
 			if len(response.Message.ToolCalls) > 0 {
 				continue
 			}
-			// Prose written as a plain reply reaches nobody. Say so rather than
-			// resending an identical context and hoping for a different answer.
-			// The reply being replaced is dropped from context when the turn
-			// collapses, so the resent call has to carry the whole turn: any
-			// state the stray text recorded is lost unless it comes back too.
+			// Prose written as a plain reply reaches nobody. Say what went wrong
+			// rather than resending an identical context and hoping for a different
+			// answer — and it costs a call of the turn's budget either way.
 			if response.Message.Content != "" {
 				*messages = append(*messages, llm.Message{
 					Role:    llm.RoleUser,
-					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration. Send this turn's narration again through output_narration. Nothing you just wrote outside the call is kept, so repeat all of it in the call—the narration as `prose`, and anything it established as `condensed_state`, even if you already wrote that state as plain text.",
+					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration, and they have still been shown nothing. Send this turn's narration through output_narration now. Nothing you wrote outside the call is kept, so repeat all of it in the call—the narration as `prose`, and anything it established as `world_update`, even if you already wrote that state as plain text.",
 				})
 				continue
 			}
-			break
+			// A reply with neither calls nor text says nothing at all.
+			*messages = append(*messages, llm.Message{
+				Role:    llm.RoleUser,
+				Content: "That reply was empty: no narration, no tool call, nothing the player can read. The turn is not over until you call output_narration. Send it now, with its world_update.",
+			})
+			continue
 		}
 
 		// The player just picked an option, so the turn is not over: handing
@@ -934,19 +1044,136 @@ func processGameTurn(w *rules.World, client *llm.Client, model string, messages 
 			continue
 		}
 
-		collapseTurn()
+		// Narrated, so the turn is over — and it leaves nothing behind. Every
+		// part of it now has exactly one home: what the engine computes is in the
+		// roster, what only the prose knew is in the ledger, what happened is in
+		// the archive. The messages are the fourth copy, and the one that used to
+		// grow without bound, so they go.
+		s.recordTurn(playerInput, log)
+		*messages = (*messages)[:turnStart]
+		if debug {
+			fmt.Printf("\033[90m[turn %d folded into the block; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
+		}
 		return
 	}
 
-	// Out of rounds. Collapse either way: if the DM narrated, the turn did
-	// happen and ends on that rather than on a scolding; if it never did, the
-	// rounds spent getting nowhere are not worth carrying, and dropping them
-	// leaves the player's input as the last thing said.
-	collapseTurn()
-	if !narrated {
-		fmt.Println("\nError: DM did not narrate this turn. Try rephrasing your action.")
-	}
+	// The budget is gone and the last call, the one that had nothing to offer but
+	// the narration, did not produce it. The turn is over and it failed: say so
+	// plainly rather than leaving the player waiting on a scene that is not coming.
+	//
+	// Everything the turn added is dropped. It is half a turn — calls whose
+	// outcome nobody ever read — and carrying it would put the DM in every later
+	// request beside a scene the player was never shown.
+	//
+	// The archive still takes it, marked for what it was. A gap in the record is
+	// worth being able to explain, and the timeline leaves unnarrated turns out
+	// anyway, so nothing the player never saw reaches the DM through it.
+	s.recordTurn(playerInput, log)
+	*messages = (*messages)[:turnStart]
+	fmt.Printf("\nError: the DM did not narrate this turn within %d calls. Try rephrasing your action.\n", maxTurnRequests)
 }
+
+// recordTurn files the turn that just ended. A turn counts as narrated if the
+// player was shown anything at all: a turn that posed a choice, took an answer
+// and then ran out of budget did reach them, and calling that unnarrated would
+// drop prose they have already read.
+func (s *session) recordTurn(playerInput string, log turnLog) {
+	input := playerInput
+	if input == "" {
+		input = "(the scene opens)"
+	}
+	for _, choice := range log.choices {
+		input += " → " + choice
+	}
+	s.archive.Record(archive.Turn{
+		Number:      s.turn,
+		PlayerInput: input,
+		Events:      log.events,
+		Update:      strings.Join(log.updates, "; "),
+		Prose:       strings.Join(log.shown, "\n\n"),
+		Unnarrated:  len(log.shown) == 0,
+	})
+}
+
+// turnLog is what a turn gathers as it runs, and the only thing that outlives
+// it. The four move together from the moment they are filled to the moment the
+// archive takes them, which is why they travel as one thing: a turn can narrate
+// more than once, and each part accumulates across rounds rather than being
+// settled by any single one of them.
+type turnLog struct {
+	events  []string
+	choices []string
+	shown   []string
+	updates []string
+}
+
+// withEngineState returns the messages a request is actually made of. The two
+// that never change lead, so they stay byte-identical and cached for the whole
+// session; the block follows them, rebuilt each turn; and everything this turn
+// has said comes after. Nothing here is stored — the block is assembled for the
+// request and thrown away, which is what keeps it from ever going stale.
+func withEngineState(block string, msgs []llm.Message) []llm.Message {
+	pinned := pinnedMessages
+	if len(msgs) < pinned {
+		pinned = len(msgs)
+	}
+	request := make([]llm.Message, 0, len(msgs)+1)
+	request = append(request, msgs[:pinned]...)
+	request = append(request, llm.Message{Role: llm.RoleSystem, Content: block})
+	return append(request, msgs[pinned:]...)
+}
+
+// resultHeadline is the first line of a tool result: the engine's own account of
+// what the call did. What follows it is the character's state, which the roster
+// now states in full every turn and which would only be a second copy here.
+func resultHeadline(result string) string {
+	if i := strings.IndexByte(result, '\n'); i >= 0 {
+		return result[:i]
+	}
+	return result
+}
+
+// recall answers the DM's lookup into the archive. It is handled here rather
+// than among the actions because it changes nothing in the world: it reads the
+// record, and the answer lives exactly as long as the turn that asked for it.
+func (s *session) recall(call llm.ToolCall) string {
+	var args struct {
+		Query        string `json:"query"`
+		Turn         int    `json:"turn"`
+		To           int    `json:"to"`
+		IncludeProse bool   `json:"include_prose"`
+		Limit        int    `json:"limit"`
+	}
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+		return fmt.Sprintf("Error: could not read your recall (%v). Ask again with a query or a turn.", err)
+	}
+	if args.Query == "" && args.Turn == 0 {
+		return "Error: recall needs either a query or a turn number."
+	}
+	return s.archive.Lookup(archive.Query{
+		Keyword:      args.Query,
+		From:         args.Turn,
+		To:           args.To,
+		IncludeProse: args.IncludeProse,
+		Limit:        args.Limit,
+	})
+}
+
+// retryDelay is how long to wait before trying a failed request again: longer
+// each time, up to a ceiling. The wait only ever happens with budget still to
+// spend, so it is a hiccup being given a moment, not an outage being sat out.
+func retryDelay(failures int) time.Duration {
+	delay := time.Duration(failures) * requestRetryDelay
+	if delay > maxRetryDelay {
+		return maxRetryDelay
+	}
+	return delay
+}
+
+// narrationDemand rides on the last call a turn is allowed. The tools are gone by
+// the time the DM reads it, so the message says why rather than leaving it to
+// discover that its next call does not exist.
+const narrationDemand = "Stop resolving and narrate. This is the last call of this turn: the checks, the dice and the rest of the engine are no longer available to you, output_narration is the only call you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it as always. If this response does not carry the narration, the player loses the turn."
 
 func parseNarration(call llm.ToolCall) (narrationOutput, error) {
 	var args narrationOutput
@@ -955,6 +1182,13 @@ func parseNarration(call llm.ToolCall) (narrationOutput, error) {
 	}
 	if strings.TrimSpace(args.Prose) == "" {
 		return narrationOutput{}, errors.New("prose is empty")
+	}
+	// The prose is dropped the moment the turn collapses, so a narration without
+	// state would leave nothing behind at all. Rejecting it here — before the
+	// player is shown anything — costs one silent round; letting it through costs
+	// the turn's memory.
+	if strings.TrimSpace(args.WorldUpdate) == "" {
+		return narrationOutput{}, errors.New("world_update is empty")
 	}
 	return args, nil
 }
