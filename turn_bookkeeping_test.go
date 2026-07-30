@@ -228,3 +228,59 @@ func dmGuide(t *testing.T) string {
 	}
 	return string(body)
 }
+
+// A block that arrives on a round that resolved something instead of narrating
+// is still the DM saying what is true. Dropping it would lose the fact and leave
+// the DM believing it was recorded, which is the one failure the engine exists
+// to make impossible.
+func TestABlockOnAResolvingRoundStillLands(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		if round == 0 {
+			resolving := stalling()
+			resolving.Message.Content = "<state>\nentities:\n  catnip:\n    coins: 7\n</state>"
+			return resolving
+		}
+		return narration("")
+	}}
+
+	w := playedWorld(t)
+	messages, s := gameStart(), newSession(w)
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	pc, _ := w.Character("catnip")
+	if pc.Coins != 7 {
+		t.Errorf("coins = %d, want the block from the resolving round to have landed", pc.Coins)
+	}
+}
+
+// Refusals gather across the whole turn rather than being answered where they
+// arose. A refusal from a round that resolved something would otherwise reach
+// the end of the turn having been put to nobody, because the round it arrived on
+// had no correction round to spend.
+func TestARefusalFromAnEarlierRoundIsStillCorrected(t *testing.T) {
+	dm := &model{
+		reply: func(round int, tools []llm.Tool) llm.Response {
+			if round == 0 {
+				resolving := stalling()
+				resolving.Message.Content = "<state>\nentities:\n  nobody-at-all:\n    coins: 5\n</state>"
+				return resolving
+			}
+			return narration("")
+		},
+		correct: func(round int, tools []llm.Tool) llm.Response {
+			return narration("entities:\n  catnip:\n    coins: 9")
+		},
+	}
+
+	w := playedWorld(t)
+	messages, s := gameStart(), newSession(w)
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	if dm.fixes != 1 {
+		t.Fatalf("the turn ran %d correction rounds, want the earlier refusal to have bought one", dm.fixes)
+	}
+	pc, _ := w.Character("catnip")
+	if pc.Coins != 9 {
+		t.Errorf("coins = %d, want the correction to have landed", pc.Coins)
+	}
+}

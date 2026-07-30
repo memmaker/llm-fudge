@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -484,6 +485,114 @@ entities:
 	for _, op := range []string{"create_location", "move_character"} {
 		if !seen[op] {
 			t.Errorf("no %s event was recorded: %v", op, seen)
+		}
+	}
+}
+
+// One pile of rations is one entity, so a new item landing on a stack of the
+// same name grows that stack and the id the block minted addresses nothing. The
+// engine has to say so: left silent, the DM writes the dead id again next turn
+// and is told the item does not exist.
+func TestAnAbsorbedStackHandsBackTheIDItActuallyHas(t *testing.T) {
+	s := stateSession(t)
+	apply(t, s, `
+entities:
+  cartridges:
+    type: item
+    name: Cartridges
+    location: kyle-katarn
+    count: 6
+`)
+
+	notes := refusals(t, s, `
+entities:
+  more-cartridges:
+    type: item
+    name: Cartridges
+    location: kyle-katarn
+    count: 6
+`)
+
+	if !strings.Contains(notes, "cartridges") {
+		t.Errorf("the refusal does not name the id the stack actually has: %s", notes)
+	}
+	if _, err := s.world.ItemByID("more-cartridges"); err == nil {
+		t.Error("the minted id resolves to something, so the two stacks did not merge")
+	}
+	item, err := s.world.ItemByID("cartridges")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Count != 12 {
+		t.Errorf("count = %d, want the two stacks to be one of 12", item.Count)
+	}
+}
+
+// null removes a key from a map and means nothing on a list, where it could
+// equally read as emptied, unset or left alone. The refusal names the one
+// unambiguous spelling.
+func TestNullOnAListIsRefusedAndNamesTheEmptySpelling(t *testing.T) {
+	s := stateSession(t)
+	apply(t, s, "entities:\n  kyle-katarn:\n    gifts: [dead-eye]\n")
+
+	notes := refusals(t, s, "entities:\n  kyle-katarn:\n    gifts: null\n")
+	if !strings.Contains(notes, "[]") {
+		t.Errorf("the refusal does not name the way to empty a list: %s", notes)
+	}
+	pc, _ := s.world.Character("kyle-katarn")
+	if len(pc.Gifts) != 1 {
+		t.Errorf("gifts = %v, want the refusal to have left them alone", pc.Gifts)
+	}
+
+	// And the spelling it names does work.
+	apply(t, s, "entities:\n  kyle-katarn:\n    gifts: []\n")
+	if len(pc.Gifts) != 0 {
+		t.Errorf("gifts = %v, want [] to have emptied them", pc.Gifts)
+	}
+}
+
+// The schema the model reads and the field set the engine enforces are the same
+// list written twice, in two languages. Nothing else ties them together, so a
+// field added to one and not the other is either refused without explanation or
+// documented and rejected.
+func TestThePromptedSchemaMatchesTheFieldSetTheEngineEnforces(t *testing.T) {
+	guide, err := os.ReadFile("system-prompts/dm.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documented := map[string]map[string]bool{}
+	for _, line := range strings.Split(string(guide), "\n") {
+		for kind := range writableFields {
+			if !strings.HasPrefix(line, "| `"+kind+"` |") {
+				continue
+			}
+			documented[kind] = map[string]bool{"type": true}
+			for _, field := range strings.Split(strings.Trim(strings.TrimPrefix(line, "| `"+kind+"` |"), " |"), " ") {
+				if name := strings.Trim(field, "`"); name != "" {
+					documented[kind][name] = true
+				}
+			}
+		}
+	}
+
+	for kind, allowed := range writableFields {
+		if kind == "narrative" {
+			continue // documented in prose as "anything else", not as a row
+		}
+		listed, found := documented[kind]
+		if !found {
+			t.Errorf("dm.md documents no fields for a %s, so the DM cannot write one", kind)
+			continue
+		}
+		for field := range allowed {
+			if !listed[field] {
+				t.Errorf("the engine accepts %s.%s and dm.md never mentions it", kind, field)
+			}
+		}
+		for field := range listed {
+			if !allowed[field] {
+				t.Errorf("dm.md offers %s.%s and the engine refuses it", kind, field)
+			}
 		}
 	}
 }

@@ -915,6 +915,14 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 	// narrative store, and the messages themselves are dropped where they stand.
 	var log turnLog
 
+	// Refusals gather across the whole turn rather than being answered where
+	// they arose. A turn can narrate more than once — a choice menu makes it —
+	// and it can send a block on a round that resolved something instead of
+	// narrating; answering each of those in place would spend a round the turn
+	// has not got, and dropping them would leave the engine quietly behind a
+	// scene the player has read. They are put to the DM once, at the end.
+	var refused []string
+
 	// A turn gets maxTurnRequests calls to the model and no more. Every one counts,
 	// a call that came back an error included: the budget is there to bound what a
 	// single line of player input can cost, and a request that failed cost the
@@ -986,7 +994,6 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 		reply := parseResponse(response.Message.Content)
 
-		var notes []string
 		if reply.Prose != "" {
 			// The scene reaches the player before a line of the state block is
 			// read. It is valid however the bookkeeping under it turns out, and
@@ -1006,19 +1013,25 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 					fmt.Println("\nImage prompt error:", err)
 				}
 			}
+		}
 
-			// Events before state: they are marked inside the prose and the block
-			// is written under it, so this is the order the DM wrote them in, and
-			// a wound has to land before the block that mentions the wounded.
-			eventEvents, eventNotes := s.applyEvents(reply.Events)
-			stateEvents, stateNotes := s.applyState(reply.State)
-			log.events = append(log.events, eventEvents...)
-			log.events = append(log.events, stateEvents...)
-			notes = append(eventNotes, stateNotes...)
-			for _, note := range notes {
-				if debug {
-					fmt.Printf("\033[90m[%s]\033[0m\n", note)
-				}
+		// Applied whether or not this round narrated. A block that arrived on a
+		// round that only resolved something is still the DM saying what is true,
+		// and dropping it would lose the fact and leave the DM believing it was
+		// recorded — the one failure the engine exists to make impossible.
+		//
+		// Events before state: they are marked inside the prose and the block is
+		// written under it, so this is the order the DM wrote them in, and a
+		// wound has to land before the block that mentions the wounded.
+		eventEvents, eventNotes := s.applyEvents(reply.Events)
+		stateEvents, stateNotes := s.applyState(reply.State)
+		log.events = append(log.events, eventEvents...)
+		log.events = append(log.events, stateEvents...)
+		refused = append(refused, eventNotes...)
+		refused = append(refused, stateNotes...)
+		if debug {
+			for _, note := range append(eventNotes, stateNotes...) {
+				fmt.Printf("\033[90m[%s]\033[0m\n", note)
 			}
 		}
 
@@ -1074,8 +1087,8 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			continue
 		}
 
-		if len(notes) > 0 {
-			s.correctState(chat, messages, notes, &log)
+		if len(refused) > 0 {
+			s.correctState(chat, messages, refused, &log)
 		}
 
 		// And now the turn is over — and it leaves nothing behind. Every part of

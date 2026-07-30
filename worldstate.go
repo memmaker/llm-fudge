@@ -243,10 +243,19 @@ func (a *applier) postCreate(id string, fields map[string]any) {
 	if a.engineKind(id) == "" {
 		return
 	}
-	if props := a.narrativeProps(id, fields); len(props) > 0 {
-		a.applyOps(narrative.Operation{Op: narrative.OpSet, Entity: id, Properties: props})
-		a.record("narrative", []string{id}, fmt.Sprintf("set %s %s", id, propSummary(props)))
+	a.setNarrative(id, fields)
+}
+
+// setNarrative merges an entry's narrative map onto the entity, which is the one
+// thing every kind of entity has in common and the only field a creation and an
+// update handle identically.
+func (a *applier) setNarrative(id string, fields map[string]any) {
+	props := a.narrativeProps(id, fields)
+	if len(props) == 0 {
+		return
 	}
+	a.applyOps(narrative.Operation{Op: narrative.OpSet, Entity: id, Properties: props})
+	a.record("narrative", []string{id}, fmt.Sprintf("set %s %s", id, propSummary(props)))
 }
 
 // create mints every new entity in the block, in an order it works out rather
@@ -367,8 +376,8 @@ func (a *applier) mintCharacter(id string, fields map[string]any) {
 		Location:    f.text("location"),
 		Attributes:  f.traits("attributes"),
 		Skills:      f.traits("skills"),
-		Gifts:       f.list("gifts"),
-		Faults:      f.list("faults"),
+		Gifts:       f.listed("gifts"),
+		Faults:      f.listed("faults"),
 	}
 	if req.Name == "" {
 		req.Name = id
@@ -420,9 +429,13 @@ func (a *applier) mintItem(id string, fields map[string]any) {
 	count := f.count()
 
 	if ch, err := a.world.Character(holder); err == nil {
-		if _, err := ch.Accept(proto, count); err != nil {
+		landed, err := ch.Accept(proto, count)
+		if err != nil {
 			a.failed[id] = true
 			a.note("state: %s could not be created: %v", id, err)
+			return
+		}
+		if a.absorbed(id, landed, holder) {
 			return
 		}
 		a.record("add_item", []string{id, holder}, rules.Flow("item", name, "id", id, "to", ch.Name, "count", count))
@@ -440,12 +453,36 @@ func (a *applier) mintItem(id string, fields map[string]any) {
 		a.note("state: %s lies in %s, so it needs a `spot` saying where in the place it rests", id, holder)
 		return
 	}
-	if _, err := loc.AddItem(proto, spot, count); err != nil {
+	landed, err := loc.AddItem(proto, spot, count)
+	if err != nil {
 		a.failed[id] = true
 		a.note("state: %s could not be created: %v", id, err)
 		return
 	}
+	if a.absorbed(id, landed, holder) {
+		return
+	}
 	a.record("add_item", []string{id, holder}, rules.Flow("item", name, "id", id, "at", loc.Name, "lies", spot, "count", count))
+}
+
+// absorbed reports that a new item landed on a stack of the same name that was
+// already there, and says so rather than letting the difference pass.
+//
+// One pile of rations is one entity, so Accept and AddItem grow the existing
+// entry and retire the arriving id — which is right, and which means the id the
+// block just minted addresses nothing. Left silent, the DM would write that id
+// again next turn and be told the item does not exist. The note hands back the
+// id the thing actually has, and the entry is marked failed so anything in this
+// same block that referred to the minted one is skipped rather than landing
+// somewhere unintended.
+func (a *applier) absorbed(id string, landed *rules.Item, holder string) bool {
+	if landed.ID == id {
+		return false
+	}
+	a.failed[id] = true
+	a.note("state: %s is already there as %s, so the two are one stack and it now holds %d. Use %s from here on — the id you minted addresses nothing", landed.Name, landed.ID, landed.Count, landed.ID)
+	a.record("add_item", []string{landed.ID, holder}, rules.Flow("item", landed.Name, "id", landed.ID, "count", landed.Count))
+	return true
 }
 
 // proto builds the item a new entry starts from, rated as a weapon or a piece of
@@ -493,16 +530,13 @@ func (a *applier) update(id string, fields map[string]any) {
 	case "item":
 		a.updateItem(id, fields)
 	}
-	if props := a.narrativeProps(id, fields); len(props) > 0 {
-		a.applyOps(narrative.Operation{Op: narrative.OpSet, Entity: id, Properties: props})
-		a.record("narrative", []string{id}, fmt.Sprintf("set %s %s", id, propSummary(props)))
-	}
+	a.setNarrative(id, fields)
 }
 
 func (a *applier) updateCharacter(id string, fields map[string]any) {
 	ch, err := a.world.Character(id)
 	if err != nil {
-		a.note("state: %v", err)
+		a.note("state: %s could not be updated: %v", id, err)
 		return
 	}
 	f := reader{applier: a, id: id, fields: fields}
@@ -540,13 +574,13 @@ func (a *applier) updateCharacter(id string, fields map[string]any) {
 	}
 	mergeTraits(a, ch, "attribute", ch.Attributes, a.world.Setting.Attributes, f.traits("attributes"))
 	mergeTraits(a, ch, "skill", ch.Skills, a.world.Setting.Skills, f.traits("skills"))
-	if _, stated := fields["gifts"]; stated {
-		if gifts, ok := validNames(a, id, "gift", f.list("gifts"), a.world.Setting.Gifts); ok {
+	if stated, ok := f.list("gifts"); ok {
+		if gifts, ok := validNames(a, id, "gift", stated, a.world.Setting.Gifts); ok {
 			ch.Gifts = gifts
 		}
 	}
-	if _, stated := fields["faults"]; stated {
-		if faults, ok := validNames(a, id, "fault", f.list("faults"), a.world.Setting.Faults); ok {
+	if stated, ok := f.list("faults"); ok {
+		if faults, ok := validNames(a, id, "fault", stated, a.world.Setting.Faults); ok {
 			ch.Faults = faults
 		}
 	}
@@ -610,7 +644,7 @@ func validNames[T any](a *applier, id, label string, stated []string, known map[
 func (a *applier) updateLocation(id string, fields map[string]any) {
 	loc, err := a.world.Location(id)
 	if err != nil {
-		a.note("state: %v", err)
+		a.note("state: %s could not be updated: %v", id, err)
 		return
 	}
 	f := reader{applier: a, id: id, fields: fields}
@@ -636,7 +670,7 @@ func (a *applier) updateLocation(id string, fields map[string]any) {
 func (a *applier) updateItem(id string, fields map[string]any) {
 	item, err := a.world.ItemByID(id)
 	if err != nil {
-		a.note("state: %v", err)
+		a.note("state: %s could not be updated: %v", id, err)
 		return
 	}
 	f := reader{applier: a, id: id, fields: fields}
@@ -696,7 +730,7 @@ func (a *applier) moveItem(id string, item *rules.Item, to, spot string) bool {
 func (a *applier) setCount(id, holder string, target int) {
 	item, err := a.world.ItemByID(id)
 	if err != nil {
-		a.note("state: %v", err)
+		a.note("state: %s's count could not be set: %v", id, err)
 		return
 	}
 	if target < 0 {
@@ -734,8 +768,8 @@ func (a *applier) rateWeapon(item *rules.Item, stated map[string]any) {
 	if v, ok := f.optionalNumber("damage"); ok {
 		item.Weapon.Damage = v
 	}
-	if v, ok := stated["ranged"]; ok {
-		item.Weapon.Ranged, _ = v.(bool)
+	if v, ok := f.optionalFlag("ranged"); ok {
+		item.Weapon.Ranged = v
 	}
 	if v := f.text("adds"); v != "" {
 		item.Weapon.DamageAttribute = v
@@ -768,8 +802,8 @@ func (a *applier) rateArmor(item *rules.Item, stated map[string]any) {
 	if v, ok := f.optionalNumber("protection"); ok {
 		item.Armor.Protection = v
 	}
-	if v, ok := stated["worn"]; ok {
-		item.Armor.Worn, _ = v.(bool)
+	if v, ok := f.optionalFlag("worn"); ok {
+		item.Armor.Worn = v
 	}
 	a.record("armor", []string{item.ID}, rules.Flow("item", item.Name, "protection", item.Armor.Protection, "worn", item.Armor.Worn))
 }
@@ -911,8 +945,21 @@ func (r reader) statesAnyOf(keys ...string) bool {
 }
 
 func (r reader) flag(key string) bool {
-	b, _ := r.fields[key].(bool)
+	b, _ := r.optionalFlag(key)
 	return b
+}
+
+func (r reader) optionalFlag(key string) (bool, bool) {
+	raw, stated := r.fields[key]
+	if !stated || raw == nil {
+		return false, false
+	}
+	b, ok := raw.(bool)
+	if !ok {
+		r.note("state: %s's %q must be true or false", r.id, key)
+		return false, false
+	}
+	return b, true
 }
 
 // count defaults to one, which is what a thing created without a number is.
@@ -923,26 +970,44 @@ func (r reader) count() int {
 	return 1
 }
 
-func (r reader) list(key string) []string {
+// listed is list for a caller with nothing to do about a refusal: creation
+// passes what arrived to the constructor, which validates it again anyway.
+func (r reader) listed(key string) []string {
+	values, _ := r.list(key)
+	return values
+}
+
+// list reads a replacement list, and reports whether it read one at all. The
+// second return is what keeps a refusal from landing as an empty list: a
+// caller that cannot tell "no list" from "the empty list" writes `[]` onto the
+// sheet every time it refuses something.
+func (r reader) list(key string) ([]string, bool) {
 	raw, stated := r.fields[key]
-	if !stated || raw == nil {
-		return nil
+	if !stated {
+		return nil, false
+	}
+	// null removes a key from a map and means nothing here: on a list it could
+	// equally read as emptied, unset or left alone. It is refused, and the one
+	// unambiguous spelling is named instead.
+	if raw == nil {
+		r.note("state: %s's %q cannot be null — write [] to empty a list, or leave the field out to change nothing", r.id, key)
+		return nil, false
 	}
 	items, ok := raw.([]any)
 	if !ok {
 		r.note("state: %s's %q must be a list", r.id, key)
-		return nil
+		return nil, false
 	}
 	out := make([]string, 0, len(items))
 	for _, v := range items {
 		s, ok := v.(string)
 		if !ok {
 			r.note("state: %s's %q must be a list of names", r.id, key)
-			return nil
+			return nil, false
 		}
 		out = append(out, strings.TrimSpace(s))
 	}
-	return out
+	return out, true
 }
 
 func (r reader) traits(key string) map[string]int {

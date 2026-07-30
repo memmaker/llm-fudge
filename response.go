@@ -22,8 +22,8 @@ var (
 	// Event tags are written inline, at the moment in the prose where the thing
 	// happens, so they are matched as empty elements anywhere in the text and
 	// cut out of what the player is shown.
-	eventTagPattern = regexp.MustCompile(`(?is)<(damage|heal|dead)\b([^>]*?)/?>`)
-	attributePatter = regexp.MustCompile(`([a-z_]+)\s*=\s*"([^"]*)"`)
+	eventTagPattern  = regexp.MustCompile(`(?is)<(damage|heal|dead)\b([^>]*?)/?>`)
+	attributePattern = regexp.MustCompile(`([a-z_]+)\s*=\s*"([^"]*)"`)
 	// A model that has been asked for YAML often fences it, and a fence inside
 	// the block is noise rather than an error worth a round trip.
 	fencePattern = regexp.MustCompile("(?s)^\\s*```[a-z]*\\s*\n(.*?)\n?\\s*```\\s*$")
@@ -93,9 +93,9 @@ func parseResponse(body string) dmResponse {
 
 func parseEventTag(kind, attributes string) stateEvent {
 	e := stateEvent{Kind: strings.ToLower(kind)}
-	for _, a := range attributePatter.FindAllStringSubmatch(attributes, -1) {
+	for _, a := range attributePattern.FindAllStringSubmatch(attributes, -1) {
 		switch strings.ToLower(a[1]) {
-		case "target", "character", "id":
+		case "target":
 			e.Target = strings.TrimSpace(a[2])
 		case "severity":
 			e.Severity = strings.ToLower(strings.TrimSpace(a[2]))
