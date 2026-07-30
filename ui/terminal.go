@@ -20,6 +20,21 @@ func ShowCursor() {
 	fmt.Print("\033[?25h")
 }
 
+// ScrollLastLineToTop scrolls the buffer until the line directly above the
+// cursor — the line the player just entered — sits at the top of the viewport,
+// so the reply that follows is read from the first row down. The newlines do the
+// scrolling, which keeps everything above in scrollback; the cursor-up puts the
+// cursor back where it was, and whatever prints next overwrites the blanks.
+func ScrollLastLineToTop() {
+	_, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || height < 3 {
+		return
+	}
+	n := height - 2
+	fmt.Print(strings.Repeat("\n", n))
+	fmt.Printf("\033[%dA", n)
+}
+
 func TerminalWidth() int {
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || width <= 0 {

@@ -708,12 +708,35 @@ func (s *session) handleMetaCommand(line string, messages *[]llm.Message) {
 		} else {
 			fmt.Println("Context written to context.txt")
 		}
+	case "/style":
+		setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		fmt.Println("Available commands:")
 		fmt.Println("  /quit, /exit - Exit the game")
 		fmt.Println("  /context - Write current message context to context.txt")
+		fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
 	}
+}
+
+// styleMarker separates the DM prompt from whatever /style last appended. The
+// override is rewritten from the marker down, so the base prompt is never stored
+// twice and never has to be rebuilt to drop it.
+const styleMarker = "\n\n## Style Override\n\nThis outranks any style rule above it:\n\n"
+
+// setStyle rewrites the DM's style directive in place. It moves the system
+// message, which is the head of the cached prefix, so the turn after a /style
+// pays for the whole prompt again — cheap for a debug session, which is what
+// this is for, and it is why the directive goes last: nothing below it moves.
+func setStyle(messages *[]llm.Message, style string) {
+	base, _, _ := strings.Cut((*messages)[0].Content, styleMarker)
+	if style == "" {
+		(*messages)[0].Content = base
+		fmt.Println("Style override cleared.")
+		return
+	}
+	(*messages)[0].Content = base + styleMarker + style
+	fmt.Printf("Style override set: %s\n", style)
 }
 
 // dumpContextToFile writes what the DM is working from. The messages are only
@@ -827,7 +850,7 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 			continue
 		}
 
-		fmt.Println()
+		ui.ScrollLastLineToTop()
 		s.processGameTurn(chat, &messages, line)
 	}
 }
