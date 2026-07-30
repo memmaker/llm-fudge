@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -15,7 +17,52 @@ func TypeYourAnswer() string {
 	return typeYourAnswer
 }
 
+// script is the queue a -script run answers every prompt from: one line per
+// answer, in the order the game asks for them. It is nil in an interactive
+// session, and Scripted() is what the terminal control sequences check — a
+// transcript meant to be read or diffed should not be threaded with cursor
+// moves and screen clears.
+var script []string
+
+func Scripted() bool { return script != nil }
+
+// LoadScript reads the answers a run will play. Blank lines and # comments are
+// dropped so a script can be annotated; everything else is an answer verbatim,
+// leading and trailing space included, because a scenario description is one.
+func LoadScript(r io.Reader) error {
+	script = []string{}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		script = append(script, line)
+	}
+	return sc.Err()
+}
+
+// nextScripted pops the next scripted answer. Running out is the end of the
+// run, not an error: a script says everything the player had to say.
+func nextScripted() (string, bool) {
+	if len(script) == 0 {
+		return "", false
+	}
+	line := script[0]
+	script = script[1:]
+	return line, true
+}
+
 func GetInput(rl *readline.Instance, prompt string) (string, error) {
+	if Scripted() {
+		line, ok := nextScripted()
+		if !ok {
+			return "", io.EOF
+		}
+		fmt.Printf("%s%s\n", prompt, line)
+		return line, nil
+	}
 	ShowCursor()
 	rl.SetPrompt(prompt)
 	line, err := rl.Readline()
@@ -63,6 +110,25 @@ func ReadKey() (string, error) {
 func ShowChoiceMenu(options []string) (string, error) {
 	allOptions := append(options, typeYourAnswer)
 	selected := 0
+
+	// A scripted run picks by naming the option. A line that names none of them
+	// is the answer the menu's own "type your answer" branch is about to ask
+	// for, so it goes back on the queue rather than being spent here.
+	if Scripted() {
+		line, ok := nextScripted()
+		if !ok {
+			return "", io.EOF
+		}
+		for _, opt := range allOptions {
+			if line == opt {
+				fmt.Printf("[menu] %s\n", opt)
+				return opt, nil
+			}
+		}
+		script = append([]string{line}, script...)
+		fmt.Printf("[menu] %s\n", typeYourAnswer)
+		return typeYourAnswer, nil
+	}
 
 	rl, err := readline.New("")
 	if err != nil {

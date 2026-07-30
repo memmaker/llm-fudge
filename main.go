@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -130,8 +131,26 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
 	flag.StringVar(&language, "lang", prompts.DefaultLanguage, "Language the player reads: narration, menus and setup. A name or an ISO code (\"German\", \"Deutsch\", \"de\"). Engine data stays English.")
+	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
 	flag.Parse()
 	language = prompts.NormalizeLanguage(language)
+
+	if *scriptFile != "" {
+		in := io.Reader(os.Stdin)
+		if *scriptFile != "-" {
+			f, err := os.Open(*scriptFile)
+			if err != nil {
+				fmt.Println("Error opening script:", err)
+				return
+			}
+			defer f.Close()
+			in = f
+		}
+		if err := ui.LoadScript(in); err != nil {
+			fmt.Println("Error reading script:", err)
+			return
+		}
+	}
 
 	ui.ClearScreen()
 	ui.HideCursor()
@@ -635,6 +654,9 @@ func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
 		// Get player input
 		fmt.Println()
 		input, err := ui.GetInput(rl, "> ")
+		if err != nil {
+			return
+		}
 
 		if input != "" {
 			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
@@ -830,7 +852,9 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 		// Get player input
 		line, err := ui.GetInput(rl, "> ")
 		if err != nil {
-			fmt.Println("Error reading input; exiting.")
+			if !errors.Is(err, io.EOF) {
+				fmt.Println("Error reading input; exiting.")
+			}
 			return
 		}
 

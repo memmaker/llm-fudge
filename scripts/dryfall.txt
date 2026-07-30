@@ -1,0 +1,11 @@
+# A scripted run: Deadlands, the Dryfall adventure, an automatic character.
+# One answer per line. Menu answers name the option; the rest is typed verbatim.
+deadlands
+blood-moon-over-dryfall
+Automatic - I describe my concept, you decide the traits
+A man indistuingishable from a zombi
+Rob
+Fine
+sneak into the depot
+/context
+/quit

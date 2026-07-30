@@ -6,6 +6,10 @@ import (
 )
 
 func ShowLoadingSpinner(duration time.Duration, done <-chan struct{}) {
+	if Scripted() {
+		<-done
+		return
+	}
 	brailleChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()

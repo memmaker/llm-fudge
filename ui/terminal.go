@@ -8,16 +8,25 @@ import (
 	"golang.org/x/term"
 )
 
+// The cursor and screen controls are for a live terminal. A scripted run's
+// output is a transcript to read or diff, so they write nothing there.
+
 func ClearScreen() {
-	fmt.Print("\033[H\033[2J")
+	if !Scripted() {
+		fmt.Print("\033[H\033[2J")
+	}
 }
 
 func HideCursor() {
-	fmt.Print("\033[?25l")
+	if !Scripted() {
+		fmt.Print("\033[?25l")
+	}
 }
 
 func ShowCursor() {
-	fmt.Print("\033[?25h")
+	if !Scripted() {
+		fmt.Print("\033[?25h")
+	}
 }
 
 // ScrollLastLineToTop scrolls the buffer until the line directly above the
@@ -26,6 +35,9 @@ func ShowCursor() {
 // scrolling, which keeps everything above in scrollback; the cursor-up puts the
 // cursor back where it was, and whatever prints next overwrites the blanks.
 func ScrollLastLineToTop() {
+	if Scripted() {
+		return
+	}
 	_, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || height < 3 {
 		return
