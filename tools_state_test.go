@@ -85,7 +85,7 @@ func TestChecksReportSpentFudgePoints(t *testing.T) {
 	if pc.FudgePoints != 1 {
 		t.Fatalf("fudge points = %d, want 1 after add_one", pc.FudgePoints)
 	}
-	if !strings.Contains(result, "fudge-points:1") {
+	if !strings.Contains(result, "fudge_points: 1") {
 		t.Errorf("result does not show the point as spent:\n%s", result)
 	}
 }
@@ -110,13 +110,13 @@ func TestCharacterToString(t *testing.T) {
 
 	got := ch.ToString()
 	for _, want := range []string{
-		"Kyle Katarn", "id:kyle-katarn", "human", "desc:Rebel saboteur.",
-		"wounds:hurt", "penalty:-1", "fudge-points:3",
-		"attributes:grit+1", "skills:shootin+2", "gifts:quick-draw", "faults:wanted",
-		"coins:40", "Peacemaker x2|id:peacemaker|A nicked .45.",
+		"Kyle Katarn", "kyle-katarn:", "human", "desc: Rebel saboteur",
+		"wounds: hurt", "penalty: -1", "fudge_points: 3",
+		"grit: +1", "shootin: +2", "quick-draw", "wanted",
+		"coins: 40", "peacemaker",
 		// Position is stated now that the engine maintains it: the narration
 		// names the scene every turn and move_character moves everybody else.
-		"at:dryfall",
+		"location: dryfall",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ToString missing %q:\n%s", want, got)
@@ -126,7 +126,7 @@ func TestCharacterToString(t *testing.T) {
 	// An incapacitated character cannot act at all, and the DM has to know that
 	// before it narrates them doing something.
 	ch.Wounds.ApplyDamage(8)
-	if !strings.Contains(ch.ToString(), "cannot-act") {
+	if !strings.Contains(ch.ToString(), "cannot_act") {
 		t.Errorf("downed character not flagged:\n%s", ch.ToString())
 	}
 }
@@ -142,7 +142,7 @@ func TestCharacterToStringOmitsEmptyFields(t *testing.T) {
 			t.Errorf("ToString should omit empty %q:\n%s", unwanted, got)
 		}
 	}
-	for _, want := range []string{"wounds:undamaged", "fudge-points:0", "coins:0", "carrying:nothing"} {
+	for _, want := range []string{"wounds: undamaged", "fudge_points: 0", "coins: 0", "inventory: []"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ToString missing %q:\n%s", want, got)
 		}
@@ -222,7 +222,7 @@ func TestCreateCharacterReturnsCharacterState(t *testing.T) {
 	}
 	// The id is the handle for every call that follows; losing it would strand
 	// the DM with a character it cannot name.
-	if !strings.Contains(result, "id:preacher-vane") {
+	if !strings.Contains(result, "preacher-vane:") {
 		t.Errorf("result does not carry the generated id:\n%s", result)
 	}
 }

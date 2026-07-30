@@ -448,14 +448,14 @@ func (d *itemDestination) add(proto *rules.Item, count int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return rules.Flow("location", d.location.Name, "added", count, "item", item.Name, "type", item.Kind(), "lies", item.Where, "total", item.Count), nil
+		return rules.Flow("location", d.location.ID, "added", count, "item", item.ID, "type", item.Kind(), "lies", item.Where, "total", item.Count), nil
 	}
 	before := d.character.ToString()
 	item, err := d.character.Accept(proto, count)
 	if err != nil {
 		return "", err
 	}
-	return withState(rules.Flow("character", d.character.Name, "added", count, "item", item.Name, "type", item.Kind(), "carrying", item.Count), before, d.character), nil
+	return withState(rules.Flow("character", d.character.ID, "added", count, "item", item.ID, "type", item.Kind(), "carrying", item.Count), before, d.character), nil
 }
 
 // remove destroys a stack, or part of one, wherever it is held.
@@ -465,14 +465,14 @@ func (d *itemDestination) remove(name string, count int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return rules.Flow("location", d.location.Name, "removed", count, "item", item.Name, "remaining", left), nil
+		return rules.Flow("location", d.location.ID, "removed", count, "item", item.ID, "remaining", left), nil
 	}
 	before := d.character.ToString()
 	item, left, err := d.character.RemoveItem(name, count)
 	if err != nil {
 		return "", err
 	}
-	return withState(rules.Flow("character", d.character.Name, "removed", count, "item", item.Name, "carrying", left), before, d.character), nil
+	return withState(rules.Flow("character", d.character.ID, "removed", count, "item", item.ID, "carrying", left), before, d.character), nil
 }
 
 // targetCharacter resolves the character a call names, falling back to the
@@ -608,23 +608,30 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		var critStr string
-		if result.CritSuccess {
-			critStr = "|CRIT"
-		} else if result.CritFailure {
-			critStr = "|FAIL"
-		}
 		successStr := "no"
 		if result.Success {
 			successStr = "ok"
 		}
 		// A rerolled check names the roll it threw away, so the DM can narrate the
 		// Fudge Point doing something: the fumble that was, and then was not.
-		rollStr := fmt.Sprintf("roll%+d", result.Roll)
-		if result.Rerolled {
-			rollStr += fmt.Sprintf("(rerolled%+d)", result.DiscardedRoll)
+		parts := []any{
+			"actor", actor.Name,
+			"roll", result.Roll,
 		}
-		return withState(fmt.Sprintf("%s|%s|tot%d|%s(%+d)|%s%s", actor.Name, rollStr, result.Total, args.Difficulty, difficulty, successStr, critStr), before, actor), nil
+		if result.Rerolled {
+			parts = append(parts, "rerolled", result.DiscardedRoll)
+		}
+		parts = append(parts,
+			"total", result.Total,
+			"vs", args.Difficulty,
+			"result", successStr,
+		)
+		if result.CritSuccess {
+			parts = append(parts, "crit", "success")
+		} else if result.CritFailure {
+			parts = append(parts, "crit", "failure")
+		}
+		return withState(rules.Flow(parts...), before, actor), nil
 	case "opposed_check":
 		var args struct {
 			ActorID           string `json:"actor_id"`
@@ -655,21 +662,27 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			return "", err
 		}
 		opponent, _ := w.Character(args.OpponentID)
-		var critStr string
-		if result.ActorCrit {
-			critStr += "|" + actor.Name + "-CRIT"
-		}
-		if result.OpponentCrit {
-			critStr += "|" + opponent.Name + "-CRIT"
-		}
 		outcomeStr := "tie"
 		if result.ActorWins {
 			outcomeStr = actor.Name
 		} else {
 			outcomeStr = opponent.Name
 		}
+		parts := []any{
+			"actor", actor.Name,
+			"actor_total", result.ActorTotal,
+			"opponent", opponent.Name,
+			"opponent_total", result.OpponentTotal,
+			"degree", fmt.Sprintf("deg%+d", result.RelativeDegree),
+			"winner", outcomeStr,
+		}
+		if result.ActorCrit {
+			parts = append(parts, "crit", actor.Name)
+		} else if result.OpponentCrit {
+			parts = append(parts, "crit", opponent.Name)
+		}
 		// A wound on either side arrives through apply_damage, not from here.
-		return withState(fmt.Sprintf("%s|%d|vs|%s|%d|deg%+d|win:%s%s", actor.Name, result.ActorTotal, opponent.Name, result.OpponentTotal, result.RelativeDegree, outcomeStr, critStr), before, actor), nil
+		return withState(rules.Flow(parts...), before, actor), nil
 	case "write_setting_file":
 		var args struct {
 			Filename string `json:"filename"`
@@ -798,11 +811,11 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		line := fmt.Sprintf("%s|id:%s", loc.Name, loc.ID)
+		parts := []any{"location", loc.Name, "id", loc.ID}
 		if loc.Parent != "" {
-			line += "|in:" + loc.Parent
+			parts = append(parts, "in", loc.Parent)
 		}
-		return line, nil
+		return rules.Flow(parts...), nil
 	case "move_character":
 		var args struct {
 			CharacterID string `json:"character_id"`
@@ -972,7 +985,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if args.Worn {
 			state = "worn"
 		}
-		return withState(fmt.Sprintf("%s|%s:%s", ch.Name, item.Name, state), before, ch), nil
+		return withState(rules.Flow("character", ch.Name, "armor", item.Name, "state", state), before, ch), nil
 	case "reload_weapon":
 		var args struct {
 			CharacterID string `json:"character_id"`
@@ -990,11 +1003,15 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		result := fmt.Sprintf("%s|reloaded %s|ammo:%d/%d", ch.Name, item.Name, item.Weapon.Ammo, item.Weapon.AmmoCapacity)
-		if ammoLeft >= 0 {
-			result += fmt.Sprintf("|%s left:%d", item.Weapon.AmmoItem, ammoLeft)
+		parts := []any{
+			"character", ch.Name,
+			"reloaded", item.Name,
+			"ammo", fmt.Sprintf("%d/%d", item.Weapon.Ammo, item.Weapon.AmmoCapacity),
 		}
-		return withState(result, before, ch), nil
+		if ammoLeft >= 0 {
+			parts = append(parts, "spare_ammo_left", ammoLeft)
+		}
+		return withState(rules.Flow(parts...), before, ch), nil
 	case "opposed_attack", "unopposed_attack":
 		var args struct {
 			AttackerID        string `json:"attacker_id"`

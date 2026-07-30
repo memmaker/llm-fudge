@@ -340,58 +340,86 @@ func woundPoints(factor int, graze bool) int {
 // swing cost. The arithmetic is spelled out on purpose — a blow stopped by a
 // breastplate and a blow that never arrived are narrated differently.
 func (r *AttackResult) String() string {
-	var b strings.Builder
+	outcome := "MISS"
+	if r.Hit {
+		if r.Graze {
+			outcome = "GRAZE"
+		} else {
+			outcome = "HIT"
+		}
+	}
+
+	parts := []any{
+		"actor", r.ActorName,
+		"actor_total", r.ActorTotal,
+	}
 
 	if r.Opposed {
-		fmt.Fprintf(&b, "%s|%d|vs|%s|%d|deg%+d", r.ActorName, r.ActorTotal, r.TargetName, r.TargetTotal, r.RelativeDegree)
+		parts = append(parts,
+			"defender", r.TargetName,
+			"defender_total", r.TargetTotal,
+		)
 	} else {
-		roll := fmt.Sprintf("roll%+d", r.Roll)
+		roll := r.Roll
 		if r.Rerolled {
-			roll += fmt.Sprintf("(rerolled%+d)", r.DiscardedRoll)
+			parts = append(parts,
+				"roll", roll,
+				"rerolled", r.DiscardedRoll,
+			)
+		} else {
+			parts = append(parts, "roll", roll)
 		}
-		fmt.Fprintf(&b, "%s|%s|tot%d|vs|%s|unresisting|%s(%+d)|deg%+d",
-			r.ActorName, roll, r.ActorTotal, r.TargetName, r.DifficultyName, r.Difficulty, r.RelativeDegree)
+		parts = append(parts,
+			"vs", r.DifficultyName,
+			"target", "unresisting",
+		)
 	}
+
+	parts = append(parts,
+		"degree", fmt.Sprintf("deg%+d", r.RelativeDegree),
+		"result", outcome,
+	)
 
 	if r.CritSuccess {
-		fmt.Fprintf(&b, "|%s-CRIT", r.ActorName)
-	}
-	if r.CritFailure {
-		fmt.Fprintf(&b, "|%s-CRIT", r.TargetName)
-	}
-
-	switch {
-	case !r.Hit:
-		fmt.Fprintf(&b, "|MISS:%s", r.Miss)
-	case r.Graze:
-		b.WriteString("|GRAZE")
-	default:
-		b.WriteString("|HIT")
+		parts = append(parts, "crit", "actor")
+	} else if r.CritFailure {
+		parts = append(parts, "crit", "defender")
 	}
 
-	if r.Hit {
-		fmt.Fprintf(&b, "|dmg%+d(%s)", r.DamageFactor, r.damageTerms())
+	if !r.Hit {
+		parts = append(parts, "reason", r.Miss)
+	} else {
+		parts = append(parts,
+			"damage", fmt.Sprintf("dmg%+d(%s)", r.DamageFactor, r.damageTerms()),
+		)
 		if r.Wound == "" {
-			fmt.Fprintf(&b, "|%s:unhurt", r.TargetName)
+			parts = append(parts, "target_state", "unhurt")
 		} else {
-			fmt.Fprintf(&b, "|%s:%s", r.TargetName, r.Wound)
+			parts = append(parts, "target_state", r.Wound)
 			if r.Scratches > 0 {
-				fmt.Fprintf(&b, "|scratch:%d/3", r.Scratches)
+				parts = append(parts, "scratches", fmt.Sprintf("%d/3", r.Scratches))
 			}
-			fmt.Fprintf(&b, "|pen%+d", r.Penalty)
+			parts = append(parts, "penalty", fmt.Sprintf("pen%+d", r.Penalty))
 		}
 	}
 
 	if r.AmmoTracked {
-		fmt.Fprintf(&b, "|ammo:%d/%d", r.AmmoLeft, r.AmmoMax)
+		ammo := fmt.Sprintf("%d/%d", r.AmmoLeft, r.AmmoMax)
 		if r.AmmoLeft == 0 {
-			b.WriteString(" EMPTY")
+			ammo += " EMPTY"
 		}
+		parts = append(parts, "ammo", ammo)
 	}
+
 	if r.Thrown {
-		fmt.Fprintf(&b, "|thrown:%s left %s's hand and is STILL ON THEIR SHEET — move_item it to where your prose says it landed", r.WeaponName, r.ThrownBy)
+		parts = append(parts,
+			"thrown", r.WeaponName,
+			"thrown_by", r.ThrownBy,
+			"note", "STILL ON SHEET — move_item to where prose says it landed",
+		)
 	}
-	return b.String()
+
+	return Flow(parts...)
 }
 
 // damageTerms lists the factors that made up the damage, dropping the ones that

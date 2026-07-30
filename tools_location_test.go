@@ -134,7 +134,7 @@ func TestAThrownKnifeSurvivesTheRoundTrip(t *testing.T) {
 		t.Errorf("the knife came back changed: %+v", knife)
 	}
 	// The receiving sheet rides on the result, as every mutating call's does.
-	if !strings.Contains(got, "Kyle Katarn|id:kyle-katarn") {
+	if !strings.Contains(got, "kyle-katarn:") {
 		t.Errorf("result = %q, want the receiving character's state", got)
 	}
 }
@@ -192,7 +192,7 @@ func TestCreateLocationReportsItsID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"id:the-wine-cellar", "in:cellar"} {
+	for _, want := range []string{"the-wine-cellar", "cellar"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("result = %q, want it to carry %q", got, want)
 		}

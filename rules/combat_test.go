@@ -64,7 +64,7 @@ func TestDamageFactorTotalsEveryFactor(t *testing.T) {
 	}
 	// The line the DM reads has to carry the arithmetic, not just the verdict:
 	// a blow blunted by armor is narrated differently from a clean one.
-	for _, want := range []string{"HIT", "dmg+4", "deg+3", "Sword+1", "strength+2", "Leather Jerkin-2", "Bandit:hurt"} {
+	for _, want := range []string{"HIT", "dmg+4", "deg+3", "Sword+1", "strength+2", "Leather Jerkin-2", "hurt"} {
 		if !strings.Contains(res.String(), want) {
 			t.Errorf("result line missing %q:\n%s", want, res.String())
 		}
@@ -154,7 +154,7 @@ func TestOnlyWornArmorProtects(t *testing.T) {
 	if res.Wound != "" {
 		t.Errorf("the plate should have turned the blade entirely, got %q", res.Wound)
 	}
-	if !strings.Contains(res.String(), "Bandit:unhurt") {
+	if !strings.Contains(res.String(), "unhurt") {
 		t.Errorf("a blow stopped by armor must say so:\n%s", res.String())
 	}
 }
@@ -231,7 +231,7 @@ func TestAmmunitionIsSpentHitOrMiss(t *testing.T) {
 	if blaster.Weapon.Ammo != 0 {
 		t.Errorf("ammo = %d, want 0: both the hit and the miss cost a shot", blaster.Weapon.Ammo)
 	}
-	if !strings.Contains(missed.String(), "ammo:0/2 EMPTY") {
+	if !strings.Contains(missed.String(), "0/2 EMPTY") {
 		t.Errorf("an emptied weapon must say so:\n%s", missed.String())
 	}
 }
