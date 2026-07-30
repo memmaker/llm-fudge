@@ -409,15 +409,16 @@ func sortedKeys(m map[string]int) []string {
 	return keys
 }
 
-// ToString renders a character as condensed state, in the same dense notation
-// the DM writes its own memory in. It is the engine's answer to "what is true
-// about this character right now", and it is what the DM is handed instead of
-// the character sheet — which it cannot read — and instead of its own notes,
-// which drift as a session runs long.
+// ToString renders a character as YAML: the id as a key, then the engine-owned
+// fields. It is the engine's answer to "what is true about this character right
+// now", and it is what the DM is handed instead of the character sheet — which
+// it cannot read — and instead of its own notes, which drift as a session runs
+// long.
 //
-// Every field is stated on its own line; anything empty is left out, except
-// possessions, where silence would read as "the engine did not say" rather than
-// "they have none".
+// It is byte-for-byte the shape the world state block renders, because it is the
+// same function: WriteYAML does the work and both call it. That matters. A tool
+// result and the block are the same character described twice, and when they were
+// two renderers in two notations, the DM had to learn both and trust they agreed.
 //
 // Position is among the fields, and used not to be. Location was once written
 // at creation and never moved — there was no call that did — so the engine
@@ -426,74 +427,84 @@ func sortedKeys(m map[string]int) []string {
 // the DM's own narrative properties instead. It is stated here now because the
 // engine finally tracks it: every narration names the location it happened in, and
 // move_character moves anyone the scene leaves behind. A fact the engine keeps
-// current is a fact the roster owns.
+// current is a fact the engine owns.
 func (c *Character) ToString() string {
 	var b strings.Builder
+	fmt.Fprintf(&b, "%s:\n", c.ID)
+	c.WriteYAML(&b, "  ")
+	return strings.TrimRight(b.String(), "\n")
+}
 
-	fmt.Fprintf(&b, "%s|id:%s", c.Name, c.ID)
-	if c.Species != "" {
-		fmt.Fprintf(&b, "|%s", c.Species)
-	}
-	fmt.Fprintf(&b, "|scale:%+d", c.Scale)
+// WriteYAML writes a character's engine-owned fields as YAML at the given
+// indent, without the id key above them. Anything empty is left out — a field
+// the engine has nothing to say about is better absent than stated as blank —
+// except what a character carries, where silence would read as "the engine did
+// not say" rather than "they have none".
+func (c *Character) WriteYAML(b *strings.Builder, indent string) {
+	Field(b, indent, "type", "character")
+	Field(b, indent, "name", c.Name)
 	if c.Location != "" {
-		fmt.Fprintf(&b, "|at:%s", c.Location)
+		Field(b, indent, "location", c.Location)
+	}
+	if c.Species != "" {
+		Field(b, indent, "species", c.Species)
+	}
+	if c.Scale != 0 {
+		fmt.Fprintf(b, "%sscale: %+d\n", indent, c.Scale)
 	}
 	if c.Description != "" {
-		fmt.Fprintf(&b, "\ndesc:%s", c.Description)
+		Field(b, indent, "desc", c.Description)
 	}
 
-	fmt.Fprintf(&b, "\nwounds:%s", strings.ToLower(c.Wounds.Level.String()))
+	Field(b, indent, "wounds", strings.ToLower(c.Wounds.Level.String()))
 	if c.Wounds.Scratches > 0 {
-		fmt.Fprintf(&b, "|scratches:%d/3", c.Wounds.Scratches)
+		fmt.Fprintf(b, "%sscratches: %d/3\n", indent, c.Wounds.Scratches)
 	}
 	if p := c.Wounds.Penalty(); p != 0 {
-		fmt.Fprintf(&b, "|penalty:%+d (already applied to rolls)", p)
+		fmt.Fprintf(b, "%spenalty: %+d  # already applied to rolls\n", indent, p)
 	}
 	if !c.Wounds.CanAct() {
-		b.WriteString("|cannot-act")
+		Field(b, indent, "cannot_act", true)
 	}
+	Field(b, indent, "fudge_points", c.FudgePoints)
+	Field(b, indent, "coins", c.Coins)
 
-	fmt.Fprintf(&b, "\nfudge-points:%d", c.FudgePoints)
-
-	writeTraits := func(label string, traits map[string]int) {
-		if len(traits) == 0 {
-			return
-		}
-		fmt.Fprintf(&b, "\n%s:", label)
-		for i, k := range sortedKeys(traits) {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			fmt.Fprintf(&b, "%s%+d", k, traits[k])
-		}
-	}
-	writeTraits("attributes", c.Attributes)
-	writeTraits("skills", c.Skills)
+	writeTraitsYAML(b, indent, "attributes", c.Attributes)
+	writeTraitsYAML(b, indent, "skills", c.Skills)
 	if len(c.Gifts) > 0 {
-		fmt.Fprintf(&b, "\ngifts:%s", strings.Join(c.Gifts, ","))
+		fmt.Fprintf(b, "%sgifts: [%s]\n", indent, strings.Join(c.Gifts, ", "))
 	}
 	if len(c.Faults) > 0 {
-		fmt.Fprintf(&b, "\nfaults:%s", strings.Join(c.Faults, ","))
+		fmt.Fprintf(b, "%sfaults: [%s]\n", indent, strings.Join(c.Faults, ", "))
 	}
 
-	fmt.Fprintf(&b, "\ncoins:%d", c.Coins)
+	// The ids of what they carry. Each item is also an entity of its own in the
+	// world state, naming this character as its location — one storage, two
+	// views — but "can they do this with what they have" is the question the DM
+	// asks most, and it should not require reading the whole world to answer.
 	if len(c.Inventory) == 0 {
-		b.WriteString("\ncarrying:nothing")
-		return b.String()
+		fmt.Fprintf(b, "%sinventory: []  # carrying nothing\n", indent)
+		return
 	}
-	b.WriteString("\ncarrying:")
+	ids := make([]string, 0, len(c.Inventory))
 	for _, it := range sortedInventory(c.Inventory) {
-		// The id is on the line because the DM addresses an item by it, and it is
-		// the one thing about the item that does not change when it moves.
-		fmt.Fprintf(&b, "\n- %s|id:%s", itemLabel(it), it.ID)
-		if detail := itemDetail(it); detail != "" {
-			fmt.Fprintf(&b, "|%s", detail)
-		}
-		if it.Description != "" {
-			fmt.Fprintf(&b, "|%s", it.Description)
-		}
+		ids = append(ids, it.ID)
 	}
-	return b.String()
+	fmt.Fprintf(b, "%sinventory: [%s]\n", indent, strings.Join(ids, ", "))
+}
+
+// writeTraitsYAML renders a trait group in flow style. A line per trait would be
+// twenty lines per character in a block that is re-sent every turn, and the DM
+// reads a trait group across rather than down.
+func writeTraitsYAML(b *strings.Builder, indent, label string, traits map[string]int) {
+	if len(traits) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(traits))
+	for _, name := range sortedKeys(traits) {
+		parts = append(parts, fmt.Sprintf("%s: %+d", name, traits[name]))
+	}
+	fmt.Fprintf(b, "%s%s: {%s}\n", indent, label, strings.Join(parts, ", "))
 }
 
 // sortedInventory orders an inventory by item name so the sheet reads the same

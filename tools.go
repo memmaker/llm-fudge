@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"fudge/prompts"
@@ -447,14 +448,14 @@ func (d *itemDestination) add(proto *rules.Item, count int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s|+%d %s (%s)|lies:%s|total:%d", d.location.Name, count, item.Name, item.Kind(), item.Where, item.Count), nil
+		return rules.Flow("location", d.location.Name, "added", count, "item", item.Name, "type", item.Kind(), "lies", item.Where, "total", item.Count), nil
 	}
 	before := d.character.ToString()
 	item, err := d.character.Accept(proto, count)
 	if err != nil {
 		return "", err
 	}
-	return withState(fmt.Sprintf("%s|+%d %s (%s)|has:%d", d.character.Name, count, item.Name, item.Kind(), item.Count), before, d.character), nil
+	return withState(rules.Flow("character", d.character.Name, "added", count, "item", item.Name, "type", item.Kind(), "carrying", item.Count), before, d.character), nil
 }
 
 // remove destroys a stack, or part of one, wherever it is held.
@@ -464,14 +465,14 @@ func (d *itemDestination) remove(name string, count int) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s|destroyed %d %s|left:%d", d.location.Name, count, item.Name, left), nil
+		return rules.Flow("location", d.location.Name, "removed", count, "item", item.Name, "remaining", left), nil
 	}
 	before := d.character.ToString()
 	item, left, err := d.character.RemoveItem(name, count)
 	if err != nil {
 		return "", err
 	}
-	return withState(fmt.Sprintf("%s|destroyed %d %s|has:%d", d.character.Name, count, item.Name, left), before, d.character), nil
+	return withState(rules.Flow("character", d.character.Name, "removed", count, "item", item.Name, "carrying", left), before, d.character), nil
 }
 
 // targetCharacter resolves the character a call names, falling back to the
@@ -759,7 +760,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		}
 		before := ch.ToString()
 		result := ch.Wounds.ApplyDamage(damagePoints)
-		return withState(fmt.Sprintf("%s|hit:%s|now:%s|scratch:%d|pen%+d", ch.Name, severity, result, ch.Wounds.Scratches, ch.Wounds.Penalty()), before, ch), nil
+		return withState(rules.Flow("character", ch.Name, "took", severity, "now", result, "scratches", ch.Wounds.Scratches, "penalty", ch.Wounds.Penalty()), before, ch), nil
 	case "heal":
 		ch, raw, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
@@ -775,7 +776,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		}
 		before := ch.ToString()
 		result := ch.Wounds.Heal(lvl)
-		return withState(fmt.Sprintf("%s|heal%d|%s|level:%s|pen%+d", ch.Name, lvl, result, ch.Wounds.Level, ch.Wounds.Penalty()), before, ch), nil
+		return withState(rules.Flow("character", ch.Name, "healed", lvl, "now", result, "level", ch.Wounds.Level, "penalty", ch.Wounds.Penalty()), before, ch), nil
 	case "declare_dead":
 		ch, _, err := getCharacterFromJSON(w, call.Function.Arguments)
 		if err != nil {
@@ -783,7 +784,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		}
 		before := ch.ToString()
 		ch.Wounds.DeclareDead()
-		return withState(fmt.Sprintf("%s|DEAD", ch.Name), before, ch), nil
+		return withState(rules.Flow("character", ch.Name, "status", "DEAD"), before, ch), nil
 	case "create_location":
 		var args struct {
 			Name        string `json:"name"`
@@ -814,7 +815,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s|now at:%s", ch.Name, ch.Location), nil
+		return rules.Flow("character", ch.Name, "now_at", ch.Location), nil
 	case "move_item":
 		var args struct {
 			Item          string `json:"item"`
@@ -842,10 +843,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		line := fmt.Sprintf("%d %s|%s -> %s", res.Count, res.Item.Name, res.From, res.To)
-		if res.Item.Where != "" {
-			line += "|lies:" + res.Item.Where
-		}
+		line := rules.Flow("moved", res.Count, "item", res.Item.Name, "from", res.From, "to", res.To, "lies", res.Item.Where)
 		// Both sheets moved, but only the receiving one is stated: a move is one
 		// fact, and the roster restates the other side next turn anyway.
 		if args.ToCharacter != "" {
@@ -1102,7 +1100,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return withState(fmt.Sprintf("%s|%s%d coins|purse:%d", ch.Name, sign, args.Amount, balance), before, ch), nil
+		return withState(rules.Flow("character", ch.Name, "transaction", sign+strconv.Itoa(args.Amount), "purse", balance), before, ch), nil
 	case "roll_on_table":
 		var args struct {
 			Table    string `json:"table"`
@@ -1115,7 +1113,7 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s|roll%+d|mod%+d|%s", args.Table, roll, args.Modifier, value), nil
+		return rules.Flow("table", args.Table, "rolled", roll, "modifier", args.Modifier, "result", value), nil
 	default:
 		return "", fmt.Errorf("unknown action tool %q", call.Function.Name)
 	}
