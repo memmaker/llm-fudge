@@ -2,8 +2,10 @@ package rules
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -133,6 +135,30 @@ func (it *Item) clone() *Item {
 	return copied
 }
 
+// refers reports whether ref names this item, by its id or by its name. Both are
+// accepted because both are what the DM has: the world state gives it ids and
+// tells it they are what every call names, while its own prose gives it names.
+//
+// The two are deliberately NOT ranked, and an id does not short-circuit. Ranking
+// it first looked obviously right and was wrong: with two stacks both named
+// "Dagger", the first holds the id `dagger`, so the plain name "Dagger" would
+// match that id exactly and resolve silently to one of the two — losing the
+// ambiguity refusal that is the only thing standing between the DM and a guess.
+// Every candidate is gathered, and one candidate is what settles a lookup.
+func (it *Item) refers(ref string) bool {
+	if ref = strings.TrimSpace(ref); ref == "" {
+		return false
+	}
+	return it.ID == itemID(ref) || slug(it.Name) == slug(ref)
+}
+
+// itemID normalises a reference for comparison against an id. Ids are minted
+// lowercase and matched literally, so a reference that differs only in case or
+// surrounding space is the same reference.
+func itemID(ref string) string {
+	return strings.ToLower(strings.TrimSpace(ref))
+}
+
 // Kind names what an item is, for messages that have to tell a sword from a
 // mail shirt from a coil of rope.
 func (it *Item) Kind() string {
@@ -164,6 +190,22 @@ type Character struct {
 }
 
 type World struct {
+	// AlsoTaken reports ids claimed outside the rules library. Narrative-only
+	// entities — a rumour, a job, an objective — live in the same single id
+	// keyspace as characters, locations and items, but they are not the rules
+	// library's to hold, so it cannot see them without being told how.
+	//
+	// It is a hook rather than a dependency because the ownership boundary runs
+	// both ways: this package must not be able to reach into narrative state, and
+	// a package this one imported could not have been the one importing it. Nil
+	// means nothing outside is claimed, which is true of a bare world in a test.
+	//
+	// Without it, minting is only half guarded. `narrative` refuses to create an
+	// entity whose id the engine already holds; nothing stopped the engine
+	// minting an item onto an id `narrative` already held, and an item named
+	// "Iron Key" landing on the objective `iron-key` merged two different things
+	// into one record.
+	AlsoTaken        func(id string) bool
 	Setting          *SettingInfos
 	AdventureContent string
 	Player           string
@@ -244,6 +286,11 @@ func (w *World) EntityIDs() []string {
 // the call is a coin toss. It is exported because the narrative-entity store
 // mints ids into this same keyspace and must check it before doing so; a rumor
 // and a character colliding would be the same ambiguity one layer out.
+//
+// It walks every inventory and every floor. That is a scan per check and MintItemID
+// loops on it, so minting is quadratic in the world's item count on a collision —
+// fine at the scale of a session's pockets and rooms, and worth revisiting only if
+// an id map is ever wanted for something else too.
 func (w *World) HasEntity(id string) bool {
 	if id == "" {
 		return false
@@ -264,7 +311,7 @@ func (w *World) HasEntity(id string) bool {
 			return true
 		}
 	}
-	return false
+	return w.AlsoTaken != nil && w.AlsoTaken(id)
 }
 
 // MintItemID picks the id an item will carry for the rest of its existence. The
@@ -368,8 +415,12 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	if !slugPattern.MatchString(id) {
 		return nil, fmt.Errorf("invalid character slug: %s", id)
 	}
-	if _, exists := w.Characters[id]; exists {
-		return nil, fmt.Errorf("character slug already exists: %s", id)
+	// Checked against the whole keyspace, not just the characters. One id means
+	// one entity: a character sharing an id with a location or an item would
+	// render as one key in the flat entity map, and two different things would
+	// arrive at the DM as one record.
+	if w.HasEntity(id) {
+		return nil, fmt.Errorf("id already taken: %s — every character, location and item shares one id namespace. Use a fuller name so the id differs", id)
 	}
 	specKey := strings.ToLower(req.Species)
 	spec, ok := w.Setting.Species[specKey]
@@ -467,9 +518,13 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 // leaves it as it was.
 //
 // It hangs off World rather than Character, along with GiveWeapon and GiveArmor,
-// because minting an id needs to see the whole keyspace. Putting creation here is
-// what keeps every route into the world going through one minter instead of each
-// caller inventing its own convention.
+// because minting an id needs to see the whole keyspace, and a Character cannot.
+// It is not the only route in — tools.go mints for the calls that build their own
+// proto, and MoveItem mints for the half of a split stack that leaves — so the
+// invariant is not "everything goes through here" but the one Accept and AddItem
+// enforce between them: a new entry refuses a proto whose id is empty. That
+// refusal is what catches a route that forgot, rather than a convention that a
+// new caller has no way of knowing about.
 func (w *World) GiveItem(c *Character, name, description string, count int) (*Item, error) {
 	return c.Accept(&Item{ID: w.MintItemID(name), Name: name, Description: description}, count)
 }
@@ -575,17 +630,24 @@ func (c *Character) Accept(proto *Item, count int) (*Item, error) {
 // scan. That costs nothing worth measuring — this is one character's pockets — and
 // Accept never opens a second entry under a name already on the sheet, so the scan
 // can never have two answers to choose between.
-func (c *Character) carried(name string) *Item {
-	wanted := slug(name)
-	if wanted == "" {
-		return nil
-	}
-	for _, it := range c.Inventory {
-		if slug(it.Name) == wanted {
-			return it
+func (c *Character) carried(ref string) *Item {
+	// One inventory holds at most one stack per name, so a scan cannot be
+	// ambiguous here the way a location's floor or the whole world can be. The
+	// order is fixed anyway: Go randomises map iteration, and this engine is
+	// deterministic by design.
+	for _, id := range sortedItemIDs(c.Inventory) {
+		if c.Inventory[id].refers(ref) {
+			return c.Inventory[id]
 		}
 	}
 	return nil
+}
+
+// sortedItemIDs orders the keys of an item map, so a scan that can match more
+// than one stack picks the same one every run. This engine is deterministic by
+// design and Go randomises map iteration.
+func sortedItemIDs(items map[string]*Item) []string {
+	return slices.Sorted(maps.Keys(items))
 }
 
 // RemoveItem takes count copies off a stack and drops the entry once nothing is

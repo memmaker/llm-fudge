@@ -613,3 +613,65 @@ func TestAnUnmintedProtoIsRefused(t *testing.T) {
 		t.Error("an inventory must refuse an item with no id")
 	}
 }
+
+// The id is what the world state hands the DM and what it is told every call
+// names, so a call naming one has to resolve — including after the thing has
+// moved, which is the point of the id existing at all.
+func TestAnItemIsFoundByItsID(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	key, err := w.GiveItem(catnip, "Iron Key", "Cold.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Dropped by id, from a character.
+	if _, err := w.MoveItem(MoveRequest{Item: key.ID, ToLocation: cellar.ID, Where: "under a cask"}); err != nil {
+		t.Fatalf("move by id from a character: %v", err)
+	}
+	// And picked up by the same id, now that it is on a floor instead.
+	if _, err := w.MoveItem(MoveRequest{Item: key.ID, ToCharacter: "catnip"}); err != nil {
+		t.Fatalf("move by id from a location: %v", err)
+	}
+	if catnip.carried(key.ID) == nil {
+		t.Error("the key is not addressable by its id after the round trip")
+	}
+}
+
+// Accepting ids must not cost the ambiguity refusal. With two stacks of one
+// name, the first holds the id minted from that name, so an id-first lookup
+// would have resolved the bare name to one of the two and guessed.
+func TestAnIDMatchDoesNotSuppressAmbiguity(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	first := drop(w, cellar, &Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
+	second := drop(w, cellar, &Item{Name: "Dagger", Description: "Plain."}, "under the table", 1)
+
+	if first.ID != "dagger" {
+		t.Fatalf("expected the first stack to hold the bare id, got %q", first.ID)
+	}
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: cellar.ID, ToCharacter: "catnip"}); err == nil {
+		t.Error("the bare name matched an id and skipped the ambiguity refusal")
+	}
+
+	// The suffixed id is unambiguous, and is how the DM gets out of it.
+	if _, err := w.MoveItem(MoveRequest{Item: second.ID, FromLocation: cellar.ID, ToCharacter: "catnip"}); err != nil {
+		t.Fatalf("the second stack's own id did not resolve: %v", err)
+	}
+	if got := catnip.carried(second.ID); got == nil || got.Description != "Plain." {
+		t.Errorf("the wrong stack moved: %+v", got)
+	}
+}
+
+// One id means one entity across every type, so a location cannot open on an id
+// a character or an item already holds.
+func TestCreateLocationRefusesATakenID(t *testing.T) {
+	w := locationWorld()
+	w.CreateCharacter("cellar", "Cellar", nil, nil)
+
+	if _, err := w.CreateLocation("Cellar", "Damp.", ""); err == nil {
+		t.Error("a location opened on an id a character already holds")
+	}
+}

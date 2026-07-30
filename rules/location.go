@@ -57,6 +57,12 @@ func (w *World) CreateLocation(name, description, parent string) (*Location, err
 	if _, exists := w.Locations[id]; exists {
 		return nil, fmt.Errorf("location already exists: %s — use that id rather than creating a second one", id)
 	}
+	// And not taken by anything else either. One id means one entity: a location
+	// sharing an id with a character or an item would render as a single key in the
+	// flat entity map, and two different things would reach the DM as one record.
+	if w.HasEntity(id) {
+		return nil, fmt.Errorf("id already taken: %s — every character, location and item shares one id namespace. Name the place more fully so the id differs", id)
+	}
 	if parent != "" {
 		if _, err := w.Location(parent); err != nil {
 			return nil, fmt.Errorf("unknown parent: %w", err)
@@ -191,13 +197,10 @@ func (l *Location) AddItem(proto *Item, where string, count int) (*Item, error) 
 // decides whether an arriving stack merges. It is a scan because the id, not the
 // pair, is now the key; a room's floor holds few enough entries that looking at
 // all of them is cheaper than any index would be.
-func (l *Location) stackAt(name, where string) *Item {
-	wantedName, wantedWhere := slug(name), slug(where)
-	if wantedName == "" {
-		return nil
-	}
-	for _, it := range l.Items {
-		if slug(it.Name) == wantedName && slug(it.Where) == wantedWhere {
+func (l *Location) stackAt(ref, where string) *Item {
+	wantedWhere := slug(where)
+	for _, it := range l.SortedItems() {
+		if it.refers(ref) && slug(it.Where) == wantedWhere {
 			return it
 		}
 	}
@@ -246,9 +249,8 @@ func (l *Location) find(name, where string) (*Item, error) {
 
 	var matches []string
 	var found *Item
-	wanted := slug(name)
 	for _, item := range l.SortedItems() {
-		if slug(item.Name) != wanted {
+		if !item.refers(name) {
 			continue
 		}
 		matches = append(matches, item.Where)
@@ -276,30 +278,16 @@ func (l *Location) SortedItems() []*Item {
 		if items[i].Name != items[j].Name {
 			return items[i].Name < items[j].Name
 		}
-		return items[i].Where < items[j].Where
+		if items[i].Where != items[j].Where {
+			return items[i].Where < items[j].Where
+		}
+		// Name and spot together are unique per location, so this never decides
+		// anything today. It is here because the id is the one key that cannot
+		// tie, and a sort that can fall through to "equal" on a randomised map
+		// walk is a determinism bug waiting for the invariant above to relax.
+		return items[i].ID < items[j].ID
 	})
 	return items
-}
-
-// ItemLines renders what lies here, one dense line per stack, in the same
-// notation the roster uses for what a character carries. The ratings ride along
-// so a weapon on the floor can be picked up and swung without the DM having to
-// remember what it hits for, and the id rides along so it can be addressed
-// without one — the point of the id being that it does not change when the thing
-// is picked up.
-func (l *Location) ItemLines() []string {
-	lines := make([]string, 0, len(l.Items))
-	for _, it := range l.SortedItems() {
-		line := "- " + itemLabel(it) + "|id:" + it.ID + "|" + it.Where
-		if detail := itemDetail(it); detail != "" {
-			line += "|" + detail
-		}
-		if it.Description != "" {
-			line += "|" + it.Description
-		}
-		lines = append(lines, line)
-	}
-	return lines
 }
 
 // Children lists the locations nested directly inside this one, sorted, so the
@@ -536,19 +524,20 @@ func (w *World) resolveSource(req MoveRequest) (*itemSource, error) {
 // findItem lists every stack of a name anywhere in the world, characters first
 // and then locations, each in a fixed order so an ambiguity error reads the same
 // way twice.
-func (w *World) findItem(name string) []*itemSource {
-	wanted := slug(name)
+func (w *World) findItem(ref string) []*itemSource {
+	// An id is unique across the whole world, so a reference that is one resolves
+	// to exactly one holder and never reaches the ambiguity refusal.
 	var sources []*itemSource
 	for _, id := range w.CharacterIDs() {
 		ch := w.Characters[id]
-		if item := ch.carried(wanted); item != nil {
+		if item := ch.carried(ref); item != nil {
 			sources = append(sources, &itemSource{item: item, name: ch.Name, character: ch})
 		}
 	}
 	for _, id := range w.LocationIDs() {
 		loc := w.Locations[id]
 		for _, item := range loc.SortedItems() {
-			if slug(item.Name) != wanted {
+			if !item.refers(ref) {
 				continue
 			}
 			sources = append(sources, &itemSource{item: item, name: loc.Name, location: loc})

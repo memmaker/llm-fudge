@@ -423,8 +423,8 @@ func sortedKeys(m map[string]int) []string {
 // at creation and never moved — there was no call that did — so the engine
 // would have been asserting a position that stopped being true the first time
 // the fiction walked anybody anywhere, and where a character stood was left to
-// the DM's own narrative properties instead. It is stated here now because the engine finally
-// tracks it: every narration names the location it happened in, and
+// the DM's own narrative properties instead. It is stated here now because the
+// engine finally tracks it: every narration names the location it happened in, and
 // move_character moves anyone the scene leaves behind. A fact the engine keeps
 // current is a fact the roster owns.
 func (c *Character) ToString() string {

@@ -312,7 +312,34 @@ func (a *Archive) nothingFound(q Query) string {
 	if len(clauses) > 0 {
 		asked = strings.Join(clauses, " and ")
 	}
-	return fmt.Sprintf("no archived turn matches %s. %d turns are recorded. Nothing happened that you have forgotten here — do not invent it.", asked, len(a.turns))
+
+	// An id that appears in no turn at all is a different answer from a real id
+	// with nothing recorded against it, and the two must not read alike. The
+	// closing sentence is deliberately absolute — a blank reply reads to a model as
+	// licence to invent — but attached to a lookup that merely failed to spell the
+	// id right it would turn a typo into proof. So the unrecognised case says which
+	// it is, and still refuses the invention.
+	unrecognised := ""
+	if q.Entity != "" && !a.knows(q.Entity) {
+		unrecognised = fmt.Sprintf(" No entity with the id %q appears anywhere in the record, so check the id against WORLD STATE before concluding anything from this — an id that is merely misspelled proves nothing either way.", q.Entity)
+	}
+	return fmt.Sprintf("no archived turn matches %s.%s %d turns are recorded. Nothing here is something you have forgotten — do not invent it.", asked, unrecognised, len(a.turns))
+}
+
+// knows reports whether an id has ever taken part in a recorded turn. The archive
+// does not hold the world, so this is the only sense in which it can recognise an
+// id: something addressed by that name has happened at least once.
+func (a *Archive) knows(entity string) bool {
+	for _, t := range a.turns {
+		for _, event := range t.Events {
+			for _, id := range event.Entities {
+				if id == entity {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func rangeLabel(q Query) string {

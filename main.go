@@ -6,9 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -879,16 +881,11 @@ func opHeadline(op narrative.Operation) string {
 	if op.Op == narrative.OpDelete {
 		return "delete " + op.Entity
 	}
-	names := make([]string, 0, len(op.Properties))
-	for name := range op.Properties {
-		names = append(names, name)
-	}
 	// Sorted because Go randomises map order, and an archive that rendered the
 	// same turn differently on every read would be worthless for working out
 	// what happened.
-	sort.Strings(names)
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
+	parts := make([]string, 0, len(op.Properties))
+	for _, name := range slices.Sorted(maps.Keys(op.Properties)) {
 		parts = append(parts, fmt.Sprintf("%s: %v", name, op.Properties[name]))
 	}
 	return fmt.Sprintf("%s %s %s", op.Op, op.Entity, strings.Join(parts, ", "))
@@ -1387,6 +1384,7 @@ func resultHeadline(result string) string {
 // record, and the answer lives exactly as long as the turn that asked for it.
 func (s *session) recall(call llm.ToolCall) string {
 	var args struct {
+		Entity       string `json:"entity"`
 		Query        string `json:"query"`
 		Turn         int    `json:"turn"`
 		To           int    `json:"to"`
@@ -1394,12 +1392,15 @@ func (s *session) recall(call llm.ToolCall) string {
 		Limit        int    `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		return fmt.Sprintf("Error: could not read your recall (%v). Ask again with a query or a turn.", err)
+		return fmt.Sprintf("Error: could not read your recall (%v). Ask again with an entity, a query or a turn.", err)
 	}
-	if args.Query == "" && args.Turn == 0 {
-		return "Error: recall needs either a query or a turn number."
+	if args.Entity == "" && args.Query == "" && args.Turn == 0 {
+		return "Error: recall needs an entity id, a query or a turn number."
 	}
+	// An entity id is matched literally against what the engine minted, so it is
+	// normalised the same way every other id in the archive was.
 	return s.archive.Lookup(archive.Query{
+		Entity:       strings.ToLower(strings.TrimSpace(args.Entity)),
 		Keyword:      args.Query,
 		From:         args.Turn,
 		To:           args.To,
@@ -1424,8 +1425,11 @@ func retryDelay(failures int) time.Duration {
 // discover that its next call does not exist.
 const narrationDemand = "Stop resolving and narrate. This is the last call of the turn's first half: the checks, the dice and the rest of the engine are no longer available to you, output_narration is what you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it if your prose established anything the engine does not hold, and location: name a slug that exists in WORLD STATE, or call create_location in this same response first if the scene has moved somewhere new—create_location is the one other call you still have. If this response does not carry the narration, the player loses the turn."
 
-// baseline says whether this narration is the one that opens the game, and is
-// the only case in which an empty world_update is refused. Once play is running,
+// parseNarration reads an output_narration call, refusing one the player could
+// not be shown or the engine could not place.
+//
+// baseline says whether this is the narration that opens the game, and is the
+// only case in which an empty world_update is refused. Once play is running,
 // a turn that established nothing the engine does not already hold is ordinary —
 // a round of pure fighting is all engine facts — and demanding an update there
 // would only teach the DM to invent a property to satisfy the check. The opening

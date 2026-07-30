@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -54,7 +56,13 @@ type session struct {
 }
 
 func newSession(w *rules.World) *session {
-	return &session{world: w, narrative: narrative.New(), archive: archive.New()}
+	s := &session{world: w, narrative: narrative.New(), archive: archive.New()}
+	// The two stores share one id keyspace, and this is what closes it from the
+	// engine's side: without it an item minted from the name "Iron Key" would land
+	// on an objective the DM had already created as `iron-key`, and the render
+	// would fold two different things into one record.
+	w.AlsoTaken = s.narrative.Has
+	return s
 }
 
 // engineState renders the whole block the DM reads: what is true now, and how it
@@ -116,7 +124,7 @@ func entities(w *rules.World, n *narrative.Store) string {
 	// Characters, the player first: they are who the DM is writing about, and
 	// what they carry is the fact it gets wrong most often.
 	for _, id := range characterOrder(w) {
-		write(id, func(b *strings.Builder) { writeCharacter(b, w, w.Characters[id]) })
+		write(id, func(b *strings.Builder) { writeCharacter(b, w.Characters[id]) })
 	}
 
 	// Locations in tree order, so a place reads next to the places around it even
@@ -157,7 +165,7 @@ func entities(w *rules.World, n *narrative.Store) string {
 // Maps and lists go in YAML's flow style — `{agility: 1}` rather than a block of
 // indented lines — because this is valid YAML either way and the block form costs
 // a line per trait, every turn, for a set of numbers the DM reads as a group.
-func writeCharacter(b *strings.Builder, w *rules.World, c *rules.Character) {
+func writeCharacter(b *strings.Builder, c *rules.Character) {
 	b.WriteString("    type: character\n")
 	fmt.Fprintf(b, "    name: %s\n", yamlString(c.Name))
 	if c.Location != "" {
@@ -278,7 +286,7 @@ func writeNarrative(b *strings.Builder, e *narrative.Entity) {
 	}
 	parts := make([]string, 0, len(props))
 	for _, p := range props {
-		parts = append(parts, yamlFlowKey(p.Name)+": "+yamlFlowValue(p.Value))
+		parts = append(parts, yamlFlowScalar(p.Name)+": "+yamlFlowValue(p.Value))
 	}
 	fmt.Fprintf(b, "    narrative: {%s}  # @t%d\n", strings.Join(parts, ", "), e.Turn())
 }
@@ -306,14 +314,9 @@ func yamlFlowValue(value any) string {
 	case map[string]any:
 		// Sorted: Go randomises map order, and a block that reshuffled between
 		// turns would rewrite the cached prefix for nothing.
-		names := make([]string, 0, len(v))
-		for name := range v {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		parts := make([]string, 0, len(names))
-		for _, name := range names {
-			parts = append(parts, yamlFlowKey(name)+": "+yamlFlowValue(v[name]))
+		parts := make([]string, 0, len(v))
+		for _, name := range slices.Sorted(maps.Keys(v)) {
+			parts = append(parts, yamlFlowScalar(name)+": "+yamlFlowValue(v[name]))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	case string:
@@ -321,10 +324,6 @@ func yamlFlowValue(value any) string {
 	default:
 		return yamlFlowScalar(fmt.Sprintf("%v", v))
 	}
-}
-
-func yamlFlowKey(name string) string {
-	return yamlFlowScalar(name)
 }
 
 // yamlFlowScalar quotes anything that is not unambiguously a plain scalar.
@@ -355,13 +354,8 @@ func writeTraits(b *strings.Builder, label string, traits map[string]int) {
 	if len(traits) == 0 {
 		return
 	}
-	names := make([]string, 0, len(traits))
-	for name := range traits {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
+	parts := make([]string, 0, len(traits))
+	for _, name := range slices.Sorted(maps.Keys(traits)) {
 		parts = append(parts, fmt.Sprintf("%s: %+d", name, traits[name]))
 	}
 	fmt.Fprintf(b, "    %s: {%s}\n", label, strings.Join(parts, ", "))
@@ -439,12 +433,7 @@ func itemOrder(w *rules.World) []heldItem {
 
 // carriedIDs lists the ids of what a character carries, in a fixed order.
 func carriedIDs(c *rules.Character) []string {
-	ids := make([]string, 0, len(c.Inventory))
-	for id := range c.Inventory {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
+	return slices.Sorted(maps.Keys(c.Inventory))
 }
 
 // yamlString quotes a value only when leaving it bare would change what the YAML

@@ -277,3 +277,49 @@ func TestUnknownOpIsReported(t *testing.T) {
 		t.Error("an unknown op still wrote to the store")
 	}
 }
+
+// delete takes only an entity. One carrying properties reads as a set written as
+// a delete, and the safe reading of an unclear instruction to destroy something
+// is to leave it alone.
+func TestDeleteWithPropertiesDestroysNothing(t *testing.T) {
+	s := New()
+	s.Apply([]Operation{
+		{Op: OpCreate, Entity: "rumor-007", Properties: map[string]any{"type": "rumor", "content": "x"}},
+	}, 1, world)
+
+	notes := s.Apply([]Operation{
+		{Op: OpDelete, Entity: "rumor-007", Properties: map[string]any{"content": "y"}},
+	}, 2, world)
+
+	if len(notes) != 1 || !strings.Contains(notes[0], "nothing was deleted") {
+		t.Fatalf("notes = %v, want a refusal saying nothing was deleted", notes)
+	}
+	if s.Get("rumor-007") == nil {
+		t.Error("the entity was deleted by an operation that was refused")
+	}
+}
+
+// The denylist has to cover what the renderer actually emits, not what an older
+// design emitted. Every one of these is a real top-level field on a rendered
+// entity, and a narrative property under the same name would read exactly like
+// the engine's own.
+func TestReservedListCoversTheRenderedFields(t *testing.T) {
+	for _, name := range []string{
+		"name", "count", "spot", "parent", "scene", "weapon", "armor",
+		"cannot_act", "fudge_points", "narrative", "here",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := New()
+			notes := s.Apply([]Operation{
+				{Op: OpSet, Entity: "merchant", Properties: map[string]any{name: "anything", "mood": "calm"}},
+			}, 1, world)
+
+			if len(notes) != 1 {
+				t.Fatalf("%q was not refused: %v", name, notes)
+			}
+			if got := props(t, s, "merchant"); got[name] != nil {
+				t.Errorf("%q was recorded: %v", name, got)
+			}
+		})
+	}
+}

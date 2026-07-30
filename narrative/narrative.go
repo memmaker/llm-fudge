@@ -22,7 +22,8 @@ package narrative
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -42,12 +43,22 @@ import (
 // not fields the engine uses. They are fields the engine is refusing to let
 // become synonyms for the ones it does.
 var reserved = map[string]bool{
-	// The engine's own, as the ledger held them.
-	"at": true, "wounds": true, "scratches": true, "fudge-points": true,
-	"coins": true, "carrying": true, "attributes": true, "skills": true,
-	"gifts": true, "faults": true, "scale": true, "species": true,
-	"id": true, "desc": true, "penalty": true, "cannot-act": true,
-	"location": true, "inventory": true, "equipment": true, "type": true,
+	// Every field the flat render actually emits at the top level of an entity.
+	// These are the ones that matter most and the easiest to leave out: the list
+	// began as the ledger's, which predates half of them, and a reserved list that
+	// has fallen behind the renderer is reserving the wrong words.
+	"id": true, "type": true, "name": true, "location": true, "desc": true,
+	"species": true, "scale": true, "wounds": true, "scratches": true,
+	"penalty": true, "cannot_act": true, "cannot-act": true,
+	"fudge_points": true, "fudge-points": true, "coins": true,
+	"attributes": true, "skills": true, "gifts": true, "faults": true,
+	"inventory": true, "count": true, "spot": true, "weapon": true,
+	"armor": true, "parent": true, "scene": true, "here": true,
+	"narrative": true,
+
+	// Older engine names kept because the DM was taught them and may still reach
+	// for one.
+	"at": true, "carrying": true, "equipment": true,
 
 	// Synonyms for concepts the engine owns. Reserved so they cannot become
 	// second answers to a question the engine is already answering.
@@ -56,7 +67,7 @@ var reserved = map[string]bool{
 	"physical-position": true, "room": true, "contains": true,
 	"contents": true, "container": true, "owner": true, "owns": true,
 	"exits": true, "held_by": true, "held-by": true, "worn": true,
-	"wielding": true, "items": true, "fudge_points": true,
+	"wielding": true, "items": true,
 }
 
 // Op names what an operation does. Three is the whole vocabulary: an entity
@@ -140,6 +151,16 @@ func (s *Store) Get(id string) *Entity {
 	return s.entities[id]
 }
 
+// Has reports whether this store holds narrative properties for an id. It is
+// what the rules library asks through World.AlsoTaken before minting an item id,
+// so the one shared keyspace is guarded from both sides: this package refuses to
+// create an entity the engine already holds, and the engine refuses to mint onto
+// an id this one already holds.
+func (s *Store) Has(id string) bool {
+	_, held := s.entities[id]
+	return held
+}
+
 // IDs lists every entity holding narrative properties, in the order they were
 // first written to.
 func (s *Store) IDs() []string {
@@ -198,11 +219,15 @@ func (s *Store) apply(op Operation, turn int, w World) []string {
 // with no relationship to the wound tiers or the conservation rules it will be
 // measured against later.
 func (s *Store) create(id string, op Operation, turn int, w World) []string {
-	if w != nil && w.HasEntity(id) {
-		return []string{fmt.Sprintf("world_update: %s already exists in the engine — use set to add narrative properties to it, not create", id)}
-	}
+	// This store is asked first. The engine's HasEntity now also reports what this
+	// store holds — that is how one shared keyspace is guarded from both sides —
+	// so asking the engine first would answer "already exists in the engine" about
+	// an entity that only exists here, and send the DM to the wrong call.
 	if _, held := s.entities[id]; held {
 		return []string{fmt.Sprintf("world_update: %s already exists — use set to change it", id)}
+	}
+	if w != nil && w.HasEntity(id) {
+		return []string{fmt.Sprintf("world_update: %s already exists in the engine — use set to add narrative properties to it, not create", id)}
 	}
 	if len(op.Properties) == 0 {
 		return []string{fmt.Sprintf("world_update: create %s needs properties, including a type", id)}
@@ -239,10 +264,14 @@ func (s *Store) set(id string, op Operation, turn int, w World) []string {
 // here: the thing itself is not this package's to destroy, and its narrative
 // half going away should not read like the entity did.
 func (s *Store) remove(id string, op Operation, w World) []string {
-	var notes []string
+	// Properties on a delete are refused rather than ignored, and the entity is
+	// left alone. delete takes none, so an operation carrying them is one whose
+	// intent is not clear — most likely a set written as a delete — and the safe
+	// reading of an unclear instruction to destroy something is to not destroy it.
 	if len(op.Properties) > 0 {
-		notes = append(notes, fmt.Sprintf("world_update: delete %s ignores the properties it was given — delete removes the whole entity", id))
+		return []string{fmt.Sprintf("world_update: delete %s was refused because it carried properties, and nothing was deleted. delete takes only an entity; if you meant to change it, send set instead", id)}
 	}
+	var notes []string
 	if w != nil && w.HasEntity(id) {
 		return append(notes, fmt.Sprintf("world_update: %s is an engine entity and cannot be deleted here — set its narrative properties instead, or use the typed tool that owns it", id))
 	}
@@ -268,13 +297,7 @@ func (s *Store) merge(e *Entity, props map[string]any) []string {
 	// Sorted so a batch that trips several refusals reports them the same way
 	// every run. Map order here would make the debug output nondeterministic for
 	// no reason.
-	names := make([]string, 0, len(props))
-	for name := range props {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(props)) {
 		key := strings.ToLower(strings.TrimSpace(name))
 		if key == "" {
 			notes = append(notes, fmt.Sprintf("world_update: %s: a property with no name was skipped", e.ID))

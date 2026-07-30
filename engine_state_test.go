@@ -162,6 +162,64 @@ func TestNarrativeOnlyEntitiesRender(t *testing.T) {
 	}
 }
 
+// One id means one entity, across both stores. The engine and the narrative
+// store share a single keyspace, and it has to be guarded from both sides: the
+// store refuses to create onto an id the engine holds, and minting refuses to
+// land an item on an id the store holds.
+//
+// The second half is the one that was missing. A DM creating the objective
+// `iron-key`, then a scene producing an item named "Iron Key", used to put two
+// different things under one id — and the render folded them into a single
+// record, which is precisely the two-truths defect this design exists to end.
+func TestOneIDMeansOneEntityAcrossBothStores(t *testing.T) {
+	s := newSession(rosterWorld(t))
+	if _, err := s.world.CreateLocation("Saloon", "Dust.", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if notes := s.narrative.Apply([]narrative.Operation{
+		{Op: narrative.OpCreate, Entity: "iron-key", Properties: map[string]any{
+			"type": "objective", "why": "opens the crypt",
+		}},
+	}, 1, s.world); len(notes) != 0 {
+		t.Fatalf("creating a narrative entity was refused: %v", notes)
+	}
+
+	item, err := s.world.GiveItem(s.world.Characters[s.world.Player], "Iron Key", "Cold, heavy.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.ID == "iron-key" {
+		t.Fatalf("the item was minted onto the objective's id: %q", item.ID)
+	}
+
+	// And both are in the block, separately, each saying what it is.
+	docEntities := entitiesDoc(t, s.engineState())
+	objective, held := docEntities["iron-key"].(map[string]any)
+	if !held {
+		t.Fatalf("the objective is gone from the block: %v", keysOf(docEntities))
+	}
+	if objective["type"] != "objective" {
+		t.Errorf("the objective was overwritten by the item: %#v", objective)
+	}
+	if _, held := docEntities[item.ID]; !held {
+		t.Errorf("the item %q is missing from the block: %v", item.ID, keysOf(docEntities))
+	}
+}
+
+// The other direction, which was already guarded: an entity the engine holds is
+// never minted here, because the rules library computes its defaults.
+func TestNarrativeCannotCreateOntoAnEngineID(t *testing.T) {
+	s := newSession(rosterWorld(t))
+
+	notes := s.narrative.Apply([]narrative.Operation{
+		{Op: narrative.OpCreate, Entity: "kyle-katarn", Properties: map[string]any{"type": "rumor"}},
+	}, 1, s.world)
+	if len(notes) != 1 || !strings.Contains(notes[0], "already exists in the engine") {
+		t.Fatalf("creating onto a character's id was not refused: %v", notes)
+	}
+}
+
 // The engine owns wounds and renders them itself. A DM that reports one anyway
 // must not get it into the narrative map, or the block starts disagreeing with
 // itself again — which is the defect this whole design was built to end.
@@ -392,5 +450,63 @@ func TestContextDumpShowsTheBlockTheDMActuallySaw(t *testing.T) {
 	}
 	if !strings.Contains(engineState, "WORLD STATE") {
 		t.Error("the dump has no block at all")
+	}
+}
+
+// recall is the only way the archive reaches the DM, and an entity lookup is the
+// call its own tool description tells the DM to prefer. It shipped unreachable
+// once — the schema advertised `entity`, the archive matched on it, and the
+// session in between never read the argument, so every entity lookup came back
+// "recall needs either a query or a turn number". Nothing failed, because nothing
+// exercised recall end to end. This does.
+func TestRecallAnswersByEntity(t *testing.T) {
+	s := newSession(rosterWorld(t))
+	s.archive.Record(archive.Turn{
+		Number:      4,
+		PlayerInput: "I ask the bandit who sent him",
+		Events: []archive.Event{{
+			Tool:     "world_update",
+			Entities: []string{"dust-bandit"},
+			Headline: "set dust-bandit mood: cornered",
+		}},
+		Prose: "He looks at the door, not at you.",
+	})
+	s.archive.Record(archive.Turn{
+		Number:      5,
+		PlayerInput: "I look out the window",
+		Events: []archive.Event{{
+			Tool:     "output_narration",
+			Entities: []string{"preacher-vane"},
+			Headline: "narration shown to player",
+		}},
+		Prose: "Rain, and nobody in the street.",
+	})
+
+	got := s.recall(call("r", "recall", `{"entity":"dust-bandit"}`))
+	if !strings.Contains(got, "turn 4") {
+		t.Errorf("an entity lookup did not find the turn that entity took part in:\n%s", got)
+	}
+	if strings.Contains(got, "turn 5") {
+		t.Errorf("an entity lookup returned a turn that entity had no part in:\n%s", got)
+	}
+
+	// The id is matched exactly, so a name is not an id — but an unrecognised id
+	// must say that it is unrecognised rather than that nothing happened.
+	unknown := s.recall(call("r", "recall", `{"entity":"Dust Bandit"}`))
+	if !strings.Contains(unknown, "check the id") {
+		t.Errorf("an unrecognised id was reported as proof nothing happened:\n%s", unknown)
+	}
+
+	// Case and stray space are normalised, since ids are minted lowercase.
+	if got := s.recall(call("r", "recall", `{"entity":" Dust-Bandit "}`)); !strings.Contains(got, "turn 4") {
+		t.Errorf("an id differing only in case did not resolve:\n%s", got)
+	}
+
+	// And a lookup naming nothing at all is still refused, now mentioning all three.
+	empty := s.recall(call("r", "recall", `{}`))
+	for _, want := range []string{"entity", "query", "turn"} {
+		if !strings.Contains(empty, want) {
+			t.Errorf("the refusal for an empty recall does not mention %q:\n%s", want, empty)
+		}
 	}
 }
