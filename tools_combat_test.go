@@ -234,27 +234,24 @@ func TestItemKindsDoNotCollide(t *testing.T) {
 
 // Combat is played, not created: the attack calls belong to the half of a turn
 // that still does not know how the blow landed, while outfitting a character
-// with gear is bookkeeping and happens in both flows.
+// with gear happens in the state block during play and through its own calls
+// while a character is being rolled up.
 func TestCombatToolsOfferedWherePlayed(t *testing.T) {
-	consult := toolNames(consultTools())
+	play := toolNames(queryTools())
 	for _, name := range []string{"opposed_attack", "unopposed_attack", "reload_weapon"} {
-		if !consult[name] {
-			t.Errorf("the consult phase does not offer %s", name)
+		if !play[name] {
+			t.Errorf("play does not offer %s", name)
 		}
 	}
 
-	creation, record := toolNames(characterCreationTools()), toolNames(recordTools())
+	creation := toolNames(characterCreationTools())
 	for _, name := range []string{"add_weapon", "add_armor", "equip_armor"} {
-		if !creation[name] || !record[name] {
-			t.Errorf("%s must be offered in both character creation and the record phase", name)
+		if !creation[name] {
+			t.Errorf("%s must be offered while a character is being outfitted", name)
 		}
 	}
-	// The attack tools would have nothing to fight over during creation, and
-	// nothing left to settle once the scene is on screen.
+	// The attack tools would have nothing to fight over during creation.
 	if creation["opposed_attack"] {
 		t.Error("character creation should not offer attacks")
-	}
-	if record["opposed_attack"] {
-		t.Error("the record phase should not be able to start a fight")
 	}
 }

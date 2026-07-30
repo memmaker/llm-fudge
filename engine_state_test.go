@@ -428,7 +428,7 @@ func TestContextDumpCarriesTheBlockAndTheArchive(t *testing.T) {
 // it will get next. Between turns those differ by exactly the turn being
 // debugged, which is the worst possible thing to be wrong about.
 func TestContextDumpShowsTheBlockTheDMActuallySaw(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "patrons", "scattered"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })

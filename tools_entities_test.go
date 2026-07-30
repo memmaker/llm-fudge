@@ -5,10 +5,12 @@ import (
 	"testing"
 )
 
-// The archive is an entity index now, and this is the whole of what builds it:
-// if a call's ids are not collected here, every turn it appears in becomes
-// unfindable by the entity it was about, which is the question recall is for.
-func TestCallEntitiesCollectsIDsFromArguments(t *testing.T) {
+// The archive is an entity index, and this is what builds the half of it that
+// comes from tool calls: if a call's ids are not collected here, every turn it
+// appears in becomes unfindable by the entity it was about, which is the
+// question recall is for. The other half comes from the state block, where the
+// applier already holds the ids and needs no list of argument names at all.
+func TestToolEntitiesCollectsIDsFromArguments(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		tool string
@@ -28,44 +30,28 @@ func TestCallEntitiesCollectsIDsFromArguments(t *testing.T) {
 			want: []string{"kyle-katarn", "dust-bandit"},
 		},
 		{
-			// The call the whole identity change was for: what moved, and both
-			// ends of the move.
-			name: "a move names the item and both holders",
-			tool: "move_item",
-			args: `{"item":"iron-key","from_character":"mira","to_location":"cellar","location_description":"on the top shelf"}`,
-			want: []string{"iron-key", "mira", "cellar"},
-		},
-		{
 			name: "an attack names attacker and defender",
 			tool: "opposed_attack",
 			args: `{"attacker_id":"dust-bandit","defender_id":"kyle-katarn"}`,
 			want: []string{"dust-bandit", "kyle-katarn"},
 		},
 		{
-			name: "a narration names its location",
-			tool: "output_narration",
-			args: `{"prose":"The room empties.","location":"saloon"}`,
-			want: []string{"saloon"},
+			// The id the DM minted is the id the archive indexes, which is why it
+			// is an argument now rather than something read off a reply.
+			name: "a new character names the id it was given and where it stands",
+			tool: "create_character",
+			args: `{"id":"dust-bandit","name":"Dust Bandit","species":"human","location":"saloon"}`,
+			want: []string{"dust-bandit", "saloon"},
 		},
 		{
-			// The ids the DM itself chose to talk about, which are the most worth
-			// indexing of the lot.
-			name: "world_update names every entity it writes to",
-			tool: "output_narration",
-			args: `{"prose":"They back away.","location":"saloon","world_update":[` +
-				`{"op":"set","entity":"mira","properties":{"mood":"wary"}},` +
-				`{"op":"create","entity":"rumor-crypt","properties":{"type":"rumor"}}]}`,
-			want: []string{"saloon", "mira", "rumor-crypt"},
-		},
-		{
-			name: "a new location names its parent",
-			tool: "create_location",
-			args: `{"name":"Cellar","description":"Damp.","parent":"saloon"}`,
-			want: []string{"saloon"},
+			name: "a reload names whose weapon it is",
+			tool: "reload_weapon",
+			args: `{"character_id":"kyle-katarn","weapon":"Peacemaker"}`,
+			want: []string{"kyle-katarn"},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := callEntities(call("x", c.tool, c.args))
+			got := toolEntities(call("x", c.tool, c.args))
 			if len(got) != len(c.want) {
 				t.Fatalf("collected %v, want %v", got, c.want)
 			}
@@ -84,22 +70,22 @@ func TestCallEntitiesCollectsIDsFromArguments(t *testing.T) {
 	}
 }
 
-// Prose is not an id. `where` describes a shelf, `name` is what a thing is
-// called, and indexing either would fill the index with words that address
+// Prose is not an id. `weapon` is what a thing is called and `name` is what it
+// is known as, and indexing either would fill the index with words that address
 // nothing — which is the document search this replaced.
-func TestCallEntitiesIgnoresProseArguments(t *testing.T) {
-	got := callEntities(call("x", "add_item", `{"name":"Brass Lantern","description":"Dented.","where":"on the bar","location":"saloon"}`))
+func TestToolEntitiesIgnoresProseArguments(t *testing.T) {
+	got := toolEntities(call("x", "create_character", `{"id":"barkeep","name":"Ezra Coles","species":"human"}`))
 
-	if len(got) != 1 || got[0] != "saloon" {
-		t.Errorf("collected %v, want just the location id", got)
+	if len(got) != 1 || got[0] != "barkeep" {
+		t.Errorf("collected %v, want just the id", got)
 	}
 }
 
 // One entity named twice in one call is one entity. The archive dedupes again
 // across a turn's events, but a duplicate here would make the per-event list
 // misleading on its own.
-func TestCallEntitiesDedupes(t *testing.T) {
-	got := callEntities(call("x", "move_item", `{"item":"iron-key","from_character":"mira","to_character":"mira"}`))
+func TestToolEntitiesDedupes(t *testing.T) {
+	got := toolEntities(call("x", "create_character", `{"id":"mira","character_id":"mira"}`))
 
 	var mira int
 	for _, id := range got {
@@ -112,31 +98,28 @@ func TestCallEntitiesDedupes(t *testing.T) {
 	}
 }
 
-// Ids are matched literally against what the engine minted, so they are folded
-// to lower case and trimmed — the same normalisation the narrative store does.
-func TestCallEntitiesNormalises(t *testing.T) {
-	got := callEntities(call("x", "unopposed_check", `{"actor_id":"  Kyle-Katarn "}`))
+// Ids are matched literally against what the engine holds, so they are folded to
+// lower case and trimmed — the same normalisation the narrative store does.
+func TestToolEntitiesNormalises(t *testing.T) {
+	got := toolEntities(call("x", "unopposed_check", `{"actor_id":"  Kyle-Katarn "}`))
 
 	if len(got) != 1 || got[0] != "kyle-katarn" {
 		t.Errorf("collected %v, want [kyle-katarn]", got)
 	}
 }
 
-// This runs while a turn is being recorded, after the player has already read
-// the prose. A record thinner than it could be is a far smaller problem than a
-// turn that fails over its own bookkeeping.
-func TestCallEntitiesSurvivesMalformedArguments(t *testing.T) {
+// A record thinner than it could be is a far smaller problem than a turn that
+// fails over its own index.
+func TestToolEntitiesSurvivesMalformedArguments(t *testing.T) {
 	for _, args := range []string{
 		``,
 		`not json at all`,
 		`{"actor_id":`,
 		`{"actor_id":42}`,
-		`{"world_update":"a string where the array should be"}`,
-		`{"world_update":[null,{"entity":7},{"op":"set"}]}`,
 	} {
 		t.Run(strings.TrimSpace(args), func(t *testing.T) {
 			// The assertion is that it returns at all.
-			callEntities(call("x", "output_narration", args))
+			toolEntities(call("x", "unopposed_check", args))
 		})
 	}
 }

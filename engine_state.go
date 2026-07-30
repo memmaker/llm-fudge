@@ -75,9 +75,10 @@ func (s *session) engineState() string {
 	b.WriteString("=== WORLD STATE ===\n")
 	b.WriteString("This is the record. It outranks your memory and anything the prose implied.\n")
 	b.WriteString("Every entity that exists is here, once, under the id every call must name.\n")
-	b.WriteString("Top-level fields are the engine's and are current. `narrative` is yours, written\n")
-	b.WriteString("through world_update, and @tN marks the turn it was last set — recall that turn\n")
-	b.WriteString("to see how it got that way. A thing that is not here does not exist.\n\n")
+	b.WriteString("Top-level fields are the engine's and are current. `narrative` is yours, and @tN\n")
+	b.WriteString("marks the turn it was last set — recall that turn to see how it got that way.\n")
+	b.WriteString("Write it all back the same way, in the <state> block under your prose. A thing\n")
+	b.WriteString("that is not here does not exist.\n\n")
 	b.WriteString(entities(s.world, s.narrative))
 
 	b.WriteString("\n\n=== TIMELINE — the last ")
@@ -106,7 +107,7 @@ func (s *session) engineState() string {
 // the DM would have to re-find everything each time it read one.
 func entities(w *rules.World, n *narrative.Store) string {
 	if len(w.Characters) == 0 && len(w.Locations) == 0 && len(n.IDs()) == 0 {
-		return "entities: {}  # nothing exists yet — create a location before you narrate"
+		return "entities: {}  # nothing exists yet — your first <state> block creates the world"
 	}
 
 	var b strings.Builder

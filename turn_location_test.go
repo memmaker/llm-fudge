@@ -9,70 +9,24 @@ import (
 	"github.com/memmaker/gollum/llm"
 )
 
-// narrationAt is a narration that says where it happened, which every narration
-// must.
-func narrationAt(location string) string {
-	return `{"prose":"The smith looks up from the anvil.","location":"` + location + `","world_update":` + setOp("forge", "busy", "true") + `}`
+// movingTo is a turn's reply that walks the player somewhere: the scene follows
+// their own position, so saying where they are is the whole of saying where the
+// scene is.
+func movingTo(location string) llm.Response {
+	return narration("entities:\n  catnip:\n    location: " + location)
 }
 
-// The location is how the engine learns where the player is standing, so a
-// narration that names a place the engine does not hold is refused before the
-// player reads a word of it — and the refusal names the places that do exist,
-// so the retry is a correction rather than a second guess.
-func TestNarrationAtAnUnknownLocationIsRefused(t *testing.T) {
-	w := testWorld()
-	w.CreateLocation("Forge", "Hot, dark, ringing.", "")
-	s := newSession(w)
-	messages := gameStart()
-
-	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if round == 0 {
-			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				call("n", "output_narration", narrationAt("the-back-room")),
-			}}}
-		}
-		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			call("n", "output_narration", narrationAt("forge")),
-		}}}
-	}}
-
-	out := capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
-
-	if m.rounds != 2 {
-		t.Errorf("rounds = %d, want the bad location to cost one and the retry to land", m.rounds)
-	}
-	if strings.Count(out, "The smith looks up") != 1 {
-		t.Errorf("the player should have read the scene exactly once:\n%s", out)
-	}
-	// The correction has to reach the DM, listing what it could have said.
-	var refusal string
-	for _, msg := range m.seen[1] {
-		if msg.Role == llm.RoleTool && strings.Contains(msg.Content, "location not found") {
-			refusal = msg.Content
-		}
-	}
-	if refusal == "" {
-		t.Fatalf("the DM was never told the location was wrong: %+v", m.seen[1])
-	}
-	if !strings.Contains(refusal, "forge") {
-		t.Errorf("refusal = %q, want it to list the locations that exist", refusal)
-	}
-}
-
-// Position is the engine's now, and this is the call that maintains it.
-func TestNarrationMovesThePlayerToTheScene(t *testing.T) {
+// Position is the engine's, and the block is what maintains it. There is no
+// separate scene field to keep in step — the scene is wherever the player
+// stands.
+func TestDeclaringThePlayersLocationMovesTheScene(t *testing.T) {
 	w := testWorld()
 	w.CreateCharacter("catnip", "Catnip", nil, nil)
-	w.CreateLocation("Forge", "Hot, dark, ringing.", "")
 	w.CreateLocation("Alley", "Wet brick.", "")
 	s := newSession(w)
 	messages := gameStart()
 
-	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			call("n", "output_narration", narrationAt("alley")),
-		}}}
-	}}
+	m := &model{reply: func(round int, tools []llm.Tool) llm.Response { return movingTo("alley") }}
 	capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
 
 	if got := w.Characters["catnip"].Location; got != "alley" {
@@ -83,27 +37,60 @@ func TestNarrationMovesThePlayerToTheScene(t *testing.T) {
 	}
 }
 
-// A turn that walks somewhere new creates the place and narrates it in one
-// response. That only works if the engine runs the other calls before it reads
-// the narration, whatever order the model emitted them in — so this response
-// emits them backwards.
-func TestALocationCreatedInTheSameResponseCanBeNarratedIn(t *testing.T) {
+// A place the engine does not hold is refused, and the refusal names the places
+// that do exist — so the correction round is a correction rather than a second
+// guess. The player still read the scene: the prose was never at risk.
+func TestMovingToAnUnknownLocationIsRefusedWithTheOnesThatExist(t *testing.T) {
 	w := testWorld()
 	w.CreateCharacter("catnip", "Catnip", nil, nil)
-	w.CreateLocation("Forge", "Hot, dark, ringing.", "")
+	s := newSession(w)
+	messages := gameStart()
+
+	m := &model{
+		reply:   func(round int, tools []llm.Tool) llm.Response { return movingTo("the-back-room") },
+		correct: func(round int, tools []llm.Tool) llm.Response { return emptyBlock() },
+	}
+	out := capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
+
+	if !strings.Contains(out, "The smith looks up") {
+		t.Errorf("the player did not read the scene, which was never in doubt:\n%s", out)
+	}
+	if m.fixes != 1 {
+		t.Fatalf("the refusal bought %d correction rounds, want one", m.fixes)
+	}
+	demand := m.seen[len(m.seen)-1]
+	refusal := demand[len(demand)-1].Content
+	if !strings.Contains(refusal, "forge") {
+		t.Errorf("the demand does not list the locations that exist:\n%s", refusal)
+	}
+}
+
+// A turn that walks somewhere new creates the place and moves into it in one
+// block, in whichever order they were written. That is the point of resolving
+// every new id before anything is applied.
+func TestALocationCreatedInTheSameBlockCanBeMovedInto(t *testing.T) {
+	w := testWorld()
+	w.CreateCharacter("catnip", "Catnip", nil, nil)
 	s := newSession(w)
 	messages := gameStart()
 
 	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			call("n", "output_narration", narrationAt("back-room")),
-			call("c", "create_location", `{"name":"Back Room","description":"Bare boards and a cot.","parent":"forge"}`),
-		}}}
+		return narration(`entities:
+  catnip:
+    location: back-room
+  back-room:
+    type: location
+    name: Back Room
+    desc: Bare boards and a cot.
+    parent: forge`)
 	}}
 	out := capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
 
 	if m.rounds != 1 {
-		t.Errorf("rounds = %d, want one: creating and narrating belong in the same response", m.rounds)
+		t.Errorf("rounds = %d, want one: creating and moving belong in the same block", m.rounds)
+	}
+	if m.fixes != 0 {
+		t.Errorf("the block cost %d correction rounds, want none", m.fixes)
 	}
 	if !strings.Contains(out, "The smith looks up") {
 		t.Errorf("the player never read the scene:\n%s", out)
@@ -113,79 +100,36 @@ func TestALocationCreatedInTheSameResponseCanBeNarratedIn(t *testing.T) {
 	}
 }
 
-// The last round has the engine taken off the table, but not create_location:
-// a turn whose scene has moved somewhere new would otherwise have to name a
-// slug that does not exist, be refused, and be lost for want of a call it was
-// not allowed to make.
-func TestTheLastRoundCanStillCreateTheSceneItNarrates(t *testing.T) {
+// A turn that says nothing about where anybody is leaves them where they were.
+// This is the ordinary case — most turns do not move the scene — and it is why
+// the position no longer has to be restated every single turn.
+func TestATurnThatSaysNothingLeavesThePlayerWhereTheyWere(t *testing.T) {
 	w := testWorld()
 	w.CreateCharacter("catnip", "Catnip", nil, nil)
+	w.Characters["catnip"].Location = "forge"
 	s := newSession(w)
 	messages := gameStart()
 
-	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if !onlyNarration(tools) {
-			return stalling()
-		}
-		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			call("c", "create_location", `{"name":"Back Room","description":"Bare boards and a cot."}`),
-			call("n", "output_narration", narrationAt("back-room")),
-		}}}
-	}}
-	out := capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
+	m := &model{reply: func(round int, tools []llm.Tool) llm.Response { return narration("") }}
+	capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
 
-	if !narrated(s) {
-		t.Fatalf("the turn was lost on its last round:\n%s", out)
+	if got := w.Scene(); got != "forge" {
+		t.Errorf("scene = %q, want the turn to have left it alone", got)
 	}
-	if got := w.Characters["catnip"].Location; got != "back-room" {
-		t.Errorf("player is at %q, want back-room", got)
-	}
-	// Nothing that resolves anything came back to the table.
-	for _, tool := range m.tools[maxTurnRequests-1] {
-		switch tool.Function.Name {
-		case "output_narration", "create_location":
-		default:
-			t.Errorf("the last round still offered %s", tool.Function.Name)
-		}
-	}
-}
-
-// A narration with no location at all is as unusable as one with no prose.
-func TestNarrationWithoutALocationIsRefused(t *testing.T) {
-	w := testWorld()
-	w.CreateLocation("Forge", "Hot, dark, ringing.", "")
-	s := newSession(w)
-	messages := gameStart()
-
-	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if round == 0 {
-			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				call("n", "output_narration", `{"prose":"The smith looks up.","world_update":`+setOp("forge", "busy", "true")+`}`),
-			}}}
-		}
-		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-			call("n", "output_narration", narrationAt("forge")),
-		}}}
-	}}
-	out := capture(t, func() { s.processGameTurn(m.chat, &messages, playerLine) })
-
-	if m.rounds != 2 {
-		t.Errorf("rounds = %d, want the locationless narration refused and retried", m.rounds)
-	}
-	if strings.Count(out, "The smith looks up") != 1 {
-		t.Errorf("the player should have read one scene:\n%s", out)
+	if m.fixes != 0 {
+		t.Errorf("a turn with no block cost %d correction rounds", m.fixes)
 	}
 }
 
 // The opening turn has no location to name yet, so the briefing has to ask for
-// one to be created. If it stopped saying so, turn one would be refused by
-// construction and every game would open on a wasted round.
-func TestTheOpeningBriefingAsksForALocation(t *testing.T) {
+// one. If it stopped saying so, turn one would open with the player standing
+// nowhere.
+func TestTheOpeningBriefingAsksForTheOpeningBlock(t *testing.T) {
 	w := testWorld()
 	w.AdventureContent = "The party arrives in Dryfall."
 	got := openingBriefing(w)
 
-	for _, want := range []string{"create_location", "location"} {
+	for _, want := range []string{"<state>", "creates the place", "full baseline"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the briefing never mentions %q:\n%s", want, got)
 		}

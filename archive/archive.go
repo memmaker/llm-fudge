@@ -41,7 +41,8 @@ const defaultLimit = 3
 // is the better half of the same guarantee.
 const maxLookupTurns = 20
 
-// Event is one tool call or world_update operation as the engine ran it: what
+// Event is one change as the engine ran it — a tool call, an event tag, or a
+// line of a state block expanded into the operation it turned out to be: what
 // ran, which entities it named, and the engine's own one-line account of the
 // result.
 //

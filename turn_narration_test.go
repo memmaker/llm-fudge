@@ -14,92 +14,67 @@ import (
 )
 
 // model is a scripted DM. It records the tool set it was offered each round, so
-// a test can see the moment the turn stopped asking for resolution and started
-// demanding the narration.
+// a test can see the moment the turn stopped offering the engine and started
+// demanding the scene.
 //
-// The two halves of a turn are scripted separately, because they are asked
-// different questions: reply answers the resolution rounds, record answers the
-// bookkeeping round that follows the prose. Most tests here are about the first
-// half and leave record nil, which means "the prose moved nothing" — the phase
-// closes on its first round and the turn ends.
+// The correction round is scripted separately, because it is asked a different
+// question: reply answers the rounds that resolve and narrate, correct answers
+// the round that only ever follows a refused state block. Most tests leave
+// correct nil, which is the ordinary case — a block the engine took whole costs
+// no extra round at all.
 type model struct {
-	reply  func(round int, tools []llm.Tool) llm.Response
-	record func(round int, tools []llm.Tool) llm.Response
-	rounds int
-	books  int
-	tools  [][]llm.Tool
-	seen   [][]llm.Message
+	reply   func(round int, tools []llm.Tool) llm.Response
+	correct func(round int, tools []llm.Tool) llm.Response
+	rounds  int
+	fixes   int
+	tools   [][]llm.Tool
+	seen    [][]llm.Message
 }
 
 func (m *model) chat(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	m.tools = append(m.tools, tools)
 	m.seen = append(m.seen, append([]llm.Message(nil), messages...))
-	if bookkeeping(tools) {
-		m.books++
-		if m.record == nil {
-			return nothingToRecord(), nil
+	if correcting(messages) {
+		m.fixes++
+		if m.correct == nil {
+			return emptyBlock(), nil
 		}
-		return m.record(m.books-1, tools), nil
+		return m.correct(m.fixes-1, tools), nil
 	}
 	m.rounds++
 	return m.reply(m.rounds-1, tools), nil
 }
 
-func narrationOffered(tools []llm.Tool) bool {
-	for _, tool := range tools {
-		if tool.Function.Name == "output_narration" {
-			return true
-		}
-	}
-	return false
+// correcting reports the round that runs after the engine refused part of a
+// block. It is told apart by the demand that opens it, which is the one message
+// in a turn that says the scene is over.
+func correcting(messages []llm.Message) bool {
+	last := messages[len(messages)-1]
+	return last.Role == llm.RoleUser && strings.Contains(last.Content, "the scene is closed")
 }
 
-// bookkeeping reports the tool set of the round that runs after the player has
-// read the scene. It is told apart by what is missing: every resolution round is
-// offered output_narration, and the bookkeeping round never is — there is
-// nothing left to say to the player by then.
-func bookkeeping(tools []llm.Tool) bool {
-	return len(tools) > 0 && !narrationOffered(tools)
+// emptyBlock is what a DM answers when it has nothing left to correct.
+func emptyBlock() llm.Response {
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "<state>\nentities: {}\n</state>"}}
 }
 
-// nothingToRecord is what a DM answers when its prose moved nothing the engine
-// does not already hold: no calls, one line saying so.
-func nothingToRecord() llm.Response {
-	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "Nothing moved that the engine does not already hold."}}
-}
-
-// onlyNarration reports the tool set of a turn's last round: the narration, and
-// create_location beside it, which is there so a scene that moved somewhere new
-// can still be narrated. Nothing that resolves anything.
-func onlyNarration(tools []llm.Tool) bool {
-	if !narrationOffered(tools) {
-		return false
-	}
-	for _, tool := range tools {
-		switch tool.Function.Name {
-		case "output_narration", "create_location":
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// setOp builds the one world_update operation most of these tests need: a
-// narrative property set on an entity that already exists. The entity has to
-// exist — a set against nothing is refused — so it is `forge`, which testWorld
+// setState builds the state block most of these tests need: one narrative
+// property on an entity that already exists. The entity has to exist — a
+// property set against nothing is refused — so it is `forge`, which testWorld
 // opens with.
-func setOp(entity, key, value string) string {
-	return `[{"op":"set","entity":"` + entity + `","properties":{"` + key + `":"` + value + `"}}]`
+func setState(entity, key, value string) string {
+	return "entities:\n  " + entity + ":\n    narrative: {" + key + ": " + value + "}"
 }
 
-func narrationCall(update string) llm.Response {
-	if update == "" {
-		update = "[]"
+// narration is a turn's closing reply: prose for the player, and the block under
+// it. The prose is the message itself, which is the whole point — there is no
+// call to unwrap and no argument to escape.
+func narration(state string) llm.Response {
+	body := "The smith looks up from the anvil."
+	if state != "" {
+		body += "\n\n<state>\n" + state + "\n</state>"
 	}
-	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","location":"forge","world_update":`+update+`}`),
-	}}}
+	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: body}}
 }
 
 // stalling is a response that resolves something and narrates nothing — the shape
@@ -177,8 +152,8 @@ func capture(t *testing.T, run func()) string {
 // on a narration rather than on the budget running out.
 func TestLastCallIsSpentOnTheNarration(t *testing.T) {
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if onlyNarration(tools) {
-			return narrationCall(setOp("forge", "anvil", "cooling"))
+		if len(tools) == 0 {
+			return narration(setState("forge", "anvil", "cooling"))
 		}
 		return stalling()
 	}}
@@ -197,14 +172,14 @@ func TestLastCallIsSpentOnTheNarration(t *testing.T) {
 			t.Errorf("call %d was denied the toolkit while the turn could still resolve", i+1)
 		}
 	}
-	if !onlyNarration(dm.tools[maxTurnRequests-1]) {
-		t.Error("the last call still offered tools other than the narration")
+	if len(dm.tools[maxTurnRequests-1]) != 0 {
+		t.Error("the last call still offered tools the turn could resolve with")
 	}
 
 	// The demand is made in words, not only by withdrawing the tools: a DM whose
 	// calls silently vanish reads that as a fault and retries them.
 	forced := dm.seen[maxTurnRequests-1]
-	if !strings.Contains(forced[len(forced)-1].Content, "output_narration") {
+	if !strings.Contains(forced[len(forced)-1].Content, "Stop resolving and narrate") {
 		t.Error("the DM was not told why its tools were gone")
 	}
 }
@@ -216,7 +191,7 @@ func TestTurnWritesTheNarrationToFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		return narrationCall(setOp("forge", "anvil", "cooling"))
+		return narration(setState("forge", "anvil", "cooling"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -265,7 +240,7 @@ func TestHiccupIsRetriedWhileBudgetRemains(t *testing.T) {
 		if attempts == 1 {
 			return llm.Response{}, io.ErrUnexpectedEOF
 		}
-		return narrationCall(setOp("forge", "door", "open")), nil
+		return narration(setState("forge", "door", "open")), nil
 	}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -315,29 +290,32 @@ func TestRetryDelayBacksOffToACeiling(t *testing.T) {
 
 // Prose written outside the call reaches nobody. The DM is told so and asked
 // again, and the player is shown the turn only once it arrives through
-// output_narration.
-func TestProseWrittenOutsideTheCallIsNotATurn(t *testing.T) {
+// The inversion this design turns on: prose written as the body of the reply is
+// the turn. There is no call to route it through and nothing to unwrap, so a
+// scene reaches the player exactly as it was written — and the blocks under it
+// never do.
+func TestProseInTheBodyIsTheTurn(t *testing.T) {
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if round == 0 {
-			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "The smith sets down his hammer."}}
-		}
-		return narrationCall(setOp("forge", "anvil", "cooling"))
+		return narration(setState("forge", "anvil", "cooling"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
 	out := capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-	if strings.Contains(out, "sets down his hammer") {
-		t.Error("text written outside the call was shown to the player")
+	if dm.rounds != 1 {
+		t.Errorf("the turn made %d calls, want one", dm.rounds)
 	}
-	if !strings.Contains(out, "looks up from the anvil") {
-		t.Errorf("the narration never reached the player: %q", out)
+	if !strings.Contains(out, "The smith looks up from the anvil.") {
+		t.Errorf("the prose never reached the player:\n%s", out)
 	}
-	// The correction goes back to the DM rather than the same context a second
-	// time: a request that has not changed has no reason to answer differently.
-	second := dm.seen[1]
-	if !strings.Contains(second[len(second)-1].Content, "output_narration") {
-		t.Error("the DM was not told its reply went nowhere")
+	// And the machinery under it did not.
+	for _, leaked := range []string{"<state>", "entities:", "anvil: cooling"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("the player was shown %q:\n%s", leaked, out)
+		}
+	}
+	if !narrated(s) {
+		t.Error("the turn was not archived as narrated")
 	}
 }
 
@@ -348,7 +326,7 @@ func TestEmptyRepliesAreAnsweredAndCharged(t *testing.T) {
 		if round == 0 {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant}}
 		}
-		return narrationCall(setOp("forge", "door", "open"))
+		return narration(setState("forge", "door", "open"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -383,7 +361,7 @@ func blockOf(t *testing.T, request []llm.Message) (string, int) {
 // The block reaches the DM as a system message pinned directly after the
 // briefing, with the turn's live messages below it.
 func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -406,7 +384,7 @@ func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
 // on every request of a turn, and tell the DM nothing the tool results below it
 // are not already telling it.
 func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -422,31 +400,35 @@ func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
 	}
 }
 
-// The bookkeeping round is the exception, and has to be: the turn's own calls
-// have moved the roster since the resolution rounds read it, and this is the
-// round that names items and characters off it.
-func TestTheBookkeepingRoundGetsAFreshBlock(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
+// A correction round is the exception, and has to be: the turn's own block has
+// moved the roster since the round that wrote it read one, and the correction is
+// written against what the engine holds now.
+func TestACorrectionRoundGetsAFreshBlock(t *testing.T) {
+	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
+		// `parlour` does not exist, so the block is refused in part and the
+		// turn buys itself one round to put it right.
+		return narration(setState("forge", "patrons", "scattered") + "\n  parlour:\n    narrative: {lit: true}")
+	}}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-	if dm.books != 1 {
-		t.Fatalf("the turn ran %d bookkeeping rounds, want exactly one", dm.books)
+	if dm.fixes != 1 {
+		t.Fatalf("the turn ran %d correction rounds, want exactly one", dm.fixes)
 	}
 	resolving, _ := blockOf(t, dm.seen[0])
-	recording, _ := blockOf(t, dm.seen[len(dm.seen)-1])
-	if recording == resolving {
-		t.Error("the bookkeeping round read the block the turn started with")
+	correcting, _ := blockOf(t, dm.seen[len(dm.seen)-1])
+	if correcting == resolving {
+		t.Error("the correction round read the block the turn started with")
 	}
-	if !strings.Contains(recording, "patrons: scattered") {
-		t.Errorf("the bookkeeping block does not carry what the narration just established:\n%s", recording)
+	if !strings.Contains(correcting, "patrons: scattered") {
+		t.Errorf("the correction block does not carry what the turn already accepted:\n%s", correcting)
 	}
 }
 
 // Between turns it is rebuilt, and that is where last turn's report shows up.
 func TestBlockIsRebuiltBetweenTurns(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "patrons", "scattered"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -476,8 +458,8 @@ func TestRecallIsOfferedDuringPlayButNotOnTheLastRound(t *testing.T) {
 	}
 
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if onlyNarration(tools) {
-			return narrationCall(setOp("forge", "door", "open"))
+		if len(tools) == 0 {
+			return narration(setState("forge", "door", "open"))
 		}
 		return stalling()
 	}}
@@ -502,7 +484,7 @@ func TestRecallCostsARoundOfTheBudget(t *testing.T) {
 				call("r", "recall", `{"query":"amulet"}`),
 			}}}
 		}
-		return narrationCall(setOp("forge", "door", "open"))
+		return narration(setState("forge", "door", "open"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())

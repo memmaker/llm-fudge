@@ -13,14 +13,14 @@ func call(id, name, arguments string) llm.ToolCall {
 
 // resolvingThenNarrating is the ordinary shape of a turn: one round that settles
 // what happened, one that tells the player about it.
-func resolvingThenNarrating(update string) func(round int, tools []llm.Tool) llm.Response {
+func resolvingThenNarrating(state string) func(round int, tools []llm.Tool) llm.Response {
 	return func(round int, tools []llm.Tool) llm.Response {
 		if round == 0 {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				call("t", "roll_on_table", `{"table":"weather"}`),
 			}}}
 		}
-		return narrationCall(update)
+		return narration(state)
 	}
 }
 
@@ -29,7 +29,7 @@ func resolvingThenNarrating(update string) func(round int, tools []llm.Tool) llm
 // narrative store, the archive — and a fourth copy in the messages is the one
 // that used to grow without bound.
 func TestAFinishedTurnLeavesNothingBehind(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "anvil", "cooling"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "anvil", "cooling"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	before := len(messages)
@@ -48,7 +48,7 @@ func TestAFinishedTurnLeavesNothingBehind(t *testing.T) {
 // Ten turns cost what one turn costs. This is the growth curve the design set
 // out to flatten, asserted directly rather than inferred from the parts.
 func TestHistoryDoesNotGrowWithTurns(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	before := len(messages)
@@ -67,7 +67,7 @@ func TestHistoryDoesNotGrowWithTurns(t *testing.T) {
 // Nothing survives in the messages, so what the DM knows next turn is whatever
 // the block says. Everything the turn established has to be in it.
 func TestWhatTheTurnEstablishedReachesTheNextBlock(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "mood", "wary"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "mood", "wary"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -88,7 +88,7 @@ func TestWhatTheTurnEstablishedReachesTheNextBlock(t *testing.T) {
 // is in the record whether or not the DM chose to write it down. This is why the
 // archive does not depend on the DM's diligence the way the narrative store does.
 func TestTheEngineRecordsItsOwnEvents(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -135,7 +135,7 @@ func TestAFailedTurnIsArchivedButNotShown(t *testing.T) {
 // The prose the player read is the one thing that used to be thrown away
 // outright. It is kept now, out of context and behind a lookup.
 func TestProseIsRecoverableAfterTheTurn(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })

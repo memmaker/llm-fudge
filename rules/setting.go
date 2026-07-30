@@ -13,6 +13,17 @@ import (
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
+// idPattern is what an id the DM minted has to look like. It is stricter than
+// slugPattern, which only ever had to accept what slug() produced: an id the
+// engine derives cannot start or end with a hyphen or double one up, and an id
+// the DM writes has to be held to the shape it is reading everywhere else.
+var idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// ValidID reports whether an id the DM proposed is well formed. The engine no
+// longer mints ids for entities the DM introduces — it validates them, and this
+// is the syntactic half of that.
+func ValidID(id string) bool { return idPattern.MatchString(id) }
+
 type Attribute struct {
 	Slug        string
 	DisplayName string

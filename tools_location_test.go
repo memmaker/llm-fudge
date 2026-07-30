@@ -16,34 +16,6 @@ func placedWorld(t *testing.T) *rules.World {
 	return w
 }
 
-// The three calls that hold the map together have to be on the table during
-// play, and nowhere else: there is no world to place anything in while a
-// character is still being rolled up. Which half of a turn they belong to is
-// what the split decides — minting a place is a precondition of narrating in it,
-// while moving a thing or a person is the prose being written down.
-func TestMapToolsAreOfferedDuringPlayOnly(t *testing.T) {
-	consult := toolNames(consultTools())
-	record := toolNames(recordTools())
-	atCreation := toolNames(characterCreationTools())
-
-	for _, name := range []string{"create_location", "move_item", "move_character"} {
-		if !consult[name] && !record[name] {
-			t.Errorf("neither half of a turn offers %s", name)
-		}
-		if atCreation[name] {
-			t.Errorf("character creation should not offer %s", name)
-		}
-	}
-	if !consult["create_location"] {
-		t.Error("a scene cannot be narrated somewhere the consult phase was not allowed to create")
-	}
-	for _, name := range []string{"move_item", "move_character"} {
-		if consult[name] {
-			t.Errorf("%s records what the prose said and must wait for it", name)
-		}
-	}
-}
-
 // An item can be created straight onto the ground: a crate already in the
 // cellar, gear on a body, a sword in a stone.
 func TestAddItemCanCreateAtALocation(t *testing.T) {
@@ -67,28 +39,6 @@ func TestAddItemCanCreateAtALocation(t *testing.T) {
 	}
 }
 
-// A weapon created on the ground keeps its ratings, so it can be picked up and
-// swung without the DM restating what it hits for.
-func TestAddWeaponAtALocationKeepsItsRatings(t *testing.T) {
-	w := placedWorld(t)
-
-	if _, err := executeAction(w, inventoryCall("add_weapon", `{"location":"cellar","location_description":"propped by the casks","name":"Cavalry Sabre","description":"Notched.","damage":2}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := executeAction(w, inventoryCall("move_item", `{"item":"Cavalry Sabre","to_character":"kyle-katarn"}`)); err != nil {
-		t.Fatal(err)
-	}
-
-	pc, _ := w.Character("kyle-katarn")
-	sabre, err := pc.WeaponItem("Cavalry Sabre")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sabre.Weapon.Damage != 2 {
-		t.Errorf("damage = %d, want the rating it was created with", sabre.Weapon.Damage)
-	}
-}
-
 // A location destination needs its spot, or the engine would be recording an
 // item as lying nowhere in particular.
 func TestAddItemAtALocationNeedsASpot(t *testing.T) {
@@ -107,25 +57,27 @@ func TestItemToolsRefuseTwoHolders(t *testing.T) {
 	}
 }
 
-// The whole round trip the design is for: a knife is thrown, stays on the
-// sheet until the DM says where it went, is moved there, and comes back with
-// its ratings when it is retrieved.
+// The whole round trip the design is for, now stated rather than called for: a
+// knife is thrown, is given the place the prose left it, and comes back with its
+// ratings when it is picked up again. Two declarations, and the engine works out
+// that both of them are moves.
 func TestAThrownKnifeSurvivesTheRoundTrip(t *testing.T) {
-	w := placedWorld(t)
-	pc, _ := w.Character("kyle-katarn")
-	w.GiveWeapon(pc, "Throwing Knife", "Balanced for the point.", 1, rules.Weapon{Damage: 1})
+	s := newSession(placedWorld(t))
+	pc, _ := s.world.Character("kyle-katarn")
+	s.world.GiveWeapon(pc, "Throwing Knife", "Balanced for the point.", 1, rules.Weapon{Damage: 1})
 
-	if _, err := executeAction(w, inventoryCall("move_item", `{"item":"Throwing Knife","to_location":"cellar","location_description":"quivering in the door frame"}`)); err != nil {
-		t.Fatal(err)
-	}
+	apply(t, s, `
+entities:
+  throwing-knife:
+    location: cellar
+    spot: quivering in the door frame
+`)
 	if _, held := pc.Inventory["throwing-knife"]; held {
 		t.Error("the knife should have left the sheet")
 	}
 
-	got, err := executeAction(w, inventoryCall("move_item", `{"item":"Throwing Knife","to_character":"kyle-katarn"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	apply(t, s, "entities:\n  throwing-knife:\n    location: kyle-katarn\n")
+
 	knife, err := pc.WeaponItem("Throwing Knife")
 	if err != nil {
 		t.Fatal(err)
@@ -133,68 +85,52 @@ func TestAThrownKnifeSurvivesTheRoundTrip(t *testing.T) {
 	if knife.Weapon.Damage != 1 || knife.Description != "Balanced for the point." {
 		t.Errorf("the knife came back changed: %+v", knife)
 	}
-	// The receiving sheet rides on the result, as every mutating call's does.
-	if !strings.Contains(got, "kyle-katarn:") {
-		t.Errorf("result = %q, want the receiving character's state", got)
+	// A carried thing lies nowhere, so the spot it had on the floor is gone.
+	if knife.Where != "" {
+		t.Errorf("the knife is still recorded as lying %q", knife.Where)
 	}
 }
 
-// remove_item destroys. It must not be reachable as a way of moving something,
-// which is why its own description says so — but the location half has to work
-// too, for a crate that burns.
-func TestRemoveItemDestroysAtALocation(t *testing.T) {
-	w := placedWorld(t)
-	if _, err := executeAction(w, inventoryCall("add_item", `{"location":"cellar","location_description":"by the door","name":"Crate","description":"Pine, banded."}`)); err != nil {
-		t.Fatal(err)
-	}
+// A weapon created on the ground keeps its ratings, so it can be picked up and
+// swung without the DM restating what it hits for.
+func TestAWeaponCreatedOnTheGroundKeepsItsRatings(t *testing.T) {
+	s := newSession(placedWorld(t))
 
-	if _, err := executeAction(w, inventoryCall("remove_item", `{"location":"cellar","location_description":"by the door","name":"Crate"}`)); err != nil {
-		t.Fatal(err)
-	}
-	if len(w.Locations["cellar"].Items) != 0 {
-		t.Error("the crate survived being destroyed")
-	}
-}
+	apply(t, s, `
+entities:
+  cavalry-sabre:
+    type: item
+    name: Cavalry Sabre
+    desc: Notched.
+    location: cellar
+    spot: propped by the casks
+    weapon: {damage: 2}
+`)
+	apply(t, s, "entities:\n  cavalry-sabre:\n    location: kyle-katarn\n")
 
-func TestMoveCharacterPutsAnNPCSomewhere(t *testing.T) {
-	w := placedWorld(t)
-	w.CreateCharacter("mira", "Mira", nil, nil)
-
-	got, err := executeAction(w, inventoryCall("move_character", `{"character_id":"mira","location":"cellar"}`))
+	pc, _ := s.world.Character("kyle-katarn")
+	sabre, err := pc.WeaponItem("Cavalry Sabre")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.Characters["mira"].Location != "cellar" {
-		t.Errorf("mira is at %q, want cellar", w.Characters["mira"].Location)
-	}
-	if !strings.Contains(got, "cellar") {
-		t.Errorf("result = %q, want it to state where they are now", got)
+	if sabre.Weapon.Damage != 2 {
+		t.Errorf("damage = %d, want the rating it was created with", sabre.Weapon.Damage)
 	}
 }
 
-func TestMoveCharacterRefusesAnUnknownLocation(t *testing.T) {
-	w := placedWorld(t)
-	w.CreateCharacter("mira", "Mira", nil, nil)
+// Moving somebody is a declaration like any other, and an unknown destination is
+// refused with the places that do exist.
+func TestDeclaringACharactersLocationMovesThem(t *testing.T) {
+	s := newSession(placedWorld(t))
+	s.world.CreateCharacter("mira", "Mira", nil, nil)
 
-	_, err := executeAction(w, inventoryCall("move_character", `{"character_id":"mira","location":"attic"}`))
-	if err == nil {
-		t.Fatal("an unknown location must be refused")
+	apply(t, s, "entities:\n  mira:\n    location: cellar\n")
+	if s.world.Characters["mira"].Location != "cellar" {
+		t.Errorf("mira is at %q, want cellar", s.world.Characters["mira"].Location)
 	}
-	if !strings.Contains(err.Error(), "cellar") {
-		t.Errorf("err = %v, want it to list the locations that exist", err)
-	}
-}
 
-func TestCreateLocationReportsItsID(t *testing.T) {
-	w := placedWorld(t)
-
-	got, err := executeAction(w, inventoryCall("create_location", `{"name":"The Wine Cellar","description":"Deeper still.","parent":"cellar"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"the-wine-cellar", "cellar"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("result = %q, want it to carry %q", got, want)
-		}
+	notes := refusals(t, s, "entities:\n  mira:\n    location: attic\n")
+	if !strings.Contains(notes, "cellar") {
+		t.Errorf("notes = %v, want the locations that exist", notes)
 	}
 }

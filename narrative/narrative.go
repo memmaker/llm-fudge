@@ -83,7 +83,7 @@ const (
 	OpDelete Op = "delete"
 )
 
-// Operation is one instruction in a world_update call.
+// Operation is one instruction the state block expands into.
 //
 // It arrives as JSON in the tool call's arguments rather than as text to be
 // parsed, which is the one structural difference from the ledger's line grammar
@@ -183,7 +183,7 @@ type World interface {
 // Nothing here returns an error. The turn has already happened, the prose has
 // already been shown to the player, and there is nobody left to ask for a
 // correction — so a refused operation is reported and the rest of the batch
-// still runs. A world_update that is wrong in one line should not lose the four
+// still runs. A state block that is wrong in one line should not lose the four
 // lines that were right.
 func (s *Store) Apply(ops []Operation, turn int, w World) []string {
 	var notes []string
@@ -196,7 +196,7 @@ func (s *Store) Apply(ops []Operation, turn int, w World) []string {
 func (s *Store) apply(op Operation, turn int, w World) []string {
 	id := strings.ToLower(strings.TrimSpace(op.Entity))
 	if id == "" {
-		return []string{fmt.Sprintf("world_update: %q operation names no entity, skipped", op.Op)}
+		return []string{fmt.Sprintf("state: %q operation names no entity, skipped", op.Op)}
 	}
 
 	switch op.Op {
@@ -207,7 +207,7 @@ func (s *Store) apply(op Operation, turn int, w World) []string {
 	case OpDelete:
 		return s.remove(id, op, w)
 	default:
-		return []string{fmt.Sprintf("world_update: %s: unknown op %q — use create, set or delete", id, op.Op)}
+		return []string{fmt.Sprintf("state: %s: unknown op %q — use create, set or delete", id, op.Op)}
 	}
 }
 
@@ -224,19 +224,19 @@ func (s *Store) create(id string, op Operation, turn int, w World) []string {
 	// so asking the engine first would answer "already exists in the engine" about
 	// an entity that only exists here, and send the DM to the wrong call.
 	if _, held := s.entities[id]; held {
-		return []string{fmt.Sprintf("world_update: %s already exists — use set to change it", id)}
+		return []string{fmt.Sprintf("state: %s already exists — use set to change it", id)}
 	}
 	if w != nil && w.HasEntity(id) {
-		return []string{fmt.Sprintf("world_update: %s already exists in the engine — use set to add narrative properties to it, not create", id)}
+		return []string{fmt.Sprintf("state: %s already exists in the engine — use set to add narrative properties to it, not create", id)}
 	}
 	if len(op.Properties) == 0 {
-		return []string{fmt.Sprintf("world_update: create %s needs properties, including a type", id)}
+		return []string{fmt.Sprintf("state: create %s needs properties, including a type", id)}
 	}
 
 	kind, _ := op.Properties["type"].(string)
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		return []string{fmt.Sprintf("world_update: create %s needs a type property saying what it is (rumor, faction, prophecy, ...)", id)}
+		return []string{fmt.Sprintf("state: create %s needs a type property saying what it is (rumor, faction, prophecy, ...)", id)}
 	}
 
 	e := s.touch(id, turn)
@@ -252,10 +252,10 @@ func (s *Store) set(id string, op Operation, turn int, w World) []string {
 	_, held := s.entities[id]
 	engine := w != nil && w.HasEntity(id)
 	if !held && !engine {
-		return []string{fmt.Sprintf("world_update: %s does not exist. %s Use create if it is new and purely narrative, or the typed tool if it is a character, item or location", id, existing(w))}
+		return []string{fmt.Sprintf("state: %s does not exist. %s Give it a `type` in the state block if it is new", id, existing(w))}
 	}
 	if len(op.Properties) == 0 {
-		return []string{fmt.Sprintf("world_update: set %s carries no properties, nothing to record", id)}
+		return []string{fmt.Sprintf("state: set %s carries no properties, nothing to record", id)}
 	}
 	return s.merge(s.touch(id, turn), op.Properties)
 }
@@ -269,14 +269,19 @@ func (s *Store) remove(id string, op Operation, w World) []string {
 	// intent is not clear — most likely a set written as a delete — and the safe
 	// reading of an unclear instruction to destroy something is to not destroy it.
 	if len(op.Properties) > 0 {
-		return []string{fmt.Sprintf("world_update: delete %s was refused because it carried properties, and nothing was deleted. delete takes only an entity; if you meant to change it, send set instead", id)}
+		return []string{fmt.Sprintf("state: delete %s was refused because it carried properties, and nothing was deleted. delete takes only an entity; if you meant to change it, send set instead", id)}
 	}
 	var notes []string
-	if w != nil && w.HasEntity(id) {
-		return append(notes, fmt.Sprintf("world_update: %s is an engine entity and cannot be deleted here — set its narrative properties instead, or use the typed tool that owns it", id))
-	}
+	// What this store holds is narrative-only by construction — create refuses
+	// an id the engine already has — so holding it is the answer, and asking the
+	// world first was wrong: the world's own HasEntity consults this store
+	// through the AlsoTaken hook, so every narrative entity read back as an
+	// engine one and nothing could ever be deleted.
 	if _, held := s.entities[id]; !held {
-		return append(notes, fmt.Sprintf("world_update: %s does not exist, nothing to delete", id))
+		if w != nil && w.HasEntity(id) {
+			return append(notes, fmt.Sprintf("state: %s is an engine entity and cannot be deleted here — an item ends at `count: 0` and a character stays in the world; set its narrative properties instead", id))
+		}
+		return append(notes, fmt.Sprintf("state: %s does not exist, nothing to delete", id))
 	}
 	delete(s.entities, id)
 	for i, existing := range s.ids {
@@ -300,7 +305,7 @@ func (s *Store) merge(e *Entity, props map[string]any) []string {
 	for _, name := range slices.Sorted(maps.Keys(props)) {
 		key := strings.ToLower(strings.TrimSpace(name))
 		if key == "" {
-			notes = append(notes, fmt.Sprintf("world_update: %s: a property with no name was skipped", e.ID))
+			notes = append(notes, fmt.Sprintf("state: %s: a property with no name was skipped", e.ID))
 			continue
 		}
 		if key == "type" {
@@ -309,7 +314,7 @@ func (s *Store) merge(e *Entity, props map[string]any) []string {
 			continue
 		}
 		if reserved[key] {
-			notes = append(notes, fmt.Sprintf("world_update: %s: %q is the engine's to state and was discarded — it is already rendered in this entity's record, and a second copy here would be a second answer", e.ID, key))
+			notes = append(notes, fmt.Sprintf("state: %s: %q is the engine's to state and was discarded — it is already rendered in this entity's record, and a second copy here would be a second answer", e.ID, key))
 			continue
 		}
 		if props[name] == nil {

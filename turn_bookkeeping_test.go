@@ -2,6 +2,7 @@ package main
 
 import (
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 
@@ -25,47 +26,39 @@ func playedWorld(t *testing.T) *rules.World {
 	return w
 }
 
-// The whole point of the second phase: the question "what changed?" is put to
-// the DM only once the answer is sitting in front of it. So the round has to
-// come after the player has read the scene, it has to carry the prose, and it
-// has to have no way left of reaching them.
-func TestBookkeepingIsAskedAfterTheProseExists(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating(setOp("forge", "anvil", "cooling"))}
+// narrating answers every round with the scene and a block, which is the shape
+// of a turn that needed nothing resolved.
+func narrating(state string) func(round int, tools []llm.Tool) llm.Response {
+	return func(round int, tools []llm.Tool) llm.Response { return narration(state) }
+}
+
+// The bookkeeping is not a round any more. What justified one was that the
+// question "what changed?" needed the prose to exist first — and the block is
+// written under the prose, in the same generation, so it does.
+func TestAnAcceptedBlockCostsNoExtraRound(t *testing.T) {
+	dm := &model{reply: resolvingThenNarrating(setState("forge", "anvil", "cooling"))}
 
 	messages, s := gameStart(), newSession(playedWorld(t))
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-	if dm.books != 1 {
-		t.Fatalf("the turn ran %d bookkeeping rounds, want exactly one", dm.books)
+	if dm.fixes != 0 {
+		t.Errorf("a block the engine took whole still cost %d correction rounds", dm.fixes)
 	}
-	asked := dm.seen[len(dm.seen)-1]
-	demand := asked[len(asked)-1].Content
-	if !strings.Contains(demand, "The smith looks up from the anvil.") {
-		t.Errorf("the bookkeeping round was not shown the prose it is meant to read:\n%s", demand)
-	}
-	// And it was told what the engine had already settled, because recording
-	// one of those a second time is the readiest way to get this phase wrong.
-	if !strings.Contains(demand, "roll_on_table") {
-		t.Errorf("the bookkeeping round was not told what the engine already resolved:\n%s", demand)
-	}
-	if narrationOffered(dm.tools[len(dm.tools)-1]) {
-		t.Error("the bookkeeping round could still have narrated at the player")
+	if dm.rounds != 2 {
+		t.Errorf("the turn made %d calls, want one to resolve and one to narrate", dm.rounds)
 	}
 }
 
-// The calls it makes are calls like any other: they land on the sheet, and the
-// archive keeps the engine's account of them beside the turn's own.
-func TestBookkeepingCallsReachTheEngineAndTheRecord(t *testing.T) {
-	dm := &model{
-		reply: func(round int, tools []llm.Tool) llm.Response {
-			return narrationCall(setOp("forge", "handed-over", "lantern"))
-		},
-		record: func(round int, tools []llm.Tool) llm.Response {
-			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				call("i", "add_item", `{"character_id":"catnip","name":"Brass Lantern","description":"Dented, still lit."}`),
-			}}}
-		},
-	}
+// What the block says lands on the sheet, and the archive keeps the engine's own
+// account of it — under the name of the operation the engine derived, so recall
+// searches the same vocabulary it always did.
+func TestTheBlockReachesTheEngineAndTheRecord(t *testing.T) {
+	dm := &model{reply: narrating(`entities:
+  brass-lantern:
+    type: item
+    name: Brass Lantern
+    desc: Dented, still lit.
+    location: catnip`)}
 
 	w := playedWorld(t)
 	messages, s := gameStart(), newSession(w)
@@ -86,7 +79,7 @@ func TestBookkeepingCallsReachTheEngineAndTheRecord(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("what the bookkeeping round did is not in the record: %+v", recorded[0].Events)
+		t.Errorf("what the block did is not in the record: %+v", recorded[0].Events)
 	}
 	// And the ids it named are indexed, which is what makes the record answerable
 	// by entity rather than by searching its words.
@@ -101,102 +94,80 @@ func TestBookkeepingCallsReachTheEngineAndTheRecord(t *testing.T) {
 	}
 }
 
-// It is one round unless the engine refuses something. A refusal names what
-// does exist, so the correction is one call away — and the alternative is an
-// engine that quietly disagrees with a scene the player has already read.
-func TestBookkeepingTakesASecondRoundOnlyOnARefusal(t *testing.T) {
+// A refusal buys exactly one round, and only a refusal does. The scene is
+// already read, so the alternative is an engine that quietly disagrees with it.
+func TestARefusalBuysOneCorrectionRound(t *testing.T) {
 	for _, c := range []struct {
 		name  string
-		args  string
-		books int
+		block string
+		fixes int
 	}{
-		{"accepted", `{"character_id":"catnip","name":"Brass Lantern","description":"Dented."}`, 1},
-		{"refused", `{"character_id":"nobody-at-all","name":"Brass Lantern","description":"Dented."}`, maxRecordRequests},
+		{"accepted", "entities:\n  catnip:\n    coins: 5", 0},
+		{"refused", "entities:\n  nobody-at-all:\n    coins: 5", 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			dm := &model{
-				reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall(setOp("forge", "busy", "true")) },
-				record: func(round int, tools []llm.Tool) llm.Response {
-					return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-						call("i", "add_item", c.args),
-					}}}
-				},
-			}
+			dm := &model{reply: narrating(c.block)}
 
 			messages, s := gameStart(), newSession(playedWorld(t))
 			capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-			if dm.books != c.books {
-				t.Errorf("the %s call took %d bookkeeping rounds, want %d", c.name, dm.books, c.books)
+			if dm.fixes != c.fixes {
+				t.Errorf("the %s block took %d correction rounds, want %d", c.name, dm.fixes, c.fixes)
 			}
 		})
 	}
 }
 
-// The miss this phase was built to catch: a thing that leaves somebody's hands.
-// It is not a purchase, not a gift and not a destruction, so it fell through
-// every category the demand used to list — the prose said the phone went, the
-// engine went on saying it was carried, and nothing disagreed until the sheet
-// was read out loud.
-func TestTheDemandNamesAThingLeavingAHand(t *testing.T) {
-	demand := strings.ToLower(recordDemand(turnLog{shown: []string{"You hurl the phone into the gutter."}}))
+// The correction round has to say the scene is over, or the DM answers a
+// question about bookkeeping by narrating again — into a channel that has
+// already closed. It also has to name what was actually refused, so the fix is
+// one round away rather than a second guess.
+func TestTheCorrectionDemandClosesTheSceneAndNamesTheRefusals(t *testing.T) {
+	demand := correctionDemand([]string{"state: nobody-at-all does not exist"})
 
-	for _, want := range []string{"dropped", "thrown away", "left behind", "move_item"} {
+	for _, want := range []string{"the scene is closed", "write no prose at all", "nobody-at-all"} {
 		if !strings.Contains(demand, want) {
-			t.Errorf("the demand never mentions %q, so a discard matches none of its categories:\n%s", want, demand)
+			t.Errorf("the demand is missing %q:\n%s", want, demand)
 		}
-	}
-	// And it says where a discarded thing goes, because "the ground" is the one
-	// destination a model does not think of as a destination.
-	if !strings.Contains(demand, "the ground is a destination") {
-		t.Errorf("the demand does not say that a thing on the floor is somewhere:\n%s", demand)
 	}
 }
 
-// The other way a turn records nothing: the thing the prose is about was never
-// an engine item, so move_item has no source, and "add_item only for what never
-// existed before" reads as ruling it out — the story has been handling the thing
-// for turns. Both calls look wrong and the DM makes neither. The test that
-// decides between them has to be a lookup in the engine's own record, and it has
-// to say so in those words.
-func TestTheDemandSettlesExistenceInTheEnginesRecord(t *testing.T) {
-	demand := recordDemand(turnLog{shown: []string{"Your fingers close around the parchment."}})
+// What the correction sends lands like anything else.
+func TestTheCorrectionRoundIsApplied(t *testing.T) {
+	dm := &model{
+		reply:   narrating("entities:\n  nobody-at-all:\n    coins: 5"),
+		correct: func(round int, tools []llm.Tool) llm.Response { return narration("entities:\n  catnip:\n    coins: 9") },
+	}
 
-	for _, want := range []string{
-		"look for the thing by name among the entities above",
-		"however many turns your prose has been describing it",
-		"A narrative property is not a record of a thing",
-		"add_item is not only for things that appear from nowhere",
-	} {
-		if !strings.Contains(demand, want) {
-			t.Errorf("the demand is missing %q, so a prop the engine never held has no call that fits:\n%s", want, demand)
-		}
+	w := playedWorld(t)
+	messages, s := gameStart(), newSession(w)
+	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
+
+	pc, _ := w.Character("catnip")
+	if pc.Coins != 9 {
+		t.Errorf("coins = %d, want the correction to have landed", pc.Coins)
 	}
 }
 
 // A turn nobody read has no prose to square the engine against, so it does not
 // pay for a round asking.
-func TestNothingIsRecordedForATurnThePlayerNeverSaw(t *testing.T) {
+func TestNothingIsCorrectedForATurnThePlayerNeverSaw(t *testing.T) {
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response { return stalling() }}
 
 	messages, s := gameStart(), newSession(playedWorld(t))
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
-	if dm.books != 0 {
-		t.Errorf("an unnarrated turn spent %d bookkeeping rounds", dm.books)
+	if dm.fixes != 0 {
+		t.Errorf("an unnarrated turn spent %d correction rounds", dm.fixes)
 	}
 }
 
-// The second phase is still part of the turn, so it leaves the history exactly
-// as it found it — the calls, the results and the demand all go with the rest.
-func TestBookkeepingLeavesNothingInTheHistory(t *testing.T) {
+// A correction is still part of the turn, so it leaves the history exactly as it
+// found it — the demand and the block that answered it go with the rest.
+func TestACorrectionLeavesNothingInTheHistory(t *testing.T) {
 	dm := &model{
-		reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall(setOp("forge", "busy", "true")) },
-		record: func(round int, tools []llm.Tool) llm.Response {
-			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				call("i", "add_coins", `{"character_id":"catnip","amount":5}`),
-			}}}
-		},
+		reply:   narrating("entities:\n  nobody-at-all:\n    coins: 5"),
+		correct: func(round int, tools []llm.Tool) llm.Response { return narration("entities:\n  catnip:\n    coins: 9") },
 	}
 
 	messages, s := gameStart(), newSession(playedWorld(t))
@@ -204,6 +175,56 @@ func TestBookkeepingLeavesNothingInTheHistory(t *testing.T) {
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
 
 	if len(messages) != before {
-		t.Fatalf("the bookkeeping round left %d messages behind:\n%+v", len(messages)-before, messages[before:])
+		t.Fatalf("the correction round left %d messages behind:\n%+v", len(messages)-before, messages[before:])
 	}
+}
+
+// The miss the prompt was written to catch: a thing that leaves somebody's
+// hands. It is not a purchase, not a gift and not a destruction, so it fell
+// through every category — the prose said the phone went, the engine went on
+// saying it was carried, and nothing disagreed until the sheet was read out loud.
+func TestThePromptNamesAThingLeavingAHand(t *testing.T) {
+	guide := strings.ToLower(dmGuide(t))
+
+	for _, want := range []string{"dropped", "thrown away", "left behind"} {
+		if !strings.Contains(guide, want) {
+			t.Errorf("the prompt never mentions %q, so a discard matches none of its categories", want)
+		}
+	}
+	if !strings.Contains(guide, "the ground is somewhere") {
+		t.Error("the prompt does not say that a thing on the floor is somewhere")
+	}
+}
+
+// The other way a turn records nothing: the thing the prose is about was never
+// an engine item, so a move has no source, and "create only what never existed"
+// reads as ruling it out — the story has been handling the thing for turns.
+// Both readings look wrong and the DM writes neither. The test that decides
+// between them is a lookup in the engine's own record, and the prompt has to say
+// so in those words.
+func TestThePromptSettlesExistenceInTheEnginesRecord(t *testing.T) {
+	guide := dmGuide(t)
+
+	for _, want := range []string{
+		"Look for it by id in WORLD STATE",
+		"however many turns the story has",
+		"whatever some narrative property says",
+		"the ordinary case every",
+	} {
+		if !strings.Contains(guide, want) {
+			t.Errorf("the prompt is missing %q, so a prop the engine never held has nothing that fits", want)
+		}
+	}
+}
+
+// dmGuide is the DM prompt as the model receives it. These two tests are about
+// wording the engine cannot enforce, so they read the prompt itself rather than
+// any code path.
+func dmGuide(t *testing.T) string {
+	t.Helper()
+	body, err := os.ReadFile("system-prompts/dm.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
 }

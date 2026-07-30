@@ -36,14 +36,9 @@ func TestMutatingToolsReportCharacterState(t *testing.T) {
 	}{
 		{"create_character", `{"name":"Preacher Vane","species":"human"}`, "preacher-vane"},
 		{"add_item", `{"name":"Peacemaker","description":"A nicked .45."}`, "kyle-katarn"},
-		{"remove_item", `{"name":"Peacemaker"}`, "kyle-katarn"},
 		{"add_coins", `{"amount":40}`, "kyle-katarn"},
-		{"remove_coins", `{"amount":15}`, "kyle-katarn"},
-		{"apply_damage", `{"character_id":"kyle-katarn","severity":"hurt"}`, "kyle-katarn"},
-		{"heal", `{"character_id":"kyle-katarn","levels":1}`, "kyle-katarn"},
 		{"unopposed_check", `{"actor_id":"kyle-katarn","trait_type":"skill","trait_slug":"shootin","difficulty":"average","add_one":true}`, "kyle-katarn"},
 		{"opposed_check", `{"actor_id":"kyle-katarn","actor_trait_type":"skill","actor_trait_slug":"shootin","opponent_id":"dust-bandit","opponent_trait_type":"attribute","opponent_trait_slug":"grit","add_one":true}`, "kyle-katarn"},
-		{"declare_dead", `{"character_id":"dust-bandit"}`, "dust-bandit"},
 	} {
 		result, err := executeAction(w, inventoryCall(c.tool, c.args))
 		if err != nil {
@@ -181,8 +176,6 @@ func TestUnchangedStateIsNotRepeated(t *testing.T) {
 			`{"actor_id":"kyle-katarn","trait_type":"skill","trait_slug":"shootin","difficulty":"average"}`},
 		{"an opposed check that spends no Fudge Point", "opposed_check",
 			`{"actor_id":"kyle-katarn","actor_trait_type":"skill","actor_trait_slug":"shootin","opponent_id":"dust-bandit","opponent_trait_type":"attribute","opponent_trait_slug":"grit"}`},
-		{"healing an unwounded character", "heal",
-			`{"character_id":"kyle-katarn","levels":1}`},
 	} {
 		result, err := executeAction(w, inventoryCall(c.tool, c.args))
 		if err != nil {
@@ -224,72 +217,5 @@ func TestCreateCharacterReturnsCharacterState(t *testing.T) {
 	// the DM with a character it cannot name.
 	if !strings.Contains(result, "preacher-vane:") {
 		t.Errorf("result does not carry the generated id:\n%s", result)
-	}
-}
-
-// Prose and location are always required: the player reads one and the engine
-// keeps position out of the other, and both are refused here, before the player
-// is shown anything, so the DM can send the turn again complete.
-//
-// world_update is required of the opening narration only. Once play is running a
-// turn that establishes nothing the engine does not already hold is ordinary —
-// a round of pure fighting is all engine facts — and demanding an update there
-// would only teach the DM to invent a property to satisfy the check. The opening
-// scene has nothing recorded behind it to fall back on.
-func TestNarrationRequiresProseAndLocation(t *testing.T) {
-	const ops = `[{"op":"set","entity":"clerk","properties":{"refused":"handgun-ammo"}}]`
-	for _, c := range []struct {
-		name     string
-		args     string
-		baseline bool
-		ok       bool
-	}{
-		{"all three", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":` + ops + `}`, false, true},
-		{"no update mid-game", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, false, true},
-		{"empty update mid-game", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[]}`, false, true},
-		{"no update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, true, false},
-		{"empty update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[]}`, true, false},
-		{"update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":` + ops + `}`, true, true},
-		{"no prose", `{"location":"gun-shop","world_update":` + ops + `}`, false, false},
-		{"no location", `{"prose":"The clerk shrugs.","world_update":` + ops + `}`, false, false},
-		{"blank location", `{"prose":"The clerk shrugs.","location":" ","world_update":` + ops + `}`, false, false},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := parseNarration(inventoryCall("output_narration", c.args), c.baseline)
-			if c.ok && err != nil {
-				t.Fatalf("rejected a usable narration: %v", err)
-			}
-			if !c.ok && err == nil {
-				t.Fatal("accepted an unusable narration")
-			}
-		})
-	}
-}
-
-// The operations reach the parse as structured data, not as text to be pulled
-// apart later. This is what the provider validates against the tool schema, and
-// it is the difference between a malformed report being caught before it lands
-// and being salvaged afterwards.
-func TestNarrationParsesOperations(t *testing.T) {
-	args := `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[` +
-		`{"op":"set","entity":"clerk","properties":{"mood":"bored","suspicion":0.4}},` +
-		`{"op":"delete","entity":"rumor-old"}]}`
-
-	parsed, err := parseNarration(inventoryCall("output_narration", args), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(parsed.WorldUpdate) != 2 {
-		t.Fatalf("parsed %d operations, want 2", len(parsed.WorldUpdate))
-	}
-	first := parsed.WorldUpdate[0]
-	if first.Op != "set" || first.Entity != "clerk" {
-		t.Errorf("first operation is %+v", first)
-	}
-	if first.Properties["mood"] != "bored" {
-		t.Errorf("properties did not survive the parse: %+v", first.Properties)
-	}
-	if second := parsed.WorldUpdate[1]; second.Op != "delete" || len(second.Properties) != 0 {
-		t.Errorf("delete operation is %+v, want no properties", second)
 	}
 }

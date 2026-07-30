@@ -44,10 +44,18 @@ type Location struct {
 // check: a location can only point at one created before it, so the parent
 // chain is acyclic by construction and nothing has to walk it.
 func (w *World) CreateLocation(name, description, parent string) (*Location, error) {
+	return w.CreateLocationWithID(slug(name), name, description, parent)
+}
+
+// CreateLocationWithID is CreateLocation for a caller that already knows the id
+// it wants. The state block is that caller: its entities are keyed by id, so the
+// id arrives before the name does and is not derived from it. Everything after
+// the id is settled is the same, deliberately — a place created by the block and
+// a place created by a tool must be the same kind of thing.
+func (w *World) CreateLocationWithID(id, name, description, parent string) (*Location, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("location name is required")
 	}
-	id := slug(name)
 	if !slugPattern.MatchString(id) {
 		return nil, fmt.Errorf("invalid location slug: %s", id)
 	}
@@ -88,9 +96,9 @@ func (w *World) Location(id string) (*Location, error) {
 		return loc, nil
 	}
 	if len(w.Locations) == 0 {
-		return nil, fmt.Errorf("location not found: %s — no locations exist yet, create it first with create_location", id)
+		return nil, fmt.Errorf("location not found: %s — no locations exist yet, create it in the state block", id)
 	}
-	return nil, fmt.Errorf("location not found: %s — the locations that exist are: %s. Use one of those ids, or create this one first with create_location", id, strings.Join(w.LocationIDs(), ", "))
+	return nil, fmt.Errorf("location not found: %s — the locations that exist are: %s. Use one of those ids, or create this one in the state block", id, strings.Join(w.LocationIDs(), ", "))
 }
 
 // Scene is where the story currently is: the player's location, because every

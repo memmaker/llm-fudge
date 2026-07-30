@@ -31,17 +31,15 @@ func TestInventoryToolsMoveGoods(t *testing.T) {
 		args string
 	}{
 		{"add_item", `{"character_id":"kyle-katarn","name":"Power Cell","description":"Spares.","count":4}`},
-		{"remove_item", `{"character_id":"kyle-katarn","name":"Power Cell","count":1}`},
-		{"add_coins", `{"character_id":"kyle-katarn","amount":75}`},
-		{"remove_coins", `{"character_id":"kyle-katarn","amount":25}`},
+		{"add_coins", `{"character_id":"kyle-katarn","amount":50}`},
 	} {
 		if _, err := executeAction(w, inventoryCall(c.tool, c.args)); err != nil {
 			t.Fatalf("%s: %v", c.tool, err)
 		}
 	}
 
-	if got := pc.Inventory["power-cell"].Count; got != 3 {
-		t.Errorf("power cells = %d, want 3", got)
+	if got := pc.Inventory["power-cell"].Count; got != 4 {
+		t.Errorf("power cells = %d, want 4", got)
 	}
 	if pc.Coins != 50 {
 		t.Errorf("coins = %d, want 50", pc.Coins)
@@ -108,24 +106,21 @@ func TestInventoryToolsRejectImpossibleMoves(t *testing.T) {
 	}
 }
 
-// Both flows expose the inventory tools: creation to outfit the character, the
-// record phase to keep the sheet true as things change hands.
-func TestInventoryToolsOfferedInBothFlows(t *testing.T) {
-	for _, c := range []struct {
-		flow  string
-		tools []llm.Tool
-	}{
-		{"character creation", characterCreationTools()},
-		{"record phase", recordTools()},
-	} {
-		offered := map[string]bool{}
-		for _, tool := range c.tools {
-			offered[tool.Function.Name] = true
+// Character creation keeps these calls because it runs before there is a world
+// to declare anything against: no scene, no ids in a block, nobody to read a
+// state block back. During play the same facts are stated rather than called for.
+func TestInventoryToolsBelongToCharacterCreation(t *testing.T) {
+	offered := toolNames(characterCreationTools())
+	for _, name := range []string{"add_item", "add_coins", "add_weapon", "add_armor"} {
+		if !offered[name] {
+			t.Errorf("character creation does not offer %s", name)
 		}
-		for _, name := range []string{"add_item", "remove_item", "add_coins", "remove_coins"} {
-			if !offered[name] {
-				t.Errorf("%s flow does not offer %s", c.flow, name)
-			}
+	}
+
+	inPlay := toolNames(queryTools())
+	for _, name := range []string{"add_item", "add_coins"} {
+		if inPlay[name] {
+			t.Errorf("%s is still offered during play; the state block states it now", name)
 		}
 	}
 }

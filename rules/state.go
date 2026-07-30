@@ -205,7 +205,15 @@ type World struct {
 	// minting an item onto an id `narrative` already held, and an item named
 	// "Iron Key" landing on the objective `iron-key` merged two different things
 	// into one record.
-	AlsoTaken        func(id string) bool
+	AlsoTaken func(id string) bool
+	// Retired holds the ids of entities that existed and no longer do: a quiver
+	// shot empty, a torch burnt out, a rumour whose thread closed. They are kept
+	// out of the keyspace rather than freed back into it, because the archive
+	// still names them — a recall on a burnt torch has to find the turns it
+	// appeared in, and it cannot if something else has since been created under
+	// its id. Nothing important is erased; the world state holds what exists now
+	// and the archive holds what existed.
+	Retired          map[string]bool
 	Setting          *SettingInfos
 	AdventureContent string
 	Player           string
@@ -295,6 +303,9 @@ func (w *World) HasEntity(id string) bool {
 	if id == "" {
 		return false
 	}
+	if w.Retired[id] {
+		return true
+	}
 	if _, taken := w.Characters[id]; taken {
 		return true
 	}
@@ -312,6 +323,34 @@ func (w *World) HasEntity(id string) bool {
 		}
 	}
 	return w.AlsoTaken != nil && w.AlsoTaken(id)
+}
+
+// Retire takes an id out of play without freeing it. It is the one way an
+// entity stops existing: the record of it stays reachable, and nothing is ever
+// created under the id again.
+func (w *World) Retire(id string) {
+	if w.Retired == nil {
+		w.Retired = make(map[string]bool)
+	}
+	w.Retired[id] = true
+}
+
+// ItemHolder names whoever or whatever holds an item — a character or a
+// location — which is the item's `location` as the block renders it. ItemByID
+// answers what the thing is; this answers where, and a caller changing a count
+// to zero needs the holder to take it out of.
+func (w *World) ItemHolder(id string) (string, bool) {
+	for _, cid := range w.CharacterIDs() {
+		if _, held := w.Characters[cid].Inventory[id]; held {
+			return cid, true
+		}
+	}
+	for _, lid := range w.LocationIDs() {
+		if _, lying := w.Locations[lid].Items[id]; lying {
+			return lid, true
+		}
+	}
+	return "", false
 }
 
 // MintItemID picks the id an item will carry for the rest of its existence. The
@@ -348,9 +387,9 @@ func (w *World) ItemByID(id string) (*Item, error) {
 	}
 	existing := w.ItemIDs()
 	if len(existing) == 0 {
-		return nil, fmt.Errorf("item not found: %s — no items exist anywhere yet, create it first with add_item", id)
+		return nil, fmt.Errorf("item not found: %s — no items exist anywhere yet, create it in the state block", id)
 	}
-	return nil, fmt.Errorf("item not found: %s — the items that exist are: %s. Use one of those ids, or create this one first with add_item if it is new", id, strings.Join(existing, ", "))
+	return nil, fmt.Errorf("item not found: %s — the items that exist are: %s. Use one of those ids, or create this one in the state block if it is new", id, strings.Join(existing, ", "))
 }
 
 // ItemIDs lists every item id in the world, sorted, for the roster an error hands
@@ -390,6 +429,10 @@ func (w *World) CharacterIDs() []string {
 // gifts, faults, powers optional
 
 type CharacterRequest struct {
+	// ID is the id to create them under. Empty means derive it from the name,
+	// which is what the engine did for everybody before the state block existed
+	// and what character creation still does.
+	ID          string         `json:"id"`
 	Name        string         `json:"name"`
 	Species     string         `json:"species"`
 	Description string         `json:"description"`
@@ -411,7 +454,16 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 		return nil, fmt.Errorf("character name is required")
 	}
 
-	id := slug(req.Name)
+	id := req.ID
+	if id == "" {
+		id = slug(req.Name)
+	} else if !ValidID(id) {
+		// A stated id is held to the shape the DM reads everywhere else, rather
+		// than coerced the way a derived one is: an id nobody can type back is
+		// worse than a refusal that says so while there is still a round to fix
+		// it in.
+		return nil, fmt.Errorf("%q is not a usable id — lowercase words joined by single hyphens, e.g. merchant-alric", id)
+	}
 	if !slugPattern.MatchString(id) {
 		return nil, fmt.Errorf("invalid character slug: %s", id)
 	}

@@ -107,19 +107,30 @@ func TestNormalizeLanguage(t *testing.T) {
 
 // The prompt says it once, in a section the model read before the turn started.
 // The tool description says it in the moment the field is being written, which
-// is the moment it is forgotten.
-func TestNarrationToolNamesTheLanguage(t *testing.T) {
+// is the moment it is forgotten. The narration is prose now and carries no
+// description of its own, so the menu is where this still has to hold: it is the
+// one remaining tool argument the player reads.
+func TestTheChoiceMenuNamesTheLanguage(t *testing.T) {
 	defer func(prev string) { language = prev }(language)
 
+	optionsOf := func() string {
+		for _, tool := range queryTools() {
+			if tool.Function.Name != "user_choice" {
+				continue
+			}
+			return tool.Function.Description
+		}
+		t.Fatal("user_choice is not offered during play")
+		return ""
+	}
+
 	language = "German"
-	prose := narrationTool().Function.Parameters.(map[string]any)["properties"].(map[string]any)["prose"].(map[string]any)["description"].(string)
-	if !strings.Contains(prose, "write it in German") {
-		t.Errorf("prose description does not name the language: %q", prose)
+	if got := optionsOf(); !strings.Contains(got, "write it in German") {
+		t.Errorf("the menu description does not name the language: %q", got)
 	}
 
 	language = "English"
-	prose = narrationTool().Function.Parameters.(map[string]any)["properties"].(map[string]any)["prose"].(map[string]any)["description"].(string)
-	if strings.Contains(prose, "LANGUAGE:") {
-		t.Errorf("English prose description carries a language note: %q", prose)
+	if got := optionsOf(); strings.Contains(got, "LANGUAGE:") {
+		t.Errorf("the English menu description carries a language note: %q", got)
 	}
 }
