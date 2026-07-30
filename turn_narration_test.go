@@ -106,6 +106,7 @@ func testWorld() *rules.World {
 		Characters: map[string]*rules.Character{},
 		Locations:  map[string]*rules.Location{},
 		Rng:        rand.New(rand.NewSource(1)),
+		Setting:    deadlandsSetting(),
 	}
 	w.CreateLocation("Forge", "Hot, dark, ringing with hammer work.", "")
 	return w

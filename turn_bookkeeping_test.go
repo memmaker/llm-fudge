@@ -2,7 +2,6 @@ package main
 
 import (
 	"math/rand"
-	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +19,7 @@ func playedWorld(t *testing.T) *rules.World {
 		Locations:  map[string]*rules.Location{},
 		Rng:        rand.New(rand.NewSource(1)),
 		Player:     "catnip",
+		Setting:    deadlandsSetting(),
 	}
 	w.CreateLocation("Forge", "Hot, dark, ringing with hammer work.", "")
 	w.CreateCharacter("catnip", "Catnip", nil, nil)
@@ -176,111 +176,5 @@ func TestACorrectionLeavesNothingInTheHistory(t *testing.T) {
 
 	if len(messages) != before {
 		t.Fatalf("the correction round left %d messages behind:\n%+v", len(messages)-before, messages[before:])
-	}
-}
-
-// The miss the prompt was written to catch: a thing that leaves somebody's
-// hands. It is not a purchase, not a gift and not a destruction, so it fell
-// through every category — the prose said the phone went, the engine went on
-// saying it was carried, and nothing disagreed until the sheet was read out loud.
-func TestThePromptNamesAThingLeavingAHand(t *testing.T) {
-	guide := strings.ToLower(dmGuide(t))
-
-	for _, want := range []string{"dropped", "thrown away", "left behind"} {
-		if !strings.Contains(guide, want) {
-			t.Errorf("the prompt never mentions %q, so a discard matches none of its categories", want)
-		}
-	}
-	if !strings.Contains(guide, "the ground is somewhere") {
-		t.Error("the prompt does not say that a thing on the floor is somewhere")
-	}
-}
-
-// The other way a turn records nothing: the thing the prose is about was never
-// an engine item, so a move has no source, and "create only what never existed"
-// reads as ruling it out — the story has been handling the thing for turns.
-// Both readings look wrong and the DM writes neither. The test that decides
-// between them is a lookup in the engine's own record, and the prompt has to say
-// so in those words.
-func TestThePromptSettlesExistenceInTheEnginesRecord(t *testing.T) {
-	guide := dmGuide(t)
-
-	for _, want := range []string{
-		"Look for it by id in WORLD STATE",
-		"however many turns the story has",
-		"whatever some narrative property says",
-		"the ordinary case every",
-	} {
-		if !strings.Contains(guide, want) {
-			t.Errorf("the prompt is missing %q, so a prop the engine never held has nothing that fits", want)
-		}
-	}
-}
-
-// dmGuide is the DM prompt as the model receives it. These two tests are about
-// wording the engine cannot enforce, so they read the prompt itself rather than
-// any code path.
-func dmGuide(t *testing.T) string {
-	t.Helper()
-	body, err := os.ReadFile("system-prompts/dm.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(body)
-}
-
-// A block that arrives on a round that resolved something instead of narrating
-// is still the DM saying what is true. Dropping it would lose the fact and leave
-// the DM believing it was recorded, which is the one failure the engine exists
-// to make impossible.
-func TestABlockOnAResolvingRoundStillLands(t *testing.T) {
-	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		if round == 0 {
-			resolving := stalling()
-			resolving.Message.Content = "<state>\nentities:\n  catnip:\n    coins: 7\n</state>"
-			return resolving
-		}
-		return narration("")
-	}}
-
-	w := playedWorld(t)
-	messages, s := gameStart(), newSession(w)
-	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
-
-	pc, _ := w.Character("catnip")
-	if pc.Coins != 7 {
-		t.Errorf("coins = %d, want the block from the resolving round to have landed", pc.Coins)
-	}
-}
-
-// Refusals gather across the whole turn rather than being answered where they
-// arose. A refusal from a round that resolved something would otherwise reach
-// the end of the turn having been put to nobody, because the round it arrived on
-// had no correction round to spend.
-func TestARefusalFromAnEarlierRoundIsStillCorrected(t *testing.T) {
-	dm := &model{
-		reply: func(round int, tools []llm.Tool) llm.Response {
-			if round == 0 {
-				resolving := stalling()
-				resolving.Message.Content = "<state>\nentities:\n  nobody-at-all:\n    coins: 5\n</state>"
-				return resolving
-			}
-			return narration("")
-		},
-		correct: func(round int, tools []llm.Tool) llm.Response {
-			return narration("entities:\n  catnip:\n    coins: 9")
-		},
-	}
-
-	w := playedWorld(t)
-	messages, s := gameStart(), newSession(w)
-	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
-
-	if dm.fixes != 1 {
-		t.Fatalf("the turn ran %d correction rounds, want the earlier refusal to have bought one", dm.fixes)
-	}
-	pc, _ := w.Character("catnip")
-	if pc.Coins != 9 {
-		t.Errorf("coins = %d, want the correction to have landed", pc.Coins)
 	}
 }

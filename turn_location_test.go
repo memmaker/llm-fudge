@@ -140,7 +140,6 @@ func TestTheOpeningBriefingAsksForTheOpeningBlock(t *testing.T) {
 // says otherwise.
 func TestNewCharactersStartWhereTheSceneIs(t *testing.T) {
 	w := testWorld()
-	w.Setting = deadlands(t)
 	player, err := w.CreateCharacterValidated(rules.CharacterRequest{Name: "Catnip", Species: "human"})
 	if err != nil {
 		t.Fatal(err)
@@ -157,11 +156,14 @@ func TestNewCharactersStartWhereTheSceneIs(t *testing.T) {
 	}
 }
 
-func deadlands(t *testing.T) *rules.SettingInfos {
-	t.Helper()
+// deadlandsSetting is the setting every hand-built test world carries. A world
+// without one has no trait names to validate against, and nothing in a real game
+// ever reaches play without a setting loaded — so the helpers give it one rather
+// than the engine carrying a guard for a state only a test can produce.
+func deadlandsSetting() *rules.SettingInfos {
 	setting, err := rules.LoadSetting("settings/deadlands")
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
 	return setting
 }

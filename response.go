@@ -24,9 +24,6 @@ var (
 	// cut out of what the player is shown.
 	eventTagPattern  = regexp.MustCompile(`(?is)<(damage|heal|dead)\b([^>]*?)/?>`)
 	attributePattern = regexp.MustCompile(`([a-z_]+)\s*=\s*"([^"]*)"`)
-	// A model that has been asked for YAML often fences it, and a fence inside
-	// the block is noise rather than an error worth a round trip.
-	fencePattern = regexp.MustCompile("(?s)^\\s*```[a-z]*\\s*\n(.*?)\n?\\s*```\\s*$")
 	// Blank lines left behind where a block was cut out. Prose keeps its own
 	// paragraph breaks; it should not inherit the ones that only ever separated
 	// the machinery underneath it.
@@ -71,7 +68,7 @@ func parseResponse(body string) dmResponse {
 	var out dmResponse
 
 	if m := stateBlockPattern.FindStringSubmatch(body); m != nil {
-		out.State = unfence(m[1])
+		out.State = strings.TrimSpace(m[1])
 	}
 	if m := imgBlockPattern.FindStringSubmatch(body); m != nil {
 		out.Img = strings.TrimSpace(m[1])
@@ -104,13 +101,4 @@ func parseEventTag(kind, attributes string) stateEvent {
 		}
 	}
 	return e
-}
-
-// unfence strips a code fence the model wrapped the block in, and is a no-op on
-// a block that arrived bare.
-func unfence(s string) string {
-	if m := fencePattern.FindStringSubmatch(s); m != nil {
-		return strings.TrimSpace(m[1])
-	}
-	return strings.TrimSpace(s)
 }

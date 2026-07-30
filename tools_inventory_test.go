@@ -15,7 +15,7 @@ func inventoryCall(name, args string) llm.ToolCall {
 
 func equippedWorld(t *testing.T) *rules.World {
 	t.Helper()
-	w := &rules.World{Characters: map[string]*rules.Character{}, Player: "kyle-katarn"}
+	w := &rules.World{Characters: map[string]*rules.Character{}, Player: "kyle-katarn", Setting: deadlandsSetting()}
 	w.CreateCharacter("kyle-katarn", "Kyle Katarn", nil, nil)
 	return w
 }

@@ -54,18 +54,6 @@ func TestParseResponseReadsHealAndDeathTags(t *testing.T) {
 	}
 }
 
-// A model asked for YAML tends to fence it. That is noise, not a mistake worth
-// spending a correction round on.
-func TestParseResponseUnfencesTheStateBlock(t *testing.T) {
-	body := "Prose.\n\n<state>\n```yaml\nentities:\n  gareth:\n    coins: 3\n```\n</state>"
-
-	got := parseResponse(body)
-
-	if got.State != "entities:\n  gareth:\n    coins: 3" {
-		t.Errorf("state = %q, want the fence stripped", got.State)
-	}
-}
-
 // A turn that changed nothing the engine holds is an ordinary turn.
 func TestParseResponseAcceptsProseAlone(t *testing.T) {
 	got := parseResponse("You wait. Nothing comes.")

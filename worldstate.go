@@ -186,12 +186,16 @@ func (a *applier) run(diff worldDiff) {
 			continue
 		}
 		// A minted entity has already taken everything its constructor accepts —
-		// its name, its place, its ratings, its traits. Only what no constructor
-		// takes is left to write, and running the full update over it would read
-		// every consumed field back as a change to something that has just been
-		// set to exactly that.
+		// its name, its place, its ratings, its traits, its purse — so running the
+		// full update over it would read every consumed field back as a change to
+		// something just set to exactly that. Narrative is the exception, and the
+		// one field every kind of entity shares: a narrative-only entity took its
+		// properties as it was created, and anything the engine holds still needs
+		// them written.
 		if fresh[id] {
-			a.postCreate(id, fields)
+			if a.engineKind(id) != "" {
+				a.setNarrative(id, fields)
+			}
 			continue
 		}
 		a.update(id, fields)
@@ -227,23 +231,6 @@ func (a *applier) engineKind(id string) string {
 		return "item"
 	}
 	return ""
-}
-
-// postCreate writes the fields no constructor accepts onto an entity that has
-// just been minted.
-func (a *applier) postCreate(id string, fields map[string]any) {
-	if ch, err := a.world.Character(id); err == nil {
-		f := reader{applier: a, id: id, fields: fields}
-		if coins, stated := f.optionalNumber("coins"); stated {
-			a.setCoins(ch, coins)
-		}
-	}
-	// A narrative-only entity took its properties when it was created; anything
-	// the engine holds still needs them written.
-	if a.engineKind(id) == "" {
-		return
-	}
-	a.setNarrative(id, fields)
 }
 
 // setNarrative merges an entry's narrative map onto the entity, which is the one
@@ -368,6 +355,8 @@ func (a *applier) mint(id, kind string, fields map[string]any) {
 
 func (a *applier) mintCharacter(id string, fields map[string]any) {
 	f := reader{applier: a, id: id, fields: fields}
+	gifts, _ := f.list("gifts")
+	faults, _ := f.list("faults")
 	req := rules.CharacterRequest{
 		ID:          id,
 		Name:        f.text("name"),
@@ -376,8 +365,8 @@ func (a *applier) mintCharacter(id string, fields map[string]any) {
 		Location:    f.text("location"),
 		Attributes:  f.traits("attributes"),
 		Skills:      f.traits("skills"),
-		Gifts:       f.listed("gifts"),
-		Faults:      f.listed("faults"),
+		Gifts:       gifts,
+		Faults:      faults,
 	}
 	if req.Name == "" {
 		req.Name = id
@@ -387,6 +376,12 @@ func (a *applier) mintCharacter(id string, fields map[string]any) {
 		a.failed[id] = true
 		a.note("state: %s could not be created: %v", id, err)
 		return
+	}
+	// Everybody is created broke, so a purse stated on the same entry is the one
+	// field left over: the constructor does not take it, and it is the same
+	// transaction here as it would be on any later turn.
+	if coins, stated := f.optionalNumber("coins"); stated {
+		a.setCoins(ch, coins)
 	}
 	a.record("create_character", []string{id}, rules.Flow("character", ch.Name, "id", ch.ID, "at", ch.Location))
 }
@@ -493,21 +488,24 @@ func (a *applier) proto(name, description string, fields map[string]any) (*rules
 	f := reader{applier: a, id: name, fields: fields}
 	if w, ok := f.submap("weapon"); ok {
 		wf := reader{applier: a, id: name, fields: w}
+		damage, _ := wf.optionalNumber("damage")
+		ranged, _ := wf.optionalFlag("ranged")
+		ammo, _ := wf.optionalNumber("ammo")
+		capacity, _ := wf.optionalNumber("capacity")
 		return rules.NewWeaponItem(name, description, rules.Weapon{
-			Damage:          wf.number("damage"),
-			Ranged:          wf.flag("ranged"),
+			Damage:          damage,
+			Ranged:          ranged,
 			DamageAttribute: wf.text("adds"),
-			Ammo:            wf.number("ammo"),
-			AmmoCapacity:    wf.number("capacity"),
+			Ammo:            ammo,
+			AmmoCapacity:    capacity,
 			AmmoItem:        wf.text("takes"),
 		})
 	}
 	if ar, ok := f.submap("armor"); ok {
 		af := reader{applier: a, id: name, fields: ar}
-		return rules.NewArmorItem(name, description, rules.Armor{
-			Protection: af.number("protection"),
-			Worn:       af.flag("worn"),
-		})
+		protection, _ := af.optionalNumber("protection")
+		worn, _ := af.optionalFlag("worn")
+		return rules.NewArmorItem(name, description, rules.Armor{Protection: protection, Worn: worn})
 	}
 	return &rules.Item{Name: name, Description: description}, nil
 }
@@ -562,15 +560,6 @@ func (a *applier) updateCharacter(id string, fields map[string]any) {
 	}
 	if coins, stated := f.optionalNumber("coins"); stated {
 		a.setCoins(ch, coins)
-	}
-	// Every trait is checked against the setting, so a world without one has
-	// nothing to check against and nothing it could safely accept.
-	if !f.statesAnyOf("attributes", "skills", "gifts", "faults") {
-		return
-	}
-	if a.world.Setting == nil {
-		a.note("state: %s's traits cannot be set: this world has no setting loaded", id)
-		return
 	}
 	mergeTraits(a, ch, "attribute", ch.Attributes, a.world.Setting.Attributes, f.traits("attributes"))
 	mergeTraits(a, ch, "skill", ch.Skills, a.world.Setting.Skills, f.traits("skills"))
@@ -927,28 +916,6 @@ func (r reader) optionalNumber(key string) (int, bool) {
 	return n, true
 }
 
-func (r reader) number(key string) int {
-	n, _ := r.optionalNumber(key)
-	return n
-}
-
-// statesAnyOf reports whether the entry mentions any of these fields at all,
-// which is how a check that needs something expensive avoids reaching for it on
-// a turn that changed nothing of the kind.
-func (r reader) statesAnyOf(keys ...string) bool {
-	for _, key := range keys {
-		if _, stated := r.fields[key]; stated {
-			return true
-		}
-	}
-	return false
-}
-
-func (r reader) flag(key string) bool {
-	b, _ := r.optionalFlag(key)
-	return b
-}
-
 func (r reader) optionalFlag(key string) (bool, bool) {
 	raw, stated := r.fields[key]
 	if !stated || raw == nil {
@@ -968,13 +935,6 @@ func (r reader) count() int {
 		return n
 	}
 	return 1
-}
-
-// listed is list for a caller with nothing to do about a refusal: creation
-// passes what arrived to the constructor, which validates it again anyway.
-func (r reader) listed(key string) []string {
-	values, _ := r.list(key)
-	return values
 }
 
 // list reads a replacement list, and reports whether it read one at all. The
