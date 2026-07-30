@@ -89,7 +89,7 @@ func TestInventoryToolsRejectImpossibleMoves(t *testing.T) {
 	w := equippedWorld(t)
 	pc, _ := w.Character("kyle-katarn")
 	pc.AddCoins(10)
-	pc.AddItem("Ration Pack", "Dried bricks.", 1)
+	w.GiveItem(pc, "Ration Pack", "Dried bricks.", 1)
 
 	for _, c := range []struct{ tool, args string }{
 		{"remove_coins", `{"amount":11}`},
@@ -131,22 +131,27 @@ func TestInventoryToolsOfferedInBothFlows(t *testing.T) {
 }
 
 // The DM never saw character creation and cannot read the character sheet, so
-// the whole character has to reach it somehow. It is the roster that carries
+// the whole character has to reach it somehow. It is the entity map that carries
 // them, rebuilt every turn — not the briefing, which is written once and would
-// be contradicting the roster by the second turn.
-func TestOpeningRosterCarriesCharacterState(t *testing.T) {
+// be contradicting the map by the second turn.
+func TestTheOpeningBlockCarriesCharacterState(t *testing.T) {
 	w := equippedWorld(t)
 	w.AdventureContent = "Dust and trouble in Dryfall."
 	pc, _ := w.Character("kyle-katarn")
-	pc.AddItem("Blaster Pistol", "A worn DL-44 with a scored barrel.", 1)
-	pc.AddItem("Power Cell", "Spares for the blaster.", 4)
+	w.GiveItem(pc, "Blaster Pistol", "A worn DL-44 with a scored barrel.", 1)
+	w.GiveItem(pc, "Power Cell", "Spares for the blaster.", 4)
 	pc.AddCoins(75)
 
 	block := newSession(w).engineState()
-	if !strings.Contains(block, pc.ToString()) {
-		t.Errorf("the opening block does not carry the character's state:\n%s", block)
-	}
-	for _, want := range []string{"coins:75", "Power Cell x4", "A worn DL-44 with a scored barrel."} {
+	for _, want := range []string{
+		"kyle-katarn:",
+		"coins: 75",
+		"inventory: [blaster-pistol, power-cell]",
+		// Each item is its own entity, with the ratings and wording it was
+		// recorded with, so a thing can be reasoned about wherever it is.
+		"count: 4",
+		"A worn DL-44 with a scored barrel.",
+	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("opening block missing %q:\n%s", want, block)
 		}
@@ -154,7 +159,7 @@ func TestOpeningRosterCarriesCharacterState(t *testing.T) {
 
 	// And the briefing does not, because a second copy would be the one that
 	// goes stale the moment they spend a coin.
-	if strings.Contains(openingBriefing(w), "coins:75") {
+	if strings.Contains(openingBriefing(w), "coins") {
 		t.Error("the briefing still embeds a snapshot of the character")
 	}
 }

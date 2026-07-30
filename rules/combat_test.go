@@ -40,11 +40,11 @@ func TestDamageFactorTotalsEveryFactor(t *testing.T) {
 	kyle := fighter(w, "kyle", "Kyle", 0, map[string]int{"strength": 2}, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
 
-	sword, err := kyle.AddWeapon("Sword", "Notched.", 1, Weapon{Damage: 1, DamageAttribute: "strength"})
+	sword, err := w.GiveWeapon(kyle, "Sword", "Notched.", 1, Weapon{Damage: 1, DamageAttribute: "strength"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bandit.AddArmor("Leather Jerkin", "Cracked.", 1, Armor{Protection: 2, Worn: true}); err != nil {
+	if _, err := w.GiveArmor(bandit, "Leather Jerkin", "Cracked.", 1, Armor{Protection: 2, Worn: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestOnlyMusclePoweredWeaponsAddStrength(t *testing.T) {
 	kyle := fighter(w, "kyle", "Kyle", 0, map[string]int{"strength": 3}, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
 
-	blaster, _ := kyle.AddWeapon("Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true})
+	blaster, _ := w.GiveWeapon(kyle, "Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true})
 	res := w.landed(kyle, bandit, blaster, 0)
 	if res.DamageFactor != 3 {
 		t.Errorf("damage factor = %d, want 3 (strength must not count)", res.DamageFactor)
@@ -118,7 +118,7 @@ func TestGrazeIsCappedNoMatterTheWeapon(t *testing.T) {
 		{"a knife that merely grazed", 1, Scratch},
 	} {
 		bandit := fighter(w, "bandit-"+c.what, "Bandit", 0, nil, nil)
-		weapon, _ := kyle.AddWeapon(c.what, "Rigged for the test.", 1, Weapon{Damage: c.damage})
+		weapon, _ := w.GiveWeapon(kyle, c.what, "Rigged for the test.", 1, Weapon{Damage: c.damage})
 		res := w.landed(kyle, bandit, weapon, 1)
 		if !res.Graze {
 			t.Errorf("%s: degree +1 should be a graze", c.what)
@@ -135,9 +135,9 @@ func TestOnlyWornArmorProtects(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	knife, _ := kyle.AddWeapon("Knife", "Short.", 1, Weapon{Damage: 0})
+	knife, _ := w.GiveWeapon(kyle, "Knife", "Short.", 1, Weapon{Damage: 0})
 
-	if _, err := bandit.AddArmor("Breastplate", "Looted, still bloody.", 1, Armor{Protection: 4, Worn: false}); err != nil {
+	if _, err := w.GiveArmor(bandit, "Breastplate", "Looted, still bloody.", 1, Armor{Protection: 4, Worn: false}); err != nil {
 		t.Fatal(err)
 	}
 	if res := w.landed(kyle, bandit, knife, 3); res.DamageFactor != 3 {
@@ -163,9 +163,9 @@ func TestOnlyWornArmorProtects(t *testing.T) {
 func TestBestWornArmorTakesTheBlow(t *testing.T) {
 	w := combatWorld()
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	bandit.AddArmor("Padded Coat", "Filthy.", 1, Armor{Protection: 1, Worn: true})
-	bandit.AddArmor("Mail Shirt", "Rusted rings.", 1, Armor{Protection: 2, Worn: true})
-	bandit.AddArmor("Plate", "In the cart.", 1, Armor{Protection: 4, Worn: false})
+	w.GiveArmor(bandit, "Padded Coat", "Filthy.", 1, Armor{Protection: 1, Worn: true})
+	w.GiveArmor(bandit, "Mail Shirt", "Rusted rings.", 1, Armor{Protection: 2, Worn: true})
+	w.GiveArmor(bandit, "Plate", "In the cart.", 1, Armor{Protection: 4, Worn: false})
 
 	best := bandit.BestWornArmor()
 	if best == nil || best.Name != "Mail Shirt" {
@@ -214,7 +214,7 @@ func TestAmmunitionIsSpentHitOrMiss(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	blaster, err := kyle.AddWeapon("Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true, AmmoCapacity: 2, AmmoItem: "Power Cell"})
+	blaster, err := w.GiveWeapon(kyle, "Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true, AmmoCapacity: 2, AmmoItem: "Power Cell"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestEmptyWeaponCannotFire(t *testing.T) {
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, map[string]int{"shooting": 3})
 	kyle.FudgePoints = 1
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, map[string]int{"dodge": 0})
-	blaster, _ := kyle.AddWeapon("Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true, AmmoCapacity: 1})
+	blaster, _ := w.GiveWeapon(kyle, "Blaster", "Scored barrel.", 1, Weapon{Damage: 3, Ranged: true, AmmoCapacity: 1})
 	blaster.Weapon.Ammo = 0
 
 	_, err := w.OpposedAttack(AttackRequest{
@@ -271,12 +271,12 @@ func TestThrowingIsReportedButLeavesTheSheetToTheDM(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, map[string]int{"strength": 1}, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	knives, _ := kyle.AddWeapon("Throwing Knife", "A matched pair.", 2, Weapon{Damage: 0, DamageAttribute: "strength"})
+	knives, _ := w.GiveWeapon(kyle, "Throwing Knife", "A matched pair.", 2, Weapon{Damage: 0, DamageAttribute: "strength"})
 
 	res := &AttackResult{ActorName: kyle.Name, TargetName: bandit.Name, Hit: true, RelativeDegree: 3}
 	w.resolveBlow(res, kyle, bandit, knives, true)
 
-	if got := kyle.Inventory["throwing-knife"].Count; got != 2 {
+	if got := kyle.carried("throwing-knife").Count; got != 2 {
 		t.Errorf("knives left = %d, want both still on the sheet", got)
 	}
 	if !res.Thrown {
@@ -291,7 +291,7 @@ func TestThrownResultAsksForTheMove(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	knife, _ := kyle.AddWeapon("Throwing Knife", "Balanced.", 1, Weapon{Damage: 0})
+	knife, _ := w.GiveWeapon(kyle, "Throwing Knife", "Balanced.", 1, Weapon{Damage: 0})
 
 	res := &AttackResult{ActorName: kyle.Name, TargetName: bandit.Name, Hit: true, RelativeDegree: 3}
 	w.resolveBlow(res, kyle, bandit, knife, true)
@@ -310,7 +310,7 @@ func TestAttacksNeverKill(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, nil)
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, nil)
-	cannon, _ := kyle.AddWeapon("Deck Gun", "Absurd.", 1, Weapon{Damage: 20, Ranged: true})
+	cannon, _ := w.GiveWeapon(kyle, "Deck Gun", "Absurd.", 1, Weapon{Damage: 20, Ranged: true})
 
 	w.landed(kyle, bandit, cannon, 4)
 	if bandit.Wounds.Level != NearDeath {
@@ -328,7 +328,7 @@ func TestAttacksRefuseTheImpossible(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, map[string]int{"fighting": 1})
 	bandit := fighter(w, "bandit", "Bandit", 0, nil, map[string]int{"fighting": 1})
-	kyle.AddItem("Lucky Coin", "Not a weapon.", 1)
+	w.GiveItem(kyle, "Lucky Coin", "Not a weapon.", 1)
 
 	swing := func(weapon string) error {
 		_, err := w.OpposedAttack(AttackRequest{
@@ -377,7 +377,7 @@ func TestUnopposedAttackUsesTheMarginOverTheDifficulty(t *testing.T) {
 	w := combatWorld()
 	kyle := fighter(w, "kyle", "Kyle", 0, nil, map[string]int{"fighting": 3})
 	sleeper := fighter(w, "sleeper", "Sleeper", 0, nil, nil)
-	kyle.AddWeapon("Dagger", "Thin.", 1, Weapon{Damage: 0})
+	w.GiveWeapon(kyle, "Dagger", "Thin.", 1, Weapon{Damage: 0})
 
 	res, err := w.UnopposedAttack(AttackRequest{
 		ActorID: "kyle", ActorTraitType: TraitTypeSkill, ActorTraitSlug: "fighting",

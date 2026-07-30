@@ -1,5 +1,7 @@
 # Spec: Engine-held context — ledger, roster and archive
 
+**Superseded, kept for the record.** This spec describes the ledger's pipe-separated line grammar and the three-section ROSTER/LOCATIONS/WORLD block, both of which were replaced by the flat entity model in ADR 004 (`docs/adr/004-flat-entity-model-and-narrative-namespace.md`). The `ledger` package it specifies no longer exists. What is still accurate is the reasoning about why context must stop growing and why the archive is kept out of every request; the mechanisms are not.
+
 Companion to ADR 002 (`docs/adr/002-engine-held-context.md`), which records the decisions and their rationale. This spec covers what gets built.
 
 ## Problem Statement

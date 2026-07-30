@@ -28,8 +28,12 @@ type Location struct {
 	Name        string
 	Description string
 	Parent      string
-	// Items is what lies here, keyed by name and spot together. Two daggers in
-	// two corners are two entries; one pile of arrows is one. See placementKey.
+	// Items is what lies here, keyed by each item's id. Two daggers in two
+	// corners are two entries; one pile of arrows is one — the spot is still what
+	// decides whether an arriving stack merges, it is simply no longer half of the
+	// key. It used to be, and that was the bug: a key built out of where a thing
+	// currently is changes the moment the thing moves, so nothing connected what
+	// left one key to what appeared under another.
 	Items map[string]*Item
 }
 
@@ -134,17 +138,11 @@ func (w *World) LocationIDs() []string {
 	return ids
 }
 
-// placementKey identifies a stack lying at a location. Name alone will not do:
-// the spot is half of what a location-held item is, and two daggers in two
-// corners have to stay two things or the detail the spot exists to carry is
-// lost the moment a second one lands.
-func placementKey(name, where string) string {
-	return slug(name) + "@" + slug(where)
-}
-
 // AddItem puts a stack down at this location. proto supplies the name, the
-// wording and any ratings; an existing stack of the same name in the same spot
-// grows instead of a second one opening.
+// wording, any ratings and the id the caller has already minted; an existing stack
+// of the same name in the same spot grows instead of a second one opening, and
+// keeps its own id — one pile of arrows is one entity, so the arriving id is
+// retired rather than carried alongside.
 //
 // Ratings are the proto's only when the stack is new, matching how a character's
 // inventory treats a restock: the entry keeps what it was recorded with, so
@@ -164,20 +162,23 @@ func (l *Location) AddItem(proto *Item, where string, count int) (*Item, error) 
 	if l.Items == nil {
 		l.Items = make(map[string]*Item)
 	}
-	key := placementKey(proto.Name, where)
-	item, lying := l.Items[key]
-	if lying && item.Kind() != proto.Kind() {
+	item := l.stackAt(proto.Name, where)
+	if item != nil && item.Kind() != proto.Kind() {
 		return nil, fmt.Errorf("%s already holds %s as %s, not as %s", l.Name, item.Name, item.Kind(), proto.Kind())
 	}
-	if !lying {
+	if item == nil {
+		if proto.ID == "" {
+			return nil, fmt.Errorf("no id minted for %s: mint one with MintItemID before putting it down, or an item lands where nothing can address it", proto.Name)
+		}
 		item = &Item{
+			ID:          proto.ID,
 			Name:        proto.Name,
 			Description: proto.Description,
 			Weapon:      proto.Weapon,
 			Armor:       proto.Armor,
 			Where:       where,
 		}
-		l.Items[key] = item
+		l.Items[item.ID] = item
 	}
 	if proto.Description != "" {
 		item.Description = proto.Description
@@ -186,13 +187,30 @@ func (l *Location) AddItem(proto *Item, where string, count int) (*Item, error) 
 	return item, nil
 }
 
+// stackAt finds the stack of a name lying in a given spot, which is the pair that
+// decides whether an arriving stack merges. It is a scan because the id, not the
+// pair, is now the key; a room's floor holds few enough entries that looking at
+// all of them is cheaper than any index would be.
+func (l *Location) stackAt(name, where string) *Item {
+	wantedName, wantedWhere := slug(name), slug(where)
+	if wantedName == "" {
+		return nil
+	}
+	for _, it := range l.Items {
+		if slug(it.Name) == wantedName && slug(it.Where) == wantedWhere {
+			return it
+		}
+	}
+	return nil
+}
+
 // RemoveItem takes a stack, or part of one, off the floor. It is the location's
 // half of destruction: what leaves this way leaves the world.
 func (l *Location) RemoveItem(name, where string, count int) (*Item, int, error) {
 	if count < 1 {
 		return nil, 0, fmt.Errorf("item count must be at least 1")
 	}
-	item, key, err := l.find(name, where)
+	item, err := l.find(name, where)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -201,7 +219,7 @@ func (l *Location) RemoveItem(name, where string, count int) (*Item, int, error)
 	}
 	item.Count -= count
 	if item.Count == 0 {
-		delete(l.Items, key)
+		delete(l.Items, item.ID)
 	}
 	return item, item.Count, nil
 }
@@ -209,38 +227,41 @@ func (l *Location) RemoveItem(name, where string, count int) (*Item, int, error)
 // find resolves a name, and optionally a spot, to one stack lying here. Without
 // a spot it will not guess between two stacks of the same name: it says where
 // each of them is and lets the caller name the one it meant.
-func (l *Location) find(name, where string) (*Item, string, error) {
+//
+// The nameless scan walks SortedItems rather than the map, because map order is
+// randomised and this engine is deterministic by design: which of two like-named
+// stacks a caller gets, and the order the refusal lists them in, must not depend
+// on the run.
+func (l *Location) find(name, where string) (*Item, error) {
 	if strings.TrimSpace(name) == "" {
-		return nil, "", fmt.Errorf("item name is required")
+		return nil, fmt.Errorf("item name is required")
 	}
 	if strings.TrimSpace(where) != "" {
-		key := placementKey(name, where)
-		item, lying := l.Items[key]
-		if !lying {
-			return nil, "", fmt.Errorf("no %s lies %s in %s", name, where, l.Name)
+		item := l.stackAt(name, where)
+		if item == nil {
+			return nil, fmt.Errorf("no %s lies %s in %s", name, where, l.Name)
 		}
-		return item, key, nil
+		return item, nil
 	}
 
 	var matches []string
 	var found *Item
-	var foundKey string
 	wanted := slug(name)
-	for key, item := range l.Items {
+	for _, item := range l.SortedItems() {
 		if slug(item.Name) != wanted {
 			continue
 		}
 		matches = append(matches, item.Where)
-		found, foundKey = item, key
+		found = item
 	}
 	switch len(matches) {
 	case 0:
-		return nil, "", fmt.Errorf("no %s lies in %s", name, l.Name)
+		return nil, fmt.Errorf("no %s lies in %s", name, l.Name)
 	case 1:
-		return found, foundKey, nil
+		return found, nil
 	}
 	sort.Strings(matches)
-	return nil, "", fmt.Errorf("%s holds %d lots of %s: %s. Name the one you mean", l.Name, len(matches), name, strings.Join(matches, "; "))
+	return nil, fmt.Errorf("%s holds %d lots of %s: %s. Name the one you mean", l.Name, len(matches), name, strings.Join(matches, "; "))
 }
 
 // SortedItems renders the floor in a fixed order — by name, then by spot — so
@@ -263,11 +284,13 @@ func (l *Location) SortedItems() []*Item {
 // ItemLines renders what lies here, one dense line per stack, in the same
 // notation the roster uses for what a character carries. The ratings ride along
 // so a weapon on the floor can be picked up and swung without the DM having to
-// remember what it hits for.
+// remember what it hits for, and the id rides along so it can be addressed
+// without one — the point of the id being that it does not change when the thing
+// is picked up.
 func (l *Location) ItemLines() []string {
 	lines := make([]string, 0, len(l.Items))
 	for _, it := range l.SortedItems() {
-		line := "- " + itemLabel(it) + "|" + it.Where
+		line := "- " + itemLabel(it) + "|id:" + it.ID + "|" + it.Where
 		if detail := itemDetail(it); detail != "" {
 			line += "|" + detail
 		}
@@ -398,6 +421,21 @@ func (w *World) MoveItem(req MoveRequest) (*MoveResult, error) {
 	// handed the other.
 	moved := source.item.clone()
 
+	// Identity follows the whole stack. A thing that moves in one piece is the
+	// same thing at the far end and keeps its id — that is what the id is for, and
+	// what the old name-and-spot key could not express. A partial move genuinely
+	// creates a second thing: two stacks now exist where one did, they will be
+	// counted, moved and destroyed separately from here on, and so the portion that
+	// left needs its own id while whatever stayed behind keeps the original's.
+	//
+	// Either id may still be retired a moment from now, if the destination already
+	// holds a matching stack; Accept and AddItem decide that, and their answer wins.
+	if count == source.item.Count {
+		moved.ID = source.item.ID
+	} else {
+		moved.ID = w.MintItemID(moved.Name)
+	}
+
 	var landed *Item
 	var destination string
 	if toCharacter != nil {
@@ -427,17 +465,21 @@ type itemSource struct {
 	name      string
 	character *Character
 	location  *Location
-	key       string
 }
 
+// take empties the source of what moved. The entry is dropped only if it is still
+// the one this source resolved to: a whole stack moved from one spot in a room to
+// another spot in the same room keeps its id, so the arriving stack is written into
+// the very map slot the departing one occupied — which is the right outcome, and
+// exactly why the emptied original must not then delete its own replacement.
 func (s *itemSource) take(count int) error {
 	if s.character != nil {
 		_, _, err := s.character.RemoveItem(s.item.Name, count)
 		return err
 	}
 	s.item.Count -= count
-	if s.item.Count == 0 {
-		delete(s.location.Items, s.key)
+	if s.item.Count == 0 && s.location.Items[s.item.ID] == s.item {
+		delete(s.location.Items, s.item.ID)
 	}
 	return nil
 }
@@ -455,8 +497,8 @@ func (w *World) resolveSource(req MoveRequest) (*itemSource, error) {
 		if err != nil {
 			return nil, err
 		}
-		item, held := ch.Inventory[slug(req.Item)]
-		if !held {
+		item := ch.carried(req.Item)
+		if item == nil {
 			return nil, fmt.Errorf("%s does not carry any %s", ch.Name, req.Item)
 		}
 		return &itemSource{item: item, name: ch.Name, character: ch}, nil
@@ -465,11 +507,11 @@ func (w *World) resolveSource(req MoveRequest) (*itemSource, error) {
 		if err != nil {
 			return nil, err
 		}
-		item, key, err := loc.find(req.Item, req.FromWhere)
+		item, err := loc.find(req.Item, req.FromWhere)
 		if err != nil {
 			return nil, err
 		}
-		return &itemSource{item: item, name: loc.Name, location: loc, key: key}, nil
+		return &itemSource{item: item, name: loc.Name, location: loc}, nil
 	}
 
 	sources := w.findItem(req.Item)
@@ -499,7 +541,7 @@ func (w *World) findItem(name string) []*itemSource {
 	var sources []*itemSource
 	for _, id := range w.CharacterIDs() {
 		ch := w.Characters[id]
-		if item, held := ch.Inventory[wanted]; held {
+		if item := ch.carried(wanted); item != nil {
 			sources = append(sources, &itemSource{item: item, name: ch.Name, character: ch})
 		}
 	}
@@ -509,7 +551,7 @@ func (w *World) findItem(name string) []*itemSource {
 			if slug(item.Name) != wanted {
 				continue
 			}
-			sources = append(sources, &itemSource{item: item, name: loc.Name, location: loc, key: placementKey(item.Name, item.Where)})
+			sources = append(sources, &itemSource{item: item, name: loc.Name, location: loc})
 		}
 	}
 	return sources

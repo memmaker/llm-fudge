@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"fudge/archive"
+	"fudge/narrative"
 	"fudge/rules"
 
 	"github.com/memmaker/gollum/llm"
@@ -31,22 +32,22 @@ func rosterWorld(t *testing.T) *rules.World {
 	return w
 }
 
-// The roster is what replaced a history full of half-stale copies of the same
-// sheet, so it has to hold everybody — one copy each, as they stand now.
-func TestRosterHoldsEveryCharacterOnce(t *testing.T) {
-	w := rosterWorld(t)
-	got := roster(w)
+// One entity, one record. This is the invariant the whole flat map exists for:
+// under the three-section block a character was split across all three, and each
+// section was somewhere a fact about them could be written.
+func TestEveryCharacterAppearsExactlyOnce(t *testing.T) {
+	got := rendered(rosterWorld(t))
 
 	for _, id := range []string{"kyle-katarn", "dust-bandit", "preacher-vane"} {
-		if n := strings.Count(got, "id:"+id); n != 1 {
-			t.Errorf("%s appears %d times in the roster, want exactly 1:\n%s", id, n, got)
+		if n := strings.Count(got, "\n  "+id+":\n"); n != 1 {
+			t.Errorf("%s appears %d times, want exactly 1:\n%s", id, n, got)
 		}
 	}
 }
 
-// The roster is rendered fresh, so a wound taken twenty turns ago and a wound
-// taken this turn read the same way: as the only thing the engine says is true.
-func TestRosterIsCurrent(t *testing.T) {
+// The map is rendered fresh, so a wound taken twenty turns ago and a wound taken
+// this turn read the same way: as the only thing the engine says is true.
+func TestTheRenderIsCurrent(t *testing.T) {
 	w := rosterWorld(t)
 	bandit, err := w.Character("dust-bandit")
 	if err != nil {
@@ -54,44 +55,31 @@ func TestRosterIsCurrent(t *testing.T) {
 	}
 	bandit.Wounds.ApplyDamage(4)
 
-	got := roster(w)
-	if !strings.Contains(got, "wounds:hurt") {
-		t.Errorf("roster does not show the wound that was applied:\n%s", got)
+	got := rendered(w)
+	if !strings.Contains(got, "wounds: hurt") {
+		t.Errorf("the render does not show the wound that was applied:\n%s", got)
 	}
-	if strings.Count(got, "wounds:undamaged") != 2 {
+	if strings.Count(got, "wounds: undamaged") != 2 {
 		t.Errorf("the two unwounded characters are not both reported undamaged:\n%s", got)
 	}
 }
 
 // The player character leads. Every turn is about them, and the DM should not
 // have to hunt for them among the NPCs it invented along the way.
-func TestRosterLeadsWithThePlayer(t *testing.T) {
-	w := rosterWorld(t)
-	got := roster(w)
+func TestThePlayerLeads(t *testing.T) {
+	got := rendered(rosterWorld(t))
 
-	player := strings.Index(got, "id:kyle-katarn")
-	for _, other := range []string{"id:dust-bandit", "id:preacher-vane"} {
+	player := strings.Index(got, "\n  kyle-katarn:\n")
+	for _, other := range []string{"\n  dust-bandit:\n", "\n  preacher-vane:\n"} {
 		if i := strings.Index(got, other); i < player {
-			t.Errorf("%s is listed above the player character:\n%s", other, got)
+			t.Errorf("%s is listed above the player character:\n%s", strings.TrimSpace(other), got)
 		}
 	}
 }
 
-// A map is iterated in whatever order it feels like, and a block that shuffles
-// between turns would rewrite the cached prefix for nothing.
-func TestRosterIsDeterministic(t *testing.T) {
-	w := rosterWorld(t)
-	first := roster(w)
-	for i := 0; i < 5; i++ {
-		if got := roster(w); got != first {
-			t.Fatalf("roster differs between renders:\n%s\n---\n%s", first, got)
-		}
-	}
-}
-
-// The dead stay on the roster. They are still the reason a body is on the floor,
-// and pruning them was considered and deliberately left out of the first cut.
-func TestRosterKeepsTheDead(t *testing.T) {
+// The dead stay in the map. They are still the reason a body is on the floor,
+// and pruning them was considered and deliberately left out.
+func TestTheDeadStayInTheMap(t *testing.T) {
 	w := rosterWorld(t)
 	bandit, err := w.Character("dust-bandit")
 	if err != nil {
@@ -99,32 +87,139 @@ func TestRosterKeepsTheDead(t *testing.T) {
 	}
 	bandit.Wounds.DeclareDead()
 
-	got := roster(w)
-	if !strings.Contains(got, "id:dust-bandit") {
-		t.Errorf("a dead character fell off the roster:\n%s", got)
+	got := rendered(w)
+	if !strings.Contains(got, "\n  dust-bandit:\n") {
+		t.Errorf("a dead character fell out of the map:\n%s", got)
 	}
-	if !strings.Contains(got, "wounds:dead") {
-		t.Errorf("the roster does not report them as dead:\n%s", got)
+	if !strings.Contains(got, "wounds: dead") {
+		t.Errorf("the map does not report them as dead:\n%s", got)
 	}
 }
 
-func TestRosterOfAnEmptyWorldIsNotBlank(t *testing.T) {
-	got := roster(&rules.World{Characters: map[string]*rules.Character{}})
-	if strings.TrimSpace(got) == "" {
-		t.Error("an empty roster renders as nothing at all, which reads as a missing section")
+// An item is one entity with one holder, and a character lists what they carry.
+// Both come from the same storage, so they cannot disagree — the second view is
+// there because "can they do this with what they have" is the question the DM
+// asks most often, and scanning every item in the world for a matching holder is
+// exactly the reading a model does badly.
+func TestCarriedItemsRenderBothAsEntitiesAndAsInventory(t *testing.T) {
+	w := rosterWorld(t)
+	if _, err := w.CreateLocation("Saloon", "Sawdust and smoke.", ""); err != nil {
+		t.Fatal(err)
+	}
+	player := w.Characters[w.Player]
+	item, err := w.GiveItem(player, "Iron Key", "Cold, heavy.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := rendered(w)
+	if !strings.Contains(got, "\n  "+item.ID+":\n") {
+		t.Errorf("the key is not an entity of its own:\n%s", got)
+	}
+	if !strings.Contains(got, "location: "+w.Player) {
+		t.Errorf("the key does not reference who carries it:\n%s", got)
+	}
+	if !strings.Contains(got, "inventory: ["+item.ID+"]") {
+		t.Errorf("the carrier does not list the key by id:\n%s", got)
+	}
+}
+
+// Narrative properties hang off the entity they are about, under a key of their
+// own, so there is no second namespace in which the same entity can be described.
+func TestNarrativePropertiesRenderOnTheirEntity(t *testing.T) {
+	w := rosterWorld(t)
+	n := narrative.New()
+	n.Apply([]narrative.Operation{
+		{Op: narrative.OpSet, Entity: "dust-bandit", Properties: map[string]any{"mood": "cornered"}},
+	}, 7, w)
+
+	got := entities(w, n)
+	bandit := got[strings.Index(got, "\n  dust-bandit:\n"):]
+	if !strings.Contains(bandit, "narrative: {mood: cornered}") {
+		t.Errorf("the property is not on the entity it is about:\n%s", bandit)
+	}
+	if !strings.Contains(bandit, "@t7") {
+		t.Errorf("the turn marker is missing, so the fact cannot be traced:\n%s", bandit)
+	}
+}
+
+// A narrative-only entity has no engine half at all, and still gets a record.
+func TestNarrativeOnlyEntitiesRender(t *testing.T) {
+	w := rosterWorld(t)
+	n := narrative.New()
+	n.Apply([]narrative.Operation{
+		{Op: narrative.OpCreate, Entity: "rumor-crypt", Properties: map[string]any{
+			"type": "rumor", "content": "the count murdered his brother",
+		}},
+	}, 9, w)
+
+	got := entities(w, n)
+	if !strings.Contains(got, "\n  rumor-crypt:\n") {
+		t.Errorf("the rumor has no record:\n%s", got)
+	}
+	if !strings.Contains(got, "type: rumor") {
+		t.Errorf("the rumor does not say what it is:\n%s", got)
+	}
+}
+
+// The engine owns wounds and renders them itself. A DM that reports one anyway
+// must not get it into the narrative map, or the block starts disagreeing with
+// itself again — which is the defect this whole design was built to end.
+func TestEngineOwnedFactsNeverReachTheNarrativeMap(t *testing.T) {
+	w := rosterWorld(t)
+	n := narrative.New()
+	n.Apply([]narrative.Operation{
+		{Op: narrative.OpSet, Entity: "kyle-katarn", Properties: map[string]any{
+			"wounds": "hurt", "disposition": "rattled",
+		}},
+	}, 1, w)
+
+	got := entities(w, n)
+	if strings.Contains(got, "narrative: {wounds") || strings.Contains(got, "wounds: hurt") {
+		t.Errorf("an engine-owned fact reached the narrative map:\n%s", got)
+	}
+	if !strings.Contains(got, "disposition: rattled") {
+		t.Errorf("the fiction fact in the same operation was lost with it:\n%s", got)
+	}
+}
+
+// A synonym is the failure a namespace alone cannot stop: refused `location`, a
+// model reaches for `where`, and three hundred turns later reads it back as
+// though the engine had put it there.
+func TestSynonymsForEngineFactsAreRefusedToo(t *testing.T) {
+	w := rosterWorld(t)
+	n := narrative.New()
+	n.Apply([]narrative.Operation{
+		{Op: narrative.OpSet, Entity: "kyle-katarn", Properties: map[string]any{
+			"where": "the cellar", "current_room": "cellar", "mood": "wary",
+		}},
+	}, 1, w)
+
+	got := entities(w, n)
+	for _, unwanted := range []string{"where:", "current_room:"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("a synonym for an engine fact was recorded (%s):\n%s", unwanted, got)
+		}
+	}
+	if !strings.Contains(got, "mood: wary") {
+		t.Errorf("the good property was lost alongside the refused ones:\n%s", got)
 	}
 }
 
 // played fills an archive with n turns, each one distinguishable from the others
-// in input, changes and prose.
+// in input, events and prose.
 func played(n int) *archive.Archive {
 	a := archive.New()
 	for i := 1; i <= n; i++ {
 		a.Record(archive.Turn{
 			Number:      i,
 			PlayerInput: fmt.Sprintf("player line <%d>", i),
-			Update:      fmt.Sprintf("thing|state:%d", i),
-			Prose:       fmt.Sprintf("narration <%d>", i),
+			Events: []archive.Event{{
+				Tool:     "world_update",
+				Entities: []string{"thing"},
+				Headline: fmt.Sprintf("set thing state: %d", i),
+			}},
+			Prose: fmt.Sprintf("narration <%d>", i),
 		})
 	}
 	return a
@@ -187,20 +282,22 @@ func TestTimelineBeforePlayStartsIsNotBlank(t *testing.T) {
 	}
 }
 
-// The block is the DM's entire memory, so every section has to be in it and
-// every section has to say what it is authoritative for.
-func TestEngineStateCarriesAllThreeSections(t *testing.T) {
+// The block is the DM's entire memory, so both parts have to be in it and each
+// has to say what it is authoritative for.
+func TestBlockCarriesTheWorldAndTheTimeline(t *testing.T) {
 	s := newSession(rosterWorld(t))
-	s.ledger.Apply("bar|patrons:scattered", 1, s.isCharacter)
-	s.archive.Record(archive.Turn{Number: 1, PlayerInput: "I shoot the fixer", Update: "bar|patrons:scattered", Prose: "The room empties."})
+	s.narrative.Apply([]narrative.Operation{
+		{Op: narrative.OpSet, Entity: "dust-bandit", Properties: map[string]any{"patrons": "scattered"}},
+	}, 1, s.world)
+	s.archive.Record(archive.Turn{Number: 1, PlayerInput: "I shoot the fixer", Prose: "The room empties."})
 
 	got := s.engineState()
 	for _, want := range []string{
-		"ENGINE STATE", "ROSTER", "WORLD", "TIMELINE",
-		"id:kyle-katarn",        // roster
-		"bar|patrons:scattered", // ledger
-		"I shoot the fixer",     // timeline
-		"The room empties.",     // prose of the newest turn
+		"WORLD STATE", "entities:", "TIMELINE",
+		"kyle-katarn",        // an engine entity
+		"patrons: scattered", // a narrative property on one
+		"I shoot the fixer",  // timeline
+		"The room empties.",  // prose of the newest turn
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("block is missing %q:\n%s", want, got)
@@ -208,20 +305,19 @@ func TestEngineStateCarriesAllThreeSections(t *testing.T) {
 	}
 }
 
-// The engine owns wounds and renders them itself. A DM that reports one anyway
-// must not get it into the ledger, or the block starts disagreeing with itself
-// again — which is the defect this whole design was built to end.
-func TestEngineOwnedFactsNeverReachTheWorldSection(t *testing.T) {
-	s := newSession(rosterWorld(t))
-	s.ledger.Apply("kyle-katarn|wounds:hurt|disposition:rattled", 1, s.isCharacter)
-
-	got := s.engineState()
-	world := got[strings.Index(got, "WORLD"):]
-	if strings.Contains(world, "wounds:hurt") {
-		t.Errorf("an engine-owned fact reached the ledger:\n%s", world)
+// The block is YAML the DM reads as one document, so prose the engine did not
+// write — a description, the spot a thing rests in — must not be able to break
+// its shape.
+func TestProseWithYAMLPunctuationIsQuoted(t *testing.T) {
+	w := rosterWorld(t)
+	if _, err := w.CreateLocation("Cellar", "Damp: stacked with casks, and #cold", ""); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(world, "disposition:rattled") {
-		t.Errorf("the fiction fact on the same line was lost with it:\n%s", world)
+	w.Characters[w.Player].Location = "cellar"
+
+	got := rendered(w)
+	if !strings.Contains(got, `desc: "Damp: stacked with casks, and #cold"`) {
+		t.Errorf("a description containing YAML punctuation was left unquoted:\n%s", got)
 	}
 }
 
@@ -231,15 +327,16 @@ func TestEngineOwnedFactsNeverReachTheWorldSection(t *testing.T) {
 func TestContextDumpCarriesTheBlockAndTheArchive(t *testing.T) {
 	s := newSession(rosterWorld(t))
 	s.turn = 1
-	s.ledger.Apply("bar|patrons:scattered", 1, s.isCharacter)
+	s.narrative.Apply([]narrative.Operation{
+		{Op: narrative.OpSet, Entity: "dust-bandit", Properties: map[string]any{"patrons": "scattered"}},
+	}, 1, s.world)
 	// The block as the DM had it during the turn, before that turn's report was
 	// folded in. A fresh render here would show state it did not yet have.
 	s.lastBlock = s.engineState()
 	s.archive.Record(archive.Turn{
 		Number:      1,
 		PlayerInput: "I shoot the fixer",
-		Events:      []string{"opposed_attack|samantha|GRAZE"},
-		Update:      "bar|patrons:scattered",
+		Events:      []archive.Event{{Tool: "opposed_attack", Entities: []string{"samantha"}, Headline: "GRAZE"}},
 		Prose:       "The room empties in a heartbeat.",
 	})
 
@@ -255,11 +352,11 @@ func TestContextDumpCarriesTheBlockAndTheArchive(t *testing.T) {
 	}
 	got := string(dumped)
 	for _, want := range []string{
-		"ENGINE STATE",              // the block the DM actually saw
-		"id:kyle-katarn",            // roster within it
-		"bar|patrons:scattered",     // ledger within it
+		"WORLD STATE",               // the block the DM actually saw
+		"kyle-katarn",               // an entity within it
+		"patrons: scattered",        // a narrative property within it
 		"ARCHIVE",                   // the record
-		"opposed_attack|samantha",   // engine events, which the block never shows
+		"opposed_attack",            // engine events, which the block never shows
 		"The room empties",          // and the prose, which nothing else keeps
 		"MESSAGE CONTEXT", "system", // the messages, still
 	} {
@@ -273,7 +370,7 @@ func TestContextDumpCarriesTheBlockAndTheArchive(t *testing.T) {
 // it will get next. Between turns those differ by exactly the turn being
 // debugged, which is the worst possible thing to be wrong about.
 func TestContextDumpShowsTheBlockTheDMActuallySaw(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("bar|patrons:scattered")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -290,10 +387,10 @@ func TestContextDumpShowsTheBlockTheDMActuallySaw(t *testing.T) {
 	// The turn reported this, so a freshly rendered block would carry it. The
 	// block the DM was working from could not have.
 	engineState := string(dumped)[:strings.Index(string(dumped), "=== ARCHIVE ===")]
-	if strings.Contains(engineState, "bar|patrons:scattered") {
+	if strings.Contains(engineState, "patrons: scattered") {
 		t.Errorf("the dump rendered a fresh block instead of the one the DM saw:\n%s", engineState)
 	}
-	if !strings.Contains(engineState, "ENGINE STATE") {
+	if !strings.Contains(engineState, "WORLD STATE") {
 		t.Error("the dump has no block at all")
 	}
 }

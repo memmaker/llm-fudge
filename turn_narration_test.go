@@ -85,9 +85,20 @@ func onlyNarration(tools []llm.Tool) bool {
 	return true
 }
 
-func narrationCall(state string) llm.Response {
+// setOp builds the one world_update operation most of these tests need: a
+// narrative property set on an entity that already exists. The entity has to
+// exist — a set against nothing is refused — so it is `forge`, which testWorld
+// opens with.
+func setOp(entity, key, value string) string {
+	return `[{"op":"set","entity":"` + entity + `","properties":{"` + key + `":"` + value + `"}}]`
+}
+
+func narrationCall(update string) llm.Response {
+	if update == "" {
+		update = "[]"
+	}
 	return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","location":"forge","world_update":"`+state+`"}`),
+		call("n", "output_narration", `{"prose":"The smith looks up from the anvil.","location":"forge","world_update":`+update+`}`),
 	}}}
 }
 
@@ -167,7 +178,7 @@ func capture(t *testing.T, run func()) string {
 func TestLastCallIsSpentOnTheNarration(t *testing.T) {
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
 		if onlyNarration(tools) {
-			return narrationCall("grimwald-the-smith|at:forge")
+			return narrationCall(setOp("forge", "anvil", "cooling"))
 		}
 		return stalling()
 	}}
@@ -205,7 +216,7 @@ func TestTurnWritesTheNarrationToFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
-		return narrationCall("grimwald-the-smith|at:forge")
+		return narrationCall(setOp("forge", "anvil", "cooling"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -254,7 +265,7 @@ func TestHiccupIsRetriedWhileBudgetRemains(t *testing.T) {
 		if attempts == 1 {
 			return llm.Response{}, io.ErrUnexpectedEOF
 		}
-		return narrationCall("catnip|at:tavern"), nil
+		return narrationCall(setOp("forge", "door", "open")), nil
 	}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -310,7 +321,7 @@ func TestProseWrittenOutsideTheCallIsNotATurn(t *testing.T) {
 		if round == 0 {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "The smith sets down his hammer."}}
 		}
-		return narrationCall("grimwald-the-smith|at:forge")
+		return narrationCall(setOp("forge", "anvil", "cooling"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -337,7 +348,7 @@ func TestEmptyRepliesAreAnsweredAndCharged(t *testing.T) {
 		if round == 0 {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant}}
 		}
-		return narrationCall("catnip|at:tavern")
+		return narrationCall(setOp("forge", "door", "open"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())
@@ -355,24 +366,24 @@ func TestEmptyRepliesAreAnsweredAndCharged(t *testing.T) {
 	}
 }
 
-// blockOf returns the ENGINE STATE message from a request the DM was shown, and
+// blockOf returns the WORLD STATE message from a request the DM was shown, and
 // says where it sat. Position matters as much as presence: the two messages
 // above it are what stays byte-identical and cached all session.
 func blockOf(t *testing.T, request []llm.Message) (string, int) {
 	t.Helper()
 	for i, msg := range request {
-		if msg.Role == llm.RoleSystem && strings.Contains(msg.Content, "ENGINE STATE") {
+		if msg.Role == llm.RoleSystem && strings.Contains(msg.Content, "WORLD STATE") {
 			return msg.Content, i
 		}
 	}
-	t.Fatalf("no ENGINE STATE block in a request of %d messages", len(request))
+	t.Fatalf("no WORLD STATE block in a request of %d messages", len(request))
 	return "", -1
 }
 
 // The block reaches the DM as a system message pinned directly after the
 // briefing, with the turn's live messages below it.
 func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("catnip|at:tavern")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -385,7 +396,7 @@ func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
 		if request[0].Content != "system" || request[1].Content != "briefing" {
 			t.Errorf("round %d: the cached prefix was disturbed: %q, %q", round+1, request[0].Content, request[1].Content)
 		}
-		if !strings.Contains(block, "ROSTER") || !strings.Contains(block, "WORLD") || !strings.Contains(block, "TIMELINE") {
+		if !strings.Contains(block, "entities:") || !strings.Contains(block, "TIMELINE") {
 			t.Errorf("round %d: block is missing a section:\n%s", round+1, block)
 		}
 	}
@@ -395,7 +406,7 @@ func TestBlockIsPinnedAfterTheBriefing(t *testing.T) {
 // on every request of a turn, and tell the DM nothing the tool results below it
 // are not already telling it.
 func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("catnip|at:tavern")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "door", "open"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -415,7 +426,7 @@ func TestBlockIsStableAcrossTheRoundsOfATurn(t *testing.T) {
 // have moved the roster since the resolution rounds read it, and this is the
 // round that names items and characters off it.
 func TestTheBookkeepingRoundGetsAFreshBlock(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("bar|patrons:scattered")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -428,14 +439,14 @@ func TestTheBookkeepingRoundGetsAFreshBlock(t *testing.T) {
 	if recording == resolving {
 		t.Error("the bookkeeping round read the block the turn started with")
 	}
-	if !strings.Contains(recording, "bar|patrons:scattered") {
+	if !strings.Contains(recording, "patrons: scattered") {
 		t.Errorf("the bookkeeping block does not carry what the narration just established:\n%s", recording)
 	}
 }
 
 // Between turns it is rebuilt, and that is where last turn's report shows up.
 func TestBlockIsRebuiltBetweenTurns(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("bar|patrons:scattered")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "patrons", "scattered"))}
 
 	messages, s := gameStart(), newSession(testWorld())
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -447,7 +458,7 @@ func TestBlockIsRebuiltBetweenTurns(t *testing.T) {
 	if opening == later {
 		t.Error("the block did not change between turns")
 	}
-	if !strings.Contains(later, "bar|patrons:scattered") {
+	if !strings.Contains(later, "patrons: scattered") {
 		t.Errorf("what turn one established is not in turn two's block:\n%s", later)
 	}
 }
@@ -466,7 +477,7 @@ func TestRecallIsOfferedDuringPlayButNotOnTheLastRound(t *testing.T) {
 
 	dm := &model{reply: func(round int, tools []llm.Tool) llm.Response {
 		if onlyNarration(tools) {
-			return narrationCall("catnip|at:tavern")
+			return narrationCall(setOp("forge", "door", "open"))
 		}
 		return stalling()
 	}}
@@ -491,7 +502,7 @@ func TestRecallCostsARoundOfTheBudget(t *testing.T) {
 				call("r", "recall", `{"query":"amulet"}`),
 			}}}
 		}
-		return narrationCall("catnip|at:tavern")
+		return narrationCall(setOp("forge", "door", "open"))
 	}}
 
 	messages, s := gameStart(), newSession(testWorld())

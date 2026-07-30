@@ -1,15 +1,21 @@
 Glossary
 - World: The deterministic instance of a game session, identified by a seed and containing all characters, state, and the turn/phase data.
+- Entity: Anything named in the flat world state — a Character, Item, Location, or a freestanding narrative construct (a rumor, a faction's standing) with no engine-owned fields at all. Every entity has a unique, engine-assigned, immutable ID and a `type`. IDs are never reused and never change, including when the entity moves or changes hands.
+- Kernel: The small set of invariants the engine validates on every entity regardless of type — a unique ID, a `type`, and every reference (an item's `location`, an inventory's contents) resolving to an ID that exists, checked across one global keyspace shared by engine and narrative-only entities alike. The engine does not validate what an entity's narrative properties may contain; that is the DM's domain.
 - Phase: The current lifecycle stage within a turn (e.g., setup, action, resolution).
 - Turn: A single cycle of game activity, incremented as the narrative progresses.
-- Character: An actor in the world (player, NPC, monster). Contains stats, health, and inventory.
+- Character: An actor in the world (player, NPC, monster). Contains stats, health, and inventory. An Entity whose engine-owned fields the rules library computes and renders.
 - NPC: Non-player character; a character controlled by the GM (LLM).
 - Monster: A character representing a foe in combat or conflict.
-- Item: An object that can be equipped or used by a character. Every item is in exactly one place — a Character's inventory or a Location — and moves between them rather than being destroyed and re-created (see Conservation).
+- Item: An object that can be equipped or used by a character. Identified by a stable, engine-assigned ID that survives every move — the name and place it is currently found by are a lookup, not its identity. Every item is in exactly one place — a Character's inventory or a Location — and moves between them rather than being destroyed and re-created (see Conservation).
 - Location: A place the world holds (room, street, clearing), identified by a slug and optionally nested inside a parent. Holds the items lying in it. Nesting is organisational only and grants no reach between places.
 - Scene: The Location the story is currently in, which is wherever the player character stands. Set by the required `location` argument of every narration.
 - Spot: The short prose on an item lying at a Location saying where in that place it rests ("quivering in the door frame"). Part of the item's identity there: two stacks merge only when name and spot both match.
 - Conservation: The rule that changing hands never creates or destroys. `move_item` relocates; `add_*` is only for something entering the world; `remove_item` means destroyed.
+- Engine-owned concept: A fact the rules library computes and is the sole authority for — identity, existence, position, containment, ownership, inventory, equipment, health, combat, time, movement. Mutated only through typed tool calls (`move_item`, `apply_damage`, `create_character`, ...), never through `world_update`, because these require deterministic computation (dice, wound tiers, conservation) that a generic patch cannot perform.
+- Narrative properties: The facts only the DM's prose knows — mood, suspicion, a rumor's content, a relationship, anything the rules library has no opinion on. Live in an entity's `narrative` map, the only part of the world state `world_update` may write. A narrative property whose name collides with an engine-owned concept (`location`, `hp`, `wounds`, `inventory`, ...) is rejected, so the DM cannot grow a second, competing account of a fact the engine already owns.
+- Operation: One instruction in a `world_update` call — `create`, `set`, or `delete` — naming the entity it targets and, for `create`/`set`, the narrative properties to merge in. `create` and `delete` only ever target narrative-only entities; `set` merges into any entity's narrative map.
+- Event: One tool call or operation recorded against a turn in the archive — which tool or op ran, the entity IDs it named, and a one-line headline of what happened. What an entity did across a session is queryable by unioning the events that name it, rather than searching the words of the narration.
 - Die/Roll: A dice-based randomization mechanism used by rules (e.g., 4d6).
 - RNG: Random Number Generator; seeded to produce deterministic results per World seed.
 - LLM: Large Language Model that acts as the DM/Narrator.

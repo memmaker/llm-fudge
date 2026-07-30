@@ -423,7 +423,7 @@ func sortedKeys(m map[string]int) []string {
 // at creation and never moved — there was no call that did — so the engine
 // would have been asserting a position that stopped being true the first time
 // the fiction walked anybody anywhere, and where a character stood was left to
-// the world ledger instead. It is stated here now because the engine finally
+// the DM's own narrative properties instead. It is stated here now because the engine finally
 // tracks it: every narration names the location it happened in, and
 // move_character moves anyone the scene leaves behind. A fact the engine keeps
 // current is a fact the roster owns.
@@ -483,7 +483,9 @@ func (c *Character) ToString() string {
 	}
 	b.WriteString("\ncarrying:")
 	for _, it := range sortedInventory(c.Inventory) {
-		fmt.Fprintf(&b, "\n- %s", itemLabel(it))
+		// The id is on the line because the DM addresses an item by it, and it is
+		// the one thing about the item that does not change when it moves.
+		fmt.Fprintf(&b, "\n- %s|id:%s", itemLabel(it), it.ID)
 		if detail := itemDetail(it); detail != "" {
 			fmt.Fprintf(&b, "|%s", detail)
 		}
@@ -495,13 +497,20 @@ func (c *Character) ToString() string {
 }
 
 // sortedInventory orders an inventory by item name so the sheet reads the same
-// way every time it is rewritten.
+// way every time it is rewritten. The id breaks a tie, so that every reader of
+// this order — including BestWornArmor, choosing between two equal jerkins — gets
+// a total order rather than whatever the map felt like today.
 func sortedInventory(inv map[string]*Item) []*Item {
 	items := make([]*Item, 0, len(inv))
 	for _, it := range inv {
 		items = append(items, it)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].ID < items[j].ID
+	})
 	return items
 }
 

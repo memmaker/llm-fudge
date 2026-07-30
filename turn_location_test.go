@@ -12,7 +12,7 @@ import (
 // narrationAt is a narration that says where it happened, which every narration
 // must.
 func narrationAt(location string) string {
-	return `{"prose":"The smith looks up from the anvil.","location":"` + location + `","world_update":"smith|busy"}`
+	return `{"prose":"The smith looks up from the anvil.","location":"` + location + `","world_update":` + setOp("forge", "busy", "true") + `}`
 }
 
 // The location is how the engine learns where the player is standing, so a
@@ -160,7 +160,7 @@ func TestNarrationWithoutALocationIsRefused(t *testing.T) {
 	m := &model{reply: func(round int, tools []llm.Tool) llm.Response {
 		if round == 0 {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
-				call("n", "output_narration", `{"prose":"The smith looks up.","world_update":"smith|busy"}`),
+				call("n", "output_narration", `{"prose":"The smith looks up.","world_update":`+setOp("forge", "busy", "true")+`}`),
 			}}}
 		}
 		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{

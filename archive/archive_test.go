@@ -14,22 +14,30 @@ func session() *Archive {
 	a.Record(Turn{
 		Number:      1,
 		PlayerInput: "I order a drink and listen to the room",
-		Events:      []string{"roll_on_table weather|clear"},
-		Update:      "old-bartender|disposition:wary; bar|crowded",
-		Prose:       "The bartender pours without looking at you.",
+		Events: []Event{
+			{Tool: "roll_on_table", Headline: "weather: clear"},
+			{Tool: "world_update", Entities: []string{"old-bartender"}, Headline: "disposition: wary"},
+			{Tool: "world_update", Entities: []string{"bar"}, Headline: "crowded"},
+		},
+		Prose: "The bartender pours without looking at you.",
 	})
 	a.Record(Turn{
 		Number:      2,
 		PlayerInput: "I ask the bartender about the Kade job",
-		Events:      []string{"roll_on_table npc-reaction|friendly"},
-		Update:      "old-bartender|disposition:friendly; job|giver:kade|reward:5k",
-		Prose:       "He wipes the same glass a long while. 'Kade pays. Kade also buries.'",
+		Events: []Event{
+			{Tool: "roll_on_table", Entities: []string{"old-bartender"}, Headline: "npc-reaction: friendly"},
+			{Tool: "world_update", Entities: []string{"old-bartender"}, Headline: "disposition: friendly"},
+			{Tool: "world_update", Entities: []string{"job"}, Headline: "giver: kade, reward: 5k"},
+		},
+		Prose: "He wipes the same glass a long while. 'Kade pays. Kade also buries.'",
 	})
 	a.Record(Turn{
 		Number:      3,
 		PlayerInput: "I climb the fire escape",
-		Update:      "samantha|at:rooftop",
-		Prose:       "The rungs are slick with condenser runoff.",
+		Events: []Event{
+			{Tool: "move_character", Entities: []string{"samantha", "rooftop"}, Headline: "samantha moved to rooftop"},
+		},
+		Prose: "The rungs are slick with condenser runoff.",
 	})
 	return a
 }
@@ -44,8 +52,10 @@ func TestRecordKeepsEveryPart(t *testing.T) {
 	for _, want := range []string{
 		"2",
 		"I ask the bartender about the Kade job",
-		"roll_on_table npc-reaction|friendly",
-		"job|giver:kade|reward:5k",
+		"roll_on_table",
+		"npc-reaction: friendly",
+		"giver: kade, reward: 5k",
+		"job",
 		"Kade also buries",
 	} {
 		if !strings.Contains(got, want) {
@@ -56,7 +66,7 @@ func TestRecordKeepsEveryPart(t *testing.T) {
 
 // The DM reaches for a keyword when it only half remembers something, so the
 // search has to cover everywhere a half-remembered thing could have been
-// written down — what the player typed, what was recorded, and what was said.
+// written down — what the player typed, what the engine reported, what was said.
 func TestKeywordSearchesEveryField(t *testing.T) {
 	for _, c := range []struct {
 		what    string
@@ -64,7 +74,7 @@ func TestKeywordSearchesEveryField(t *testing.T) {
 		want    string
 	}{
 		{"player input", "fire escape", "I climb the fire escape"},
-		{"recorded changes", "reward:5k", "I ask the bartender"},
+		{"event headlines", "reward: 5k", "I ask the bartender"},
 		{"prose", "condenser runoff", "I climb the fire escape"},
 	} {
 		got := session().Lookup(Query{Keyword: c.keyword, IncludeProse: true})
@@ -92,6 +102,101 @@ func TestKeywordReturnsMostRecentFirst(t *testing.T) {
 	}
 	if second > first {
 		t.Errorf("older turn came first:\n%s", got)
+	}
+}
+
+// An entity took part in a turn if any one of its events named it. Which event
+// it was does not matter to the question being asked — "has the player met this
+// bartender" is about the turn, not about the call inside it.
+func TestEntityMatchesAnyEventOfTheTurn(t *testing.T) {
+	got := session().Lookup(Query{Entity: "job"})
+	if !strings.Contains(got, "I ask the bartender about the Kade job") {
+		t.Errorf("entity named by the turn's third event did not match:\n%s", got)
+	}
+	if strings.Contains(got, "I climb the fire escape") {
+		t.Errorf("entity lookup returned a turn that never named it:\n%s", got)
+	}
+}
+
+// Exactness is the entire point of indexing on IDs. A substring match would put
+// the old prose search back with an extra step, and quietly: `key` answering for
+// `iron-key` reads as a real hit, and the DM has no way to tell it apart from one.
+func TestEntityMatchIsExactNotSubstring(t *testing.T) {
+	a := New()
+	a.Record(Turn{
+		Number:      1,
+		PlayerInput: "I bribe the monkey",
+		Events:      []Event{{Tool: "move_item", Entities: []string{"iron-key"}, Headline: "iron-key to samantha"}},
+		Prose:       "The monkey turns the key over in its hand.",
+	})
+
+	if got := a.Lookup(Query{Entity: "key", IncludeProse: true}); !strings.Contains(got, "no archived turn") {
+		t.Errorf("entity %q matched a turn that only contains it as a substring:\n%s", "key", got)
+	}
+	if got := a.Lookup(Query{Entity: "Iron-Key"}); !strings.Contains(got, "no archived turn") {
+		t.Errorf("entity match folded case; two IDs differing in case are two entities:\n%s", got)
+	}
+	if got := a.Lookup(Query{Entity: "iron-key"}); !strings.Contains(got, "I bribe the monkey") {
+		t.Errorf("the exact ID did not match:\n%s", got)
+	}
+}
+
+// The turn's entity set is a union over its events, so an entity two events both
+// touched is still one participant, and the order is the events' order by
+// accident — sorting makes a rendered or compared set the same every time.
+func TestDerivedEntitySetIsDedupedAndSorted(t *testing.T) {
+	turn := Turn{
+		Number: 1,
+		Events: []Event{
+			{Tool: "move_item", Entities: []string{"samantha", "iron-key"}},
+			{Tool: "world_update", Entities: []string{"iron-key", "bar"}},
+		},
+	}
+	got := turn.Entities()
+	want := []string{"bar", "iron-key", "samantha"}
+	if len(got) != len(want) {
+		t.Fatalf("Entities() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Entities() = %v, want %v", got, want)
+		}
+	}
+}
+
+// A turn can be recorded before anything resolved — an unnarrated one usually
+// is. Deriving over nothing has to be an empty answer, not a crash.
+func TestTurnWithoutEventsHasNoEntities(t *testing.T) {
+	if got := (Turn{Number: 1}).Entities(); len(got) != 0 {
+		t.Errorf("a turn with no events derived %v", got)
+	}
+}
+
+// Every field of a query narrows the one before it. A range plus an entity is
+// "when did I last deal with him, in these turns" — not "either".
+func TestEntityAndRangeCompose(t *testing.T) {
+	got := session().Lookup(Query{Entity: "old-bartender", From: 1, To: 1})
+	if !strings.Contains(got, "I order a drink") {
+		t.Errorf("entity in range did not match:\n%s", got)
+	}
+	if strings.Contains(got, "I ask the bartender") {
+		t.Errorf("entity lookup ran past the range it was given:\n%s", got)
+	}
+	if got := session().Lookup(Query{Entity: "job", From: 1, To: 1}); !strings.Contains(got, "no archived turn") {
+		t.Errorf("an entity outside the range matched anyway:\n%s", got)
+	}
+}
+
+func TestEntityAndKeywordCompose(t *testing.T) {
+	got := session().Lookup(Query{Entity: "old-bartender", Keyword: "Kade job"})
+	if !strings.Contains(got, "I ask the bartender") {
+		t.Errorf("entity and keyword both satisfied did not match:\n%s", got)
+	}
+	if strings.Contains(got, "I order a drink") {
+		t.Errorf("a turn matching only the entity came back:\n%s", got)
+	}
+	if got := session().Lookup(Query{Entity: "job", Keyword: "fire escape"}); !strings.Contains(got, "no archived turn") {
+		t.Errorf("entity and keyword matched as an OR:\n%s", got)
 	}
 }
 
@@ -185,6 +290,19 @@ func TestEmptyResultSaysSoPlainly(t *testing.T) {
 	}
 	if strings.Contains(got, "turn 1") {
 		t.Errorf("empty result returned turns anyway:\n%s", got)
+	}
+}
+
+// An entity lookup that finds nothing is the answer most likely to be acted on
+// wrongly: the DM asked whether it had ever met this merchant, and "nothing"
+// means it has not. The reply has to name what was asked for, so a mistyped ID
+// is visible, and it has to keep saying that a blank record is not an opening.
+func TestEmptyEntityResultNamesTheEntityAndForbidsInvention(t *testing.T) {
+	got := session().Lookup(Query{Entity: "merchant", Keyword: "ghosts", From: 2, To: 3})
+	for _, want := range []string{"merchant", "ghosts", "2-3", "do not invent"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("empty result lost %q:\n%s", want, got)
+		}
 	}
 }
 

@@ -9,6 +9,17 @@ func locationWorld() *World {
 	return &World{Characters: map[string]*Character{}, Locations: map[string]*Location{}}
 }
 
+// drop puts a stack on a location's floor the way the engine does it: with an id
+// minted first, because AddItem takes a proto whose identity is already settled.
+func drop(w *World, l *Location, proto *Item, where string, count int) *Item {
+	proto.ID = w.MintItemID(proto.Name)
+	item, err := l.AddItem(proto, where, count)
+	if err != nil {
+		panic(err)
+	}
+	return item
+}
+
 // A location is minted from its name the same way a character is, so the DM can
 // read an id off a result instead of deriving one.
 func TestCreateLocationMintsASlug(t *testing.T) {
@@ -95,19 +106,21 @@ func TestUnknownLocationSaysSoWhenThereAreNone(t *testing.T) {
 }
 
 // Two daggers in two corners are two things. One pile of arrows is one thing.
-// The spot is what tells them apart.
+// The spot is what tells them apart — and the pile that grows keeps the id it
+// already had, so the second delivery of arrows does not become a second entity.
 func TestLocationItemsStackOnNameAndSpot(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
 
-	if _, err := cellar.AddItem(&Item{Name: "Arrow", Description: "Goose-fletched."}, "spilled by the door", 12); err != nil {
-		t.Fatal(err)
+	first := drop(w, cellar, &Item{Name: "Arrow", Description: "Goose-fletched."}, "spilled by the door", 12)
+	grown := drop(w, cellar, &Item{Name: "arrow"}, "spilled by the door", 3)
+	elsewhere := drop(w, cellar, &Item{Name: "Arrow"}, "under the table", 1)
+
+	if grown.ID != first.ID {
+		t.Errorf("the restocked pile got id %q, want the original's %q", grown.ID, first.ID)
 	}
-	if _, err := cellar.AddItem(&Item{Name: "arrow"}, "spilled by the door", 3); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cellar.AddItem(&Item{Name: "Arrow"}, "under the table", 1); err != nil {
-		t.Fatal(err)
+	if elsewhere.ID == first.ID {
+		t.Errorf("two piles in two spots share the id %q", elsewhere.ID)
 	}
 
 	if len(cellar.Items) != 2 {
@@ -128,12 +141,12 @@ func TestMoveCarriesRatingsIntact(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddWeapon("Dagger", "Notched at the tip.", 1, Weapon{Damage: 1, DamageAttribute: "strength"})
+	w.GiveWeapon(catnip, "Dagger", "Notched at the tip.", 1, Weapon{Damage: 1, DamageAttribute: "strength"})
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", ToLocation: "cellar", Where: "quivering in the door frame"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, held := catnip.Inventory["dagger"]; held {
+	if catnip.carried("dagger") != nil {
 		t.Error("the dagger should have left the sheet")
 	}
 
@@ -162,20 +175,23 @@ func TestASplitStackDoesNotShareItsRatings(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddWeapon("Pistol", "A worn revolver.", 2, Weapon{Damage: 2, Ranged: true, AmmoCapacity: 6})
+	w.GiveWeapon(catnip, "Pistol", "A worn revolver.", 2, Weapon{Damage: 2, Ranged: true, AmmoCapacity: 6})
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Pistol", ToLocation: "cellar", Where: "on the barrel-head"}); err != nil {
 		t.Fatal(err)
 	}
 
 	dropped := w.Locations["cellar"].SortedItems()[0]
+	if dropped.ID == "" || dropped.ID == catnip.carried("pistol").ID {
+		t.Fatalf("the two halves of the split share the id %q, so they are one entity with two magazines", dropped.ID)
+	}
 	dropped.Weapon.Ammo = 0
-	if got := catnip.Inventory["pistol"].Weapon.Ammo; got != 6 {
+	if got := catnip.carried("pistol").Weapon.Ammo; got != 6 {
 		t.Errorf("the pistol still holstered is down to %d shots: the two stacks share a magazine", got)
 	}
 
-	carried := catnip.Inventory["pistol"]
-	carried.Weapon.Damage = 99
+	holstered := catnip.carried("pistol")
+	holstered.Weapon.Damage = 99
 	if dropped.Weapon.Damage != 2 {
 		t.Error("the dropped pistol's rating moved with the carried one")
 	}
@@ -187,7 +203,7 @@ func TestASplitArmorStackDoesNotShareItsWorn(t *testing.T) {
 	w := locationWorld()
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	mira := w.CreateCharacter("mira", "Mira", nil, nil)
-	catnip.AddArmor("Jerkin", "Boiled leather.", 2, Armor{Protection: 1, Worn: true})
+	w.GiveArmor(catnip, "Jerkin", "Boiled leather.", 2, Armor{Protection: 1, Worn: true})
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Jerkin", ToCharacter: "mira"}); err != nil {
 		t.Fatal(err)
@@ -195,7 +211,7 @@ func TestASplitArmorStackDoesNotShareItsWorn(t *testing.T) {
 	if _, err := mira.EquipArmor("Jerkin", false); err != nil {
 		t.Fatal(err)
 	}
-	if !catnip.Inventory["jerkin"].Armor.Worn {
+	if !catnip.carried("jerkin").Armor.Worn {
 		t.Error("mira taking hers off stripped catnip too")
 	}
 }
@@ -206,13 +222,13 @@ func TestPickingUpClearsTheSpot(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddItem("Rope", "Forty feet.", 1)
+	w.GiveItem(catnip, "Rope", "Forty feet.", 1)
 	w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar", Where: "coiled by the stair"})
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Rope", ToCharacter: "catnip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.Inventory["rope"].Where; got != "" {
+	if got := catnip.carried("rope").Where; got != "" {
 		t.Errorf("spot = %q, want it cleared on pickup", got)
 	}
 }
@@ -222,15 +238,15 @@ func TestMoveHandsPartOfAStackToAnotherCharacter(t *testing.T) {
 	w := locationWorld()
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	mira := w.CreateCharacter("mira", "Mira", nil, nil)
-	catnip.AddItem("Ration Pack", "Dried bricks.", 5)
+	w.GiveItem(catnip, "Ration Pack", "Dried bricks.", 5)
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Ration Pack", ToCharacter: "mira", Count: 2}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.Inventory["ration-pack"].Count; got != 3 {
+	if got := catnip.carried("ration-pack").Count; got != 3 {
 		t.Errorf("catnip keeps %d, want 3", got)
 	}
-	if got := mira.Inventory["ration-pack"].Count; got != 2 {
+	if got := mira.carried("ration-pack").Count; got != 2 {
 		t.Errorf("mira received %d, want 2", got)
 	}
 }
@@ -242,8 +258,8 @@ func TestAmbiguousMoveNamesEveryHolder(t *testing.T) {
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	mira := w.CreateCharacter("mira", "Mira", nil, nil)
-	catnip.AddItem("Dagger", "Notched.", 1)
-	mira.AddItem("Dagger", "Plain.", 1)
+	w.GiveItem(catnip, "Dagger", "Notched.", 1)
+	w.GiveItem(mira, "Dagger", "Plain.", 1)
 
 	_, err := w.MoveItem(MoveRequest{Item: "Dagger", ToLocation: "cellar", Where: "on the floor"})
 	if err == nil {
@@ -266,8 +282,8 @@ func TestMoveDisambiguatesBySpot(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	cellar.AddItem(&Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
-	cellar.AddItem(&Item{Name: "Dagger", Description: "Plain."}, "under the table", 1)
+	drop(w, cellar, &Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
+	drop(w, cellar, &Item{Name: "Dagger", Description: "Plain."}, "under the table", 1)
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", ToCharacter: "catnip"}); err == nil {
 		t.Fatal("two stacks of the same name at one location must be ambiguous")
@@ -276,7 +292,7 @@ func TestMoveDisambiguatesBySpot(t *testing.T) {
 	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", FromWhere: "under the table", ToCharacter: "catnip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.Inventory["dagger"].Description; got != "Plain." {
+	if got := catnip.carried("dagger").Description; got != "Plain." {
 		t.Errorf("picked up %q, want the one under the table", got)
 	}
 }
@@ -301,7 +317,7 @@ func TestMoveToALocationRequiresASpot(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddItem("Rope", "Forty feet.", 1)
+	w.GiveItem(catnip, "Rope", "Forty feet.", 1)
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar"}); err == nil {
 		t.Fatal("a move onto the ground must name the spot")
@@ -312,7 +328,7 @@ func TestMoveNeedsExactlyOneDestination(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddItem("Rope", "Forty feet.", 1)
+	w.GiveItem(catnip, "Rope", "Forty feet.", 1)
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Rope"}); err == nil {
 		t.Fatal("a move with no destination must be refused")
@@ -328,8 +344,8 @@ func TestMoveRefusesToMergeDifferentKinds(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
-	catnip.AddWeapon("Dagger", "Notched.", 1, Weapon{Damage: 1})
-	cellar.AddItem(&Item{Name: "Dagger", Description: "A wooden prop."}, "on the shelf", 1)
+	w.GiveWeapon(catnip, "Dagger", "Notched.", 1, Weapon{Damage: 1})
+	drop(w, cellar, &Item{Name: "Dagger", Description: "A wooden prop."}, "on the shelf", 1)
 
 	_, err := w.MoveItem(MoveRequest{Item: "Dagger", FromCharacter: "catnip", ToLocation: "cellar", Where: "on the shelf"})
 	if err == nil {
@@ -342,7 +358,7 @@ func TestMoveRefusesToMergeDifferentKinds(t *testing.T) {
 func TestRemoveItemDestroysAtALocation(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
-	cellar.AddItem(&Item{Name: "Torch", Description: "Burning low."}, "in the sconce", 2)
+	drop(w, cellar, &Item{Name: "Torch", Description: "Burning low."}, "in the sconce", 2)
 
 	if _, _, err := cellar.RemoveItem("Torch", "in the sconce", 2); err != nil {
 		t.Fatal(err)
@@ -355,12 +371,245 @@ func TestRemoveItemDestroysAtALocation(t *testing.T) {
 func TestLocationRemoveRefusesMoreThanIsThere(t *testing.T) {
 	w := locationWorld()
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
-	cellar.AddItem(&Item{Name: "Torch", Description: "Burning low."}, "in the sconce", 1)
+	drop(w, cellar, &Item{Name: "Torch", Description: "Burning low."}, "in the sconce", 1)
 
 	if _, _, err := cellar.RemoveItem("Torch", "in the sconce", 4); err == nil {
 		t.Fatal("removing more than is there must be refused")
 	}
 	if got := cellar.SortedItems()[0].Count; got != 1 {
 		t.Errorf("count = %d, want the stack untouched", got)
+	}
+}
+
+// The point of the id: a thing that moves in one piece is the same thing at the
+// far end. The old key was built out of where the item was, so a move changed its
+// whole address and nothing tied what left to what arrived — which is how a
+// session lost track of what the party was carrying.
+func TestAFullMoveKeepsTheItemsID(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	rope, err := w.GiveItem(catnip, "Rope", "Forty feet.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := rope.ID
+
+	down, err := w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar", Where: "coiled by the stair"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if down.Item.ID != id {
+		t.Errorf("dropped as %q, want the id it was carried under, %q", down.Item.ID, id)
+	}
+
+	up, err := w.MoveItem(MoveRequest{Item: "Rope", ToCharacter: "catnip"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Item.ID != id {
+		t.Errorf("picked up as %q, want %q", up.Item.ID, id)
+	}
+	if _, err := w.ItemByID(id); err != nil {
+		t.Errorf("the rope is no longer addressable by its id: %v", err)
+	}
+	if len(cellar.Items) != 0 {
+		t.Errorf("the cellar still holds %d entries", len(cellar.Items))
+	}
+}
+
+// Source and destination can be the same room. A whole stack keeps its id, so the
+// arriving stack is written into the very map slot the departing one occupied, and
+// the emptied original must not then delete its own replacement — that would lose
+// the dagger for good.
+func TestAFullMoveWithinOneLocationKeepsTheItem(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	dagger := drop(w, cellar, &Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
+
+	res, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", ToLocation: "cellar", Where: "on the table"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cellar.Items) != 1 {
+		t.Fatalf("the cellar holds %d entries, want the one dagger", len(cellar.Items))
+	}
+	if res.Item.ID != dagger.ID {
+		t.Errorf("the dagger came to rest as %q, want %q", res.Item.ID, dagger.ID)
+	}
+	moved := cellar.SortedItems()[0]
+	if moved.ID != dagger.ID || moved.Where != "on the table" || moved.Count != 1 {
+		t.Errorf("stack = %+v, want one dagger on the table under its original id", moved)
+	}
+}
+
+// A partial move genuinely creates a second thing: the two halves are counted,
+// moved and destroyed separately from here on, so they cannot share an id. What
+// stays behind is still the original and keeps the original's.
+func TestAPartialMoveMintsANewIDForWhatLeft(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	w.CreateCharacter("mira", "Mira", nil, nil)
+	packs, err := w.GiveItem(catnip, "Ration Pack", "Dried bricks.", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := packs.ID
+
+	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", ToCharacter: "mira", Count: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := catnip.carried("ration-pack").ID; got != id {
+		t.Errorf("what stayed behind became %q, want the original %q", got, id)
+	}
+	if res.Item.ID == "" {
+		t.Fatal("the half that moved got no id at all")
+	}
+	if res.Item.ID == id {
+		t.Errorf("both halves answer to %q", id)
+	}
+	for _, want := range []struct {
+		id    string
+		count int
+	}{{id, 3}, {res.Item.ID, 2}} {
+		got, err := w.ItemByID(want.id)
+		if err != nil {
+			t.Fatalf("%s is not addressable: %v", want.id, err)
+		}
+		if got.Count != want.count {
+			t.Errorf("%s holds %d, want %d", want.id, got.Count, want.count)
+		}
+	}
+}
+
+// Landing on a matching stack merges into one entity, so one of the two ids has
+// to go. The stack that was already there keeps its own — it is the thing the DM
+// has been reading about — and the absorbed id leaves the world with the stack it
+// belonged to.
+func TestMergingKeepsTheDestinationStacksID(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	mira := w.CreateCharacter("mira", "Mira", nil, nil)
+	hers, err := w.GiveItem(mira, "Ration Pack", "Dried bricks.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	his, err := w.GiveItem(catnip, "Ration Pack", "Dried bricks.", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if his.ID == hers.ID {
+		t.Fatalf("two piles in two pockets share the id %q", his.ID)
+	}
+
+	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", FromCharacter: "catnip", ToCharacter: "mira", Count: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Item.ID != hers.ID {
+		t.Errorf("the merged pile answers to %q, want mira's own %q", res.Item.ID, hers.ID)
+	}
+	if res.Item.Count != 3 {
+		t.Errorf("mira holds %d, want all 3", res.Item.Count)
+	}
+	if len(mira.Inventory) != 1 {
+		t.Errorf("mira has %d entries, want the one merged pile", len(mira.Inventory))
+	}
+	if w.HasEntity(his.ID) {
+		t.Errorf("the absorbed id %q is still somewhere in the world", his.ID)
+	}
+}
+
+// One global keyspace means the minter dodges every entity there is, not just the
+// items. The DM addresses a thing by bare id, so a character and an item both
+// answering to `lantern` would make every call about either a coin toss.
+func TestMintItemIDAvoidsTheWholeKeyspace(t *testing.T) {
+	w := locationWorld()
+	w.CreateCharacter("lantern", "Lantern", nil, nil)
+	w.CreateLocation("Rope", "A street named for the ropewalk.", "")
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+
+	if got := w.MintItemID("Lantern"); got == "lantern" {
+		t.Error("an item was minted onto a character's id")
+	}
+	if got := w.MintItemID("Rope"); got == "rope" {
+		t.Error("an item was minted onto a location's id")
+	}
+
+	// The suffix path: each new torch steps past every torch already minted,
+	// wherever it happens to be.
+	first := drop(w, cellar, &Item{Name: "Torch"}, "in the sconce", 1)
+	second := drop(w, cellar, &Item{Name: "Torch"}, "on the step", 1)
+	third, err := w.GiveItem(catnip, "Torch", "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, it := range []*Item{first, second, third} {
+		if it.ID == "" {
+			t.Fatal("a torch was minted with no id")
+		}
+		if seen[it.ID] {
+			t.Errorf("two torches share the id %q", it.ID)
+		}
+		seen[it.ID] = true
+	}
+	if got := w.MintItemID("Torch"); w.HasEntity(got) {
+		t.Errorf("minted %q, which is already taken", got)
+	}
+}
+
+// Two iron keys in two places are two things, and each has to be reachable on its
+// own — the name they share is exactly what could not tell them apart before.
+func TestTwoItemsOfOneNameStayIndependentlyAddressable(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+
+	pocketed, err := w.GiveItem(catnip, "Iron Key", "Long-shanked.", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lying := drop(w, cellar, &Item{Name: "Iron Key", Description: "Stubby, and green with age."}, "on the ledge", 1)
+
+	if pocketed.ID == lying.ID {
+		t.Fatalf("both keys answer to %q", pocketed.ID)
+	}
+	for _, want := range []*Item{pocketed, lying} {
+		got, err := w.ItemByID(want.ID)
+		if err != nil {
+			t.Fatalf("%s is not addressable: %v", want.ID, err)
+		}
+		if got != want {
+			t.Errorf("%s resolved to the other key: %q", want.ID, got.Description)
+		}
+	}
+
+	// A miss names what exists, the way a character miss names the roster.
+	_, err = w.ItemByID("brass-key")
+	if err == nil {
+		t.Fatal("an unknown item id must be an error")
+	}
+	for _, want := range []string{"brass-key", pocketed.ID, lying.ID} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to mention %q", err, want)
+		}
+	}
+}
+
+// A proto with no id is a caller that forgot to mint, and the entry it would open
+// could never be addressed again. A loud refusal here beats a ghost item in play.
+func TestAnUnmintedProtoIsRefused(t *testing.T) {
+	w := locationWorld()
+	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+
+	if _, err := cellar.AddItem(&Item{Name: "Torch"}, "in the sconce", 1); err == nil {
+		t.Error("a floor must refuse an item with no id")
+	}
+	if _, err := catnip.Accept(&Item{Name: "Torch"}, 1); err == nil {
+		t.Error("an inventory must refuse an item with no id")
 	}
 }

@@ -36,8 +36,8 @@ func (c *Character) item(name string) (*Item, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("item name is required")
 	}
-	item, held := c.Inventory[slug(name)]
-	if !held {
+	item := c.carried(name)
+	if item == nil {
 		return nil, fmt.Errorf("%s does not carry %s", c.Name, name)
 	}
 	return item, nil

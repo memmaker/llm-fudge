@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"fudge/archive"
+	"fudge/narrative"
 	"fudge/prompts"
 	"fudge/rules"
 	"fudge/ui"
@@ -48,7 +49,7 @@ const (
 	maxRecordRequests = 2
 	// maxRetryDelay is the ceiling on the wait between retried requests.
 	maxRetryDelay = 30 * time.Second
-	// pinnedMessages is how many messages sit above the ENGINE STATE block and
+	// pinnedMessages is how many messages sit above the WORLD STATE block and
 	// never change again: the DM prompt and the opening briefing, built once in
 	// runGamePhase. They are the whole of the history between turns, and being
 	// byte-identical all session is what makes them worth caching. Anything
@@ -753,7 +754,7 @@ func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) er
 
 	writer := &strings.Builder{}
 
-	writer.WriteString("=== ENGINE STATE, as the DM last saw it ===\n\n")
+	writer.WriteString("=== WORLD STATE, as the DM last saw it ===\n\n")
 	if s.lastBlock != "" {
 		writer.WriteString(s.lastBlock)
 	} else {
@@ -857,13 +858,40 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 
 // narrationOutput is the payload of an output_narration call: the prose goes to
 // the player, then to narration.txt and the archive, the world update goes to
-// the ledger, and the image prompt—present only under --img-gen—goes to
+// the narrative store, and the image prompt—present only under --img-gen—goes to
 // img-gen.md.
 type narrationOutput struct {
-	Prose       string `json:"prose"`
-	Location    string `json:"location"`
-	WorldUpdate string `json:"world_update"`
-	ImgGen      string `json:"img_gen"`
+	Prose    string `json:"prose"`
+	Location string `json:"location"`
+	// WorldUpdate arrives as structured operations rather than as text to be
+	// parsed. The provider validates their shape against the tool schema before
+	// they ever reach here — a whole class of malformed report that the line
+	// grammar this replaced had to salvage what it could from.
+	WorldUpdate []narrative.Operation `json:"world_update"`
+	ImgGen      string                `json:"img_gen"`
+}
+
+// opHeadline is how one world_update operation reads in the archive: short
+// enough that a turn's whole record stays inside a recall, and specific enough
+// that reading it back says what the DM actually recorded rather than merely
+// that it recorded something.
+func opHeadline(op narrative.Operation) string {
+	if op.Op == narrative.OpDelete {
+		return "delete " + op.Entity
+	}
+	names := make([]string, 0, len(op.Properties))
+	for name := range op.Properties {
+		names = append(names, name)
+	}
+	// Sorted because Go randomises map order, and an archive that rendered the
+	// same turn differently on every read would be worthless for working out
+	// what happened.
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s: %v", name, op.Properties[name]))
+	}
+	return fmt.Sprintf("%s %s %s", op.Op, op.Entity, strings.Join(parts, ", "))
 }
 
 // openingBriefing gives the DM the adventure it must open with. Setup is over
@@ -885,7 +913,7 @@ func openingBriefing(w *rules.World) string {
 	b.WriteString(w.AdventureContent)
 	b.WriteString("\n\n")
 
-	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response, and it holds two calls. First create_location for the place the scene opens in: no location exists yet, and a narration can only name one that does. Then one output_narration carrying the opening prose, that location's slug as its location, and as world_update the full baseline of everything the prose establishes. The player character is in the ROSTER above, with everything they carry—put them in the scene as the engine holds them. Narrate the opening scene now.")
+	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response, and it holds two calls. First create_location for the place the scene opens in: no location exists yet, and a narration can only name one that does. Then one output_narration carrying the opening prose, that location's slug as its location, and as world_update the full baseline of everything the prose establishes. The player character is in WORLD STATE above, with everything they carry—put them in the scene as the engine holds them. Narrate the opening scene now.")
 	return b.String()
 }
 
@@ -927,7 +955,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 	// What the turn leaves behind. None of it stays in the history: the engine's
 	// headlines and the prose go to the archive, the reported facts go to the
-	// ledger, and the messages themselves are dropped where they stand.
+	// narrative store, and the messages themselves are dropped where they stand.
 	var log turnLog
 
 	// A turn gets maxTurnRequests calls to the model and no more. Every one counts,
@@ -997,7 +1025,11 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 				// the archive keeps it so that events survive whether or not the
 				// DM thought them worth reporting. The character state under it
 				// does not: the roster states that, currently, every turn.
-				log.events = append(log.events, toolCall.Function.Name+"|"+resultHeadline(result))
+				log.events = append(log.events, archive.Event{
+					Tool:     toolCall.Function.Name,
+					Entities: callEntities(toolCall),
+					Headline: resultHeadline(result),
+				})
 			}
 			results[toolCall.ID] = result
 		}
@@ -1008,7 +1040,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 				continue
 			}
 			var result string
-			parsed, parseErr := parseNarration(toolCall)
+			parsed, parseErr := parseNarration(toolCall, s.turn == 1)
 			// The scene has to happen somewhere the engine holds, or the
 			// position it is about to record is a slug that means nothing.
 			// Refusing costs one silent round; letting it through costs the
@@ -1037,17 +1069,25 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		}
 
 		if narration != nil {
-			// Reported facts reach the ledger the moment they land, rather than
+			// Reported facts reach the narrative store the moment they land, rather than
 			// at the end of the turn: a turn can narrate more than once — a
 			// choice menu makes it — and the second narration is written by a DM
 			// that should already be able to see what the first one established.
-			for _, note := range s.ledger.Apply(narration.WorldUpdate, s.turn, s.isCharacter) {
+			for _, note := range s.narrative.Apply(narration.WorldUpdate, s.turn, s.world) {
 				if debug {
-					fmt.Printf("\033[90m[ledger: %s]\033[0m\n", note)
+					fmt.Printf("\033[90m[%s]\033[0m\n", note)
 				}
 			}
 			log.shown = append(log.shown, narration.Prose)
-			log.updates = append(log.updates, narration.WorldUpdate)
+			// One event per operation, so the archive is indexed by every entity
+			// the DM spoke about and not only by the ones a typed call named.
+			for _, op := range narration.WorldUpdate {
+				log.events = append(log.events, archive.Event{
+					Tool:     "world_update",
+					Entities: []string{op.Entity},
+					Headline: opHeadline(op),
+				})
+			}
 
 			fmt.Println(ui.WrapText(narration.Prose, ui.TerminalWidth()))
 			fmt.Println()
@@ -1108,14 +1148,14 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			if response.Message.Content != "" {
 				*messages = append(*messages, llm.Message{
 					Role:    llm.RoleUser,
-					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration, and they have still been shown nothing. Send this turn's narration through output_narration now. Nothing you wrote outside the call is kept, so repeat all of it in the call—the narration as `prose`, and anything it established as `world_update`, even if you already wrote that state as plain text.",
+					Content: "That reply went nowhere: the player only ever sees the prose argument of output_narration, and they have still been shown nothing. Send this turn's narration through output_narration now. Nothing you wrote outside the call is kept, so repeat all of it in the call—the narration as `prose`, and anything it established about how people feel or what they want as `world_update`, even if you already wrote that as plain text.",
 				})
 				continue
 			}
 			// A reply with neither calls nor text says nothing at all.
 			*messages = append(*messages, llm.Message{
 				Role:    llm.RoleUser,
-				Content: "That reply was empty: no narration, no tool call, nothing the player can read. The turn is not over until you call output_narration. Send it now, with its world_update.",
+				Content: "That reply was empty: no narration, no tool call, nothing the player can read. The turn is not over until you call output_narration. Send it now.",
 			})
 			continue
 		}
@@ -1134,7 +1174,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 		// And now the turn is over — and it leaves nothing behind. Every part of
 		// it now has exactly one home: what the engine computes is in the roster,
-		// what only the prose knew is in the ledger, what happened is in the
+		// what only the prose knew is in the narrative store, what happened is in the
 		// archive. The messages are the fourth copy, and the one that used to
 		// grow without bound, so they go.
 		s.recordTurn(playerInput, log)
@@ -1221,7 +1261,11 @@ func (s *session) recordPhase(chat chatRound, messages *[]llm.Message, log *turn
 				result = "Error: " + err.Error()
 				refused = true
 			}
-			log.events = append(log.events, toolCall.Function.Name+"|"+resultHeadline(result))
+			log.events = append(log.events, archive.Event{
+				Tool:     toolCall.Function.Name,
+				Entities: callEntities(toolCall),
+				Headline: resultHeadline(result),
+			})
 			*messages = append(*messages, llm.Message{
 				Role:       llm.RoleTool,
 				ToolCallID: toolCall.ID,
@@ -1260,9 +1304,7 @@ func recordDemand(log turnLog) string {
 	if len(log.events) > 0 {
 		b.WriteString("The engine already resolved these during the turn. They are done, and recording any of them again would wound, spend or move a second time:\n\n")
 		for _, event := range log.events {
-			b.WriteString("- ")
-			b.WriteString(event)
-			b.WriteString("\n")
+			fmt.Fprintf(&b, "- %s: %s\n", event.Tool, event.Headline)
 		}
 		b.WriteString("\n")
 	} else {
@@ -1272,13 +1314,13 @@ func recordDemand(log turnLog) string {
 	b.WriteString("Now make the calls that prose implies and the engine has not made. Go looking for these, in this order:\n\n")
 	b.WriteString("- **Anything that left a hand.** Dropped, thrown, thrown away, put down, set aside, stashed, hidden, buried, left behind, handed over, sold, given away, paid, stolen, lost. All of it is move_item, and the ground is a destination like any other: a thing on the floor is at a location, not gone. Something nobody is holding is still somewhere.\n")
 	b.WriteString("- **Anything that came into a hand.** Picked up, taken, caught, retrieved, bought, accepted, pulled out of a pocket.\n")
-	b.WriteString("\nWhich of the two calls a thing needs is settled by one test, and it is not a judgement: **look for the thing by name in ROSTER and LOCATIONS above.** If it is there, move_item it to whoever or wherever has it now. If it is not there, it does not exist — however many turns your prose has been describing it, however plainly the story treats it as real, whatever WORLD says about it — and add_item is what brings it into the world, into the hands or the spot that hold it now. WORLD is not a record of things. It is what your prose knows, and a prop can sit in it for ten turns without the engine having ever held it.\n\nThis is the ordinary case, not a strange one: it is what happens every time a scene invents a prop and the story then picks it up. add_item is not only for things that appear from nowhere — it is for the first time the engine hears of anything. A thing that turns out not to exist is never a reason to record nothing; it is the reason to add it.\n\n")
+	b.WriteString("\nWhich of the two calls a thing needs is settled by one test, and it is not a judgement: **look for the thing by name among the entities above.** If there is an item entity for it, move_item it to whoever or wherever has it now. If there is not, it does not exist — however many turns your prose has been describing it, however plainly the story treats it as real, whatever any narrative property says about it — and add_item is what brings it into the world, into the hands or the spot that hold it now. A narrative property is not a record of a thing. It is what your prose knows, and a prop can sit in one for ten turns without the engine having ever held it.\n\nThis is the ordinary case, not a strange one: it is what happens every time a scene invents a prop and the story then picks it up. add_item is not only for things that appear from nowhere — it is for the first time the engine hears of anything. A thing that turns out not to exist is never a reason to record nothing; it is the reason to add it.\n\n")
 	b.WriteString("- **Anything genuinely destroyed, and nothing else.** Drunk, eaten, burned, smashed, fired off as a last charge. Thrown away is not destroyed. Broken is not destroyed either, unless your prose says it is in pieces beyond use.\n")
 	b.WriteString("- **Coins that moved**, in either direction.\n")
 	b.WriteString("- **Anybody who arrived, walked out, was dragged off, fled or died** — and anybody your prose introduced who does not exist yet.\n")
 	b.WriteString("- **A wound from something no attack roll settled**: a fall, a fire, poison, an execution.\n\n")
 	b.WriteString("Read your prose a sentence at a time rather than by its gist, and go by what it actually says rather than what you meant by it: if it is not in those words it did not happen, and if it is in them the engine has to hold it too. The commonest miss by far is the first item on that list — the prose says a thing left somebody's hands, the engine goes on saying it is carried, and neither of you notices until the sheet is read out loud.\n\n")
-	b.WriteString("ROSTER and LOCATIONS above are current as of this moment, so a call that would only restate what is already there is one to skip. If, having gone through your prose that way, it moved nothing the record does not already hold, make no calls and say so in one line.\n\nDo not narrate, do not retell the scene, and do not record anything twice.")
+	b.WriteString("WORLD STATE above is current as of this moment, so a call that would only restate what is already there is one to skip. If, having gone through your prose that way, it moved nothing the record does not already hold, make no calls and say so in one line.\n\nDo not narrate, do not retell the scene, and do not record anything twice.")
 	return b.String()
 }
 
@@ -1298,22 +1340,20 @@ func (s *session) recordTurn(playerInput string, log turnLog) {
 		Number:      s.turn,
 		PlayerInput: input,
 		Events:      log.events,
-		Update:      strings.Join(log.updates, "; "),
 		Prose:       strings.Join(log.shown, "\n\n"),
 		Unnarrated:  len(log.shown) == 0,
 	})
 }
 
 // turnLog is what a turn gathers as it runs, and the only thing that outlives
-// it. The four move together from the moment they are filled to the moment the
+// it. The three move together from the moment they are filled to the moment the
 // archive takes them, which is why they travel as one thing: a turn can narrate
 // more than once, and each part accumulates across rounds rather than being
 // settled by any single one of them.
 type turnLog struct {
-	events  []string
+	events  []archive.Event
 	choices []string
 	shown   []string
-	updates []string
 }
 
 // withEngineState returns the messages a request is actually made of. The two
@@ -1382,9 +1422,16 @@ func retryDelay(failures int) time.Duration {
 // narrationDemand rides on the last call a turn is allowed. The tools are gone by
 // the time the DM reads it, so the message says why rather than leaving it to
 // discover that its next call does not exist.
-const narrationDemand = "Stop resolving and narrate. This is the last call of the turn's first half: the checks, the dice and the rest of the engine are no longer available to you, output_narration is what you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it as always, and location: name a slug that exists in LOCATIONS, or call create_location in this same response first if the scene has moved somewhere new—create_location is the one other call you still have. If this response does not carry the narration, the player loses the turn."
+const narrationDemand = "Stop resolving and narrate. This is the last call of the turn's first half: the checks, the dice and the rest of the engine are no longer available to you, output_narration is what you have left, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Pass world_update with it if your prose established anything the engine does not hold, and location: name a slug that exists in WORLD STATE, or call create_location in this same response first if the scene has moved somewhere new—create_location is the one other call you still have. If this response does not carry the narration, the player loses the turn."
 
-func parseNarration(call llm.ToolCall) (narrationOutput, error) {
+// baseline says whether this narration is the one that opens the game, and is
+// the only case in which an empty world_update is refused. Once play is running,
+// a turn that established nothing the engine does not already hold is ordinary —
+// a round of pure fighting is all engine facts — and demanding an update there
+// would only teach the DM to invent a property to satisfy the check. The opening
+// scene is different: every disposition, every feature, every hook in it exists
+// nowhere else, and nothing has been recorded yet to fall back on.
+func parseNarration(call llm.ToolCall, baseline bool) (narrationOutput, error) {
 	var args narrationOutput
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return narrationOutput{}, err
@@ -1399,12 +1446,8 @@ func parseNarration(call llm.ToolCall) (narrationOutput, error) {
 	if strings.TrimSpace(args.Location) == "" {
 		return narrationOutput{}, errors.New("location is empty: name the slug of the place this scene happens in")
 	}
-	// The prose is dropped the moment the turn collapses, so a narration without
-	// state would leave nothing behind at all. Rejecting it here — before the
-	// player is shown anything — costs one silent round; letting it through costs
-	// the turn's memory.
-	if strings.TrimSpace(args.WorldUpdate) == "" {
-		return narrationOutput{}, errors.New("world_update is empty")
+	if baseline && len(args.WorldUpdate) == 0 {
+		return narrationOutput{}, errors.New("world_update is empty: the opening scene is the one narration that must carry a full baseline, since nothing is recorded yet")
 	}
 	return args, nil
 }

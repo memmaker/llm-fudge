@@ -16,6 +16,7 @@ package archive
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -40,6 +41,22 @@ const defaultLimit = 3
 // is the better half of the same guarantee.
 const maxLookupTurns = 20
 
+// Event is one tool call or world_update operation as the engine ran it: what
+// ran, which entities it named, and the engine's own one-line account of the
+// result.
+//
+// Entities cost nothing new to collect. Every call that touches an entity
+// already names it by ID to make the call at all — the ID was sitting in the
+// argument list the whole time, and the archive used to throw it away and then
+// go looking for the word again in the prose. Keeping it is what turns "does
+// the word merchant appear here" into "did the merchant take part in this
+// turn".
+type Event struct {
+	Tool     string
+	Entities []string
+	Headline string
+}
+
 // Turn is one played turn as the engine recorded it.
 //
 // Events are the engine's own headlines rather than the DM's account of them.
@@ -49,13 +66,34 @@ const maxLookupTurns = 20
 type Turn struct {
 	Number      int
 	PlayerInput string
-	Events      []string
-	Update      string
+	Events      []Event
 	Prose       string
 	// Unnarrated marks a turn that ran out of requests before it produced
 	// narration. It is kept, because a gap in the record is worth explaining,
 	// but the player never saw it and it must not be replayed as if they had.
 	Unnarrated bool
+}
+
+// Entities is the set of entity IDs that took part in this turn, deduped and
+// sorted.
+//
+// It is computed on every call and deliberately not stored on Turn. A turn's
+// participants are already written down once, on its events; a second copy on
+// the turn would be a fact with two homes, and a fact with two homes is exactly
+// the class of bug the flat entity model was built to remove — the two drift,
+// and nothing says which one is lying. Recomputing a union over a handful of
+// events is not a cost worth buying that risk back with.
+func (t Turn) Entities() []string {
+	var ids []string
+	for _, e := range t.Events {
+		for _, id := range e.Entities {
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // Archive holds every turn of a session in the order they were played.
@@ -101,12 +139,21 @@ func (a *Archive) Recent(n int) []Turn {
 	return narrated
 }
 
-// Query selects the turns a lookup hands back.
+// Query selects the turns a lookup hands back. Whatever it names — an entity, a
+// keyword, a range — is an AND: each field narrows the last.
 //
-// Keyword and From/To are two ways at the same archive, and they answer
-// different questions: a keyword finds a thing half remembered, while a turn
-// number goes straight to the source of a fact the DM is already looking at.
+// Entity, Keyword and From/To are three ways at the same archive, and they
+// answer different questions. An entity ID is the exact one, and the one to
+// reach for whenever the question is about a thing: "has the player met this
+// merchant" is a lookup on the merchant's ID, not a hope that the narration
+// happened to use the word. A keyword is for what is not tied to one entity at
+// all — "what did anyone say about ghosts". A turn number goes straight to the
+// source of a fact the DM is already looking at.
 type Query struct {
+	// Entity matches a turn whose events name this exact ID. It is never a
+	// substring or a case-fold: `key` must not answer for `iron-key`, and two
+	// entities that differ only in case are two entities.
+	Entity  string
 	Keyword string
 	// From and To select an inclusive range of turn numbers. From alone selects
 	// a single turn. Zero means unset.
@@ -189,6 +236,9 @@ func (a *Archive) match(q Query) []Turn {
 				continue
 			}
 		}
+		if q.Entity != "" && !slices.Contains(t.Entities(), q.Entity) {
+			continue
+		}
 		if q.Keyword != "" && !mentions(t, q.Keyword) {
 			continue
 		}
@@ -198,10 +248,15 @@ func (a *Archive) match(q Query) []Turn {
 }
 
 // mentions reports whether a turn talks about keyword anywhere the DM could
-// have written it: what the player typed, what was recorded, what was narrated.
+// have written it: what the player typed, what the engine reported back, what
+// was narrated.
 func mentions(t Turn, keyword string) bool {
 	needle := strings.ToLower(keyword)
-	for _, field := range []string{t.PlayerInput, t.Update, t.Prose} {
+	fields := []string{t.PlayerInput, t.Prose}
+	for _, e := range t.Events {
+		fields = append(fields, e.Headline)
+	}
+	for _, field := range fields {
 		if strings.Contains(strings.ToLower(field), needle) {
 			return true
 		}
@@ -217,11 +272,19 @@ func writeTurn(b *strings.Builder, t Turn, includeProse bool) {
 	if t.PlayerInput != "" {
 		fmt.Fprintf(b, "player: %s\n", t.PlayerInput)
 	}
-	for _, event := range t.Events {
-		fmt.Fprintf(b, "events: %s\n", event)
-	}
-	if t.Update != "" {
-		fmt.Fprintf(b, "changes: %s\n", t.Update)
+	// One line per event, tool first, entities last in brackets. Every
+	// character of this lands in the DM's context and counts against
+	// maxLookupRunes, so the entities are bare IDs rather than a labelled
+	// list: the DM already knows an ID when it sees one, having passed it in.
+	for _, e := range t.Events {
+		fmt.Fprintf(b, "events: %s", e.Tool)
+		if e.Headline != "" {
+			fmt.Fprintf(b, ": %s", e.Headline)
+		}
+		if len(e.Entities) > 0 {
+			fmt.Fprintf(b, " [%s]", strings.Join(e.Entities, " "))
+		}
+		b.WriteString("\n")
 	}
 	if includeProse && t.Prose != "" {
 		fmt.Fprintf(b, "prose: %s\n", t.Prose)
@@ -232,16 +295,22 @@ func writeTurn(b *strings.Builder, t Turn, includeProse bool) {
 // one result worth being careful about: the DM asked because it did not know,
 // and a blank reply reads as licence to invent whatever it needed.
 func (a *Archive) nothingFound(q Query) string {
-	var asked string
-	switch {
-	case q.Keyword != "" && q.From > 0:
-		asked = fmt.Sprintf("%q in turns %s", q.Keyword, rangeLabel(q))
-	case q.Keyword != "":
-		asked = fmt.Sprintf("%q", q.Keyword)
-	case q.From > 0:
-		asked = "turns " + rangeLabel(q)
-	default:
-		asked = "that lookup"
+	// The clauses are listed rather than switched over, because with three
+	// fields that compose freely a switch is eight cases to keep in step with
+	// match(), and match() will grow a fourth field before this does.
+	var clauses []string
+	if q.Entity != "" {
+		clauses = append(clauses, "entity "+q.Entity)
+	}
+	if q.Keyword != "" {
+		clauses = append(clauses, fmt.Sprintf("%q", q.Keyword))
+	}
+	if q.From > 0 {
+		clauses = append(clauses, "turns "+rangeLabel(q))
+	}
+	asked := "that lookup"
+	if len(clauses) > 0 {
+		asked = strings.Join(clauses, " and ")
 	}
 	return fmt.Sprintf("no archived turn matches %s. %d turns are recorded. Nothing happened that you have forgotten here — do not invent it.", asked, len(a.turns))
 }

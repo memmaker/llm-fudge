@@ -30,7 +30,7 @@ func playedWorld(t *testing.T) *rules.World {
 // come after the player has read the scene, it has to carry the prose, and it
 // has to have no way left of reaching them.
 func TestBookkeepingIsAskedAfterTheProseExists(t *testing.T) {
-	dm := &model{reply: resolvingThenNarrating("grimwald-the-smith|at:forge")}
+	dm := &model{reply: resolvingThenNarrating(setOp("forge", "anvil", "cooling"))}
 
 	messages, s := gameStart(), newSession(playedWorld(t))
 	capture(t, func() { s.processGameTurn(dm.chat, &messages, playerLine) })
@@ -57,7 +57,9 @@ func TestBookkeepingIsAskedAfterTheProseExists(t *testing.T) {
 // archive keeps the engine's account of them beside the turn's own.
 func TestBookkeepingCallsReachTheEngineAndTheRecord(t *testing.T) {
 	dm := &model{
-		reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall("smith|handed-over:lantern") },
+		reply: func(round int, tools []llm.Tool) llm.Response {
+			return narrationCall(setOp("forge", "handed-over", "lantern"))
+		},
 		record: func(round int, tools []llm.Tool) llm.Response {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				call("i", "add_item", `{"character_id":"catnip","name":"Brass Lantern","description":"Dented, still lit."}`),
@@ -79,12 +81,23 @@ func TestBookkeepingCallsReachTheEngineAndTheRecord(t *testing.T) {
 	}
 	var found bool
 	for _, event := range recorded[0].Events {
-		if strings.Contains(event, "add_item") {
+		if event.Tool == "add_item" {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("what the bookkeeping round did is not in the record: %+v", recorded[0].Events)
+	}
+	// And the ids it named are indexed, which is what makes the record answerable
+	// by entity rather than by searching its words.
+	var indexed bool
+	for _, id := range recorded[0].Entities() {
+		if id == "catnip" {
+			indexed = true
+		}
+	}
+	if !indexed {
+		t.Errorf("the turn is not indexed under the character it was about: %v", recorded[0].Entities())
 	}
 }
 
@@ -102,7 +115,7 @@ func TestBookkeepingTakesASecondRoundOnlyOnARefusal(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dm := &model{
-				reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall("smith|busy") },
+				reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall(setOp("forge", "busy", "true")) },
 				record: func(round int, tools []llm.Tool) llm.Response {
 					return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 						call("i", "add_item", c.args),
@@ -150,9 +163,9 @@ func TestTheDemandSettlesExistenceInTheEnginesRecord(t *testing.T) {
 	demand := recordDemand(turnLog{shown: []string{"Your fingers close around the parchment."}})
 
 	for _, want := range []string{
-		"look for the thing by name in ROSTER and LOCATIONS",
+		"look for the thing by name among the entities above",
 		"however many turns your prose has been describing it",
-		"WORLD is not a record of things",
+		"A narrative property is not a record of a thing",
 		"add_item is not only for things that appear from nowhere",
 	} {
 		if !strings.Contains(demand, want) {
@@ -178,7 +191,7 @@ func TestNothingIsRecordedForATurnThePlayerNeverSaw(t *testing.T) {
 // as it found it — the calls, the results and the demand all go with the rest.
 func TestBookkeepingLeavesNothingInTheHistory(t *testing.T) {
 	dm := &model{
-		reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall("smith|busy") },
+		reply: func(round int, tools []llm.Tool) llm.Response { return narrationCall(setOp("forge", "busy", "true")) },
 		record: func(round int, tools []llm.Tool) llm.Response {
 			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
 				call("i", "add_coins", `{"character_id":"catnip","amount":5}`),

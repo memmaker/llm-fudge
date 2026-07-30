@@ -194,9 +194,11 @@ func TestWeaponAndArmorRatingsReachTheDM(t *testing.T) {
 
 	state := kyle.ToString()
 	for _, want := range []string{
-		"Peacemaker|ranged|dmg+3|ammo:4/6|feeds:Cartridge Box",
-		"Bowie Knife|melee|dmg+1|+grit",
-		"Duster|armor+1|not-worn",
+		// The id sits between the name and the ratings: it is the handle every
+		// later call needs, and it survives the item changing hands.
+		"Peacemaker|id:peacemaker|ranged|dmg+3|ammo:4/6|feeds:Cartridge Box",
+		"Bowie Knife|id:bowie-knife|melee|dmg+1|+grit",
+		"Duster|id:duster|armor+1|not-worn",
 	} {
 		if !strings.Contains(state, want) {
 			t.Errorf("condensed state missing %q:\n%s", want, state)

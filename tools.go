@@ -14,6 +14,72 @@ import (
 	"github.com/memmaker/gollum/llm"
 )
 
+// entityArgs names every tool argument that carries an entity id. It is what
+// makes the archive an entity index rather than a pile of text: a call already
+// says which entities it is about — it could not be made otherwise — so the ids
+// are collected as it goes by and the record can be asked "what has happened to
+// this merchant" instead of "does the word merchant appear anywhere".
+//
+// A fixed list of argument names, read off the arguments the call already
+// carries, is deliberately the whole of the mechanism. The alternative was to
+// have each of the two dozen cases in executeAction hand its ids back, which
+// would spread the same knowledge across two dozen places and mean a new tool
+// silently contributes nothing to the index. Anything not on this list is not an
+// id: `where` is prose about a shelf, `name` is what a thing is called, and
+// neither addresses anything.
+var entityArgs = []string{
+	"actor_id", "opponent_id", "attacker_id", "defender_id", "target_id",
+	"character_id", "item", "from_character", "to_character",
+	"from_location", "to_location", "location", "parent",
+}
+
+// callEntities reads the entity ids out of a tool call's arguments, plus the
+// entities named by any world_update operations riding along with it.
+//
+// Malformed arguments come back empty rather than as an error. This runs while a
+// turn is being recorded, after the player has already read the prose, and a
+// record that is thinner than it could be is a far smaller problem than a turn
+// that fails over its own bookkeeping.
+func callEntities(call llm.ToolCall) []string {
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &raw); err != nil {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	var ids []string
+	add := func(id string) {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+
+	for _, key := range entityArgs {
+		if value, ok := raw[key].(string); ok {
+			add(value)
+		}
+	}
+
+	// world_update rides on output_narration as an array of operations, each
+	// naming its own entity. Those are the ids the DM itself chose to talk about,
+	// which makes them the most worth indexing of the lot.
+	if ops, ok := raw["world_update"].([]any); ok {
+		for _, op := range ops {
+			fields, ok := op.(map[string]any)
+			if !ok {
+				continue
+			}
+			if entity, ok := fields["entity"].(string); ok {
+				add(entity)
+			}
+		}
+	}
+	return ids
+}
+
 // playerLanguageNote repeats the system prompt's language rule at the one place
 // the model is actually filling a field the player will read. The prompt says it
 // once, in a section; a tool description says it while the argument is being
@@ -144,13 +210,28 @@ func narrationTool() llm.Tool {
 	// output_narration rather than a tool of its own: a separate tool is a
 	// separate round-trip, and the DM ended its turn with the narration instead of
 	// ever getting there. Required, so every narrated scene produces one.
-	narrationDescription := "Show the turn's narration to the player. This is the ONLY channel to them: they read the prose argument and nothing else—no dice, no tool names, no tool results, and no text you write outside this call. Text written as a plain reply reaches nobody. Every turn ends with exactly one output_narration, and the turn is not over until you call it. Call it only once you know what happened: if a check, an attack, a new NPC or a table roll decides the outcome, make those calls first with no narration, read the results when they come back, and narrate in your next response. It must be your LAST tool call, after everything you resolved, so it can reflect their outcome. What the prose then implies about possessions, wounds and who is standing where is not your job here—you get one more response after this one, with those calls on the table and this prose quoted back to you, and that is where the books are squared. Argument prose: the narration the player reads. Argument location (REQUIRED): the slug of the place this scene happens in. Argument world_update (REQUIRED): the facts your prose just established, merged into the WORLD ledger you can see in ENGINE STATE."
+	narrationDescription := "Show the turn's narration to the player. This is the ONLY channel to them: they read the prose argument and nothing else—no dice, no tool names, no tool results, and no text you write outside this call. Text written as a plain reply reaches nobody. Every turn ends with exactly one output_narration, and the turn is not over until you call it. Call it only once you know what happened: if a check, an attack, a new NPC or a table roll decides the outcome, make those calls first with no narration, read the results when they come back, and narrate in your next response. It must be your LAST tool call, after everything you resolved, so it can reflect their outcome. What the prose then implies about possessions, wounds and who is standing where is not your job here—you get one more response after this one, with those calls on the table and this prose quoted back to you, and that is where the books are squared. Argument prose: the narration the player reads. Argument location (REQUIRED): the slug of the place this scene happens in. Argument world_update: operations recording what your prose established about how people feel, what they want, and what is going on—never about where anything is or what anybody carries."
 	narrationProperties := map[string]any{
-		"prose":        map[string]any{"type": "string", "description": "The turn's narration exactly as the player will read it: normal, descriptive, engaging prose in full sentences. It must carry everything the tool calls established, since the player sees none of them. No titles or speaker prefixes (no \"DM:\"), no meta-commentary, no mention of dice, difficulty or mechanics, and no \"What do you do?\"—narrate and stop." + playerLanguageNote("This prose")},
-		"location":     map[string]any{"type": "string", "description": "Required. The slug of the place this scene happens in, taken from LOCATIONS in ENGINE STATE. It is how the engine knows where the player character is standing, so it must be where the prose actually leaves them—if they walked somewhere during the turn, name where they ended up. A slug that does not exist is refused and the player sees nothing, so when the scene moves somewhere new, call create_location in this same response first and use the id it returns."},
-		"world_update": map[string]any{"type": "string", "description": "Required, never empty. The facts your prose just established, keyed by entity: `door|state:locked; mira|attitude:impatient`. Merged into the WORLD ledger field by field, so restating something unchanged is harmless—write anything you are unsure of rather than gambling that it was recorded. Use `!fact` to retract one (`combat|!engaged|over`) and `entity|GONE` to drop an entry. Wounds, Fudge Points, coins, possessions, traits, ids and where characters are standing all belong to the engine, which renders them in ROSTER and LOCATIONS and ignores them here. Nor where anything IS: `at:` is discarded on every line, not only on characters. A prop whose position matters is an item—add_item brings it into the world and move_item moves it—and writing `parchment|at:bar-counter` here records nothing, however much it looks like it does. Prefer `key:value` over bare words, since a keyed fact overwrites cleanly next time it moves. First call of a game: full baseline of the opening scene—NPCs, features, hooks—since nothing is recorded yet."},
+		"prose":    map[string]any{"type": "string", "description": "The turn's narration exactly as the player will read it: normal, descriptive, engaging prose in full sentences. It must carry everything the tool calls established, since the player sees none of them. No titles or speaker prefixes (no \"DM:\"), no meta-commentary, no mention of dice, difficulty or mechanics, and no \"What do you do?\"—narrate and stop." + playerLanguageNote("This prose")},
+		"location": map[string]any{"type": "string", "description": "Required. The slug of the place this scene happens in, taken from the location entities in WORLD STATE. It is how the engine knows where the player character is standing, so it must be where the prose actually leaves them—if they walked somewhere during the turn, name where they ended up. A slug that does not exist is refused and the player sees nothing, so when the scene moves somewhere new, call create_location in this same response first and use the id it returns."},
+		"world_update": map[string]any{
+			"type":        "array",
+			"description": "Operations recording what your prose established about the things the engine does not model: how an NPC feels, what they want, what they believe, what has been promised, what is closing in. Each operation names an entity by its id from WORLD STATE and writes into that entity's `narrative` map—which is the ONLY place these land. Position, possessions, wounds, coins and traits are the engine's: they have their own calls (move_item, move_character, apply_damage, add_coins), and naming one of them here is discarded. Restating an unchanged narrative fact is harmless, so write anything you are unsure of rather than gambling that it was recorded. Leave the array out entirely on a turn that established nothing the engine does not already hold—an empty update is a normal turn, not a failure. First call of a game: a full baseline of the opening scene, since nothing is recorded yet.",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"op":     map[string]any{"type": "string", "enum": []string{"create", "set", "delete"}, "description": "set writes properties onto an entity that already exists—any character, item or location the engine holds, or a narrative entity you created earlier. create mints a NEW narrative-only entity, for something that exists nowhere else: a rumour, a debt, a faction's standing, a prophecy. It cannot mint a character, an item or a location—those have their own calls, which compute what the rules need. delete drops a narrative entity whose thread is finished; it cannot delete anything the engine holds."},
+					"entity": map[string]any{"type": "string", "description": "The id of the entity this is about, exactly as it appears in WORLD STATE—never a name you slugified yourself. For create, the new id you are minting: lowercase, hyphenated, and unique against every id already in WORLD STATE."},
+					"properties": map[string]any{
+						"type":        "object",
+						"description": "The narrative facts, as ordinary key/value pairs: {\"mood\": \"frightened\", \"wants\": \"the debt paid\", \"believes\": \"the player is a thief\"}. Merged field by field, so what you do not mention is left alone. A value of null retracts that property. On create, include a `type` saying what kind of thing this is (rumor, debt, faction, prophecy). Required for create and set; leave it off for delete.",
+					},
+				},
+				"required": []string{"op", "entity"},
+			},
+		},
 	}
-	narrationRequired := []string{"prose", "location", "world_update"}
+	narrationRequired := []string{"prose", "location"}
 
 	if imgGen {
 		narrationDescription += " Argument img_gen (REQUIRED): the prompt for an image generation AI depicting the scene this prose just narrated. Write it for every narration—it is not optional and not something to save for dramatic moments."
@@ -178,7 +259,7 @@ func narrationOnlyTools() []llm.Tool {
 // turn: a check cannot name an NPC who does not exist yet, and an NPC the prose
 // walked into the scene without rolling for still has to be registered afterwards.
 func createCharacterTool() llm.Tool {
-	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new NPC. CRITICAL: call this BEFORE any check involving that NPC—the character must exist before you can make a check against them. If a player targets an NPC for the first time, create them immediately, THEN call the appropriate check (opposed_check or unopposed_check) in the same response. The character ID is generated from the name and comes back in the reply as its id: field—that is the handle every later call to this character needs, so read the id off it instead of deriving one from the name. It is in the ROSTER from the next turn onward, for as long as they exist. Only use traits (attributes, skills, gifts, faults) listed in the Setting Information section of your system prompt. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}}
+	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new NPC. CRITICAL: call this BEFORE any check involving that NPC—the character must exist before you can make a check against them. If a player targets an NPC for the first time, create them immediately, THEN call the appropriate check (opposed_check or unopposed_check) in the same response. The character ID is generated from the name and comes back in the reply as its id: field—that is the handle every later call to this character needs, so read the id off it instead of deriving one from the name. It is in WORLD STATE from the next turn onward, as an entity of its own, for as long as they exist. Only use traits (attributes, skills, gifts, faults) listed in the Setting Information section of your system prompt. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}}
 }
 
 // ============================== Consult-first ==============================
@@ -199,7 +280,7 @@ func consultTools() []llm.Tool {
 		createCharacterTool(),
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve a direct conflict between two characters that is not a blow being struck: a grapple, a chase, a deception, a stare-down, resisting a spell, wrestling for a dropped gun. Use when two characters have conflicting intentions. For an actual attack use opposed_attack instead—it settles the roll, the weapon, the armor and the wound in one call, and this tool never wounds anybody. CRITICAL SEQUENCE: (1) If an NPC doesn't exist yet, call create_character FIRST in the same response; (2) THEN immediately call opposed_check with both actor_id and opponent_id (use the character's actual ID). actor_id is whoever initiated the action; opponent_id is whoever reacts. Do NOT narrate the defense separately—the check outcome tells the story. Narrate using only the tool result.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string"}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "roll_on_table", Description: "Roll on a random table when the fiction needs an outcome that no character is choosing. Use it instead of deciding these yourself—that is the only way they are genuinely random. npc-reaction: how an NPC you have not characterized yet feels about the party on first meeting. npc-morale: whether an NPC presses on, wavers or breaks, checked when a fight turns against them. weather: conditions on the road or at the start of a day outdoors. situational-roll: how luck breaks when there is no actor to check at all. The modifier is roughly -4 to +4 for whatever the established fiction says should tilt it (a reputation, a bribe, the season, a rout already in progress); 0 is the common case. Narrate the result the table gives you.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"table": map[string]any{"type": "string", "enum": rules.TableNames()}, "modifier": map[string]any{"type": "integer"}}, "required": []string{"table"}}}},
-		{Type: "function", Function: llm.ToolFunction{Name: "recall", Description: "Look up a turn from earlier in this session. Everything ever played is kept—what the player typed, what the engine resolved, what you narrated word for word—but only the last few turns ride in ENGINE STATE, so this is how you reach the rest. Use it when you need something you cannot see: what an NPC actually said, the exact terms of a deal, what a room looked like the first time. Every WORLD entry carries the turn it was last set (@t12), so to learn how a fact came about, recall that turn. Otherwise search by keyword. Ask for include_prose when you need the words themselves rather than what changed. This costs you one of the turn's calls like anything else, so spend it on something you will use—and if it comes back empty, then it did not happen: say so in the fiction rather than inventing it.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string", "description": "Words to search for across player input, recorded changes and narration. Omit when asking for a turn by number."}, "turn": map[string]any{"type": "integer", "description": "A turn number to fetch, e.g. the 12 from an @t12 marker in WORLD."}, "to": map[string]any{"type": "integer", "description": "End of a turn range, when you want several turns around one moment. Requires turn."}, "include_prose": map[string]any{"type": "boolean", "description": "Return the narration itself, not just what changed. Costly—ask only when the wording matters."}, "limit": map[string]any{"type": "integer", "description": "How many turns to return. Defaults to a few."}}}}},
+		{Type: "function", Function: llm.ToolFunction{Name: "recall", Description: "Look up a turn from earlier in this session. Everything ever played is kept—what the player typed, what the engine resolved, what you narrated word for word—but only the last few turns ride in WORLD STATE, so this is how you reach the rest. Use it when you need something you cannot see: what an NPC actually said, the exact terms of a deal, what a room looked like the first time. Prefer entity: every turn is indexed by the ids that took part in it, so asking for an entity finds every turn it was involved in, exactly, whether or not your prose happened to use the word. Every narrative property carries the turn it was last set (@t12), so to learn how a fact came about, recall that turn. Keyword search is for what is not tied to one entity—a subject anybody might have mentioned. Ask for include_prose when you need the words themselves rather than what changed. This costs you one of the turn's calls like anything else, so spend it on something you will use—and if it comes back empty, then it did not happen: say so in the fiction rather than inventing it.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"entity": map[string]any{"type": "string", "description": "An entity id from WORLD STATE. Returns every turn that entity took part in—the best way to ask what has passed between the player and somebody, or what has happened to a thing. Exact: it must be the id, not a name and not a fragment of one."}, "query": map[string]any{"type": "string", "description": "Words to search for across player input, what the engine recorded, and narration. For subjects rather than entities—a rumour, a topic, a turn of phrase. Omit when asking by entity or turn number."}, "turn": map[string]any{"type": "integer", "description": "A turn number to fetch, e.g. the 12 from an @t12 marker on a narrative property."}, "to": map[string]any{"type": "integer", "description": "End of a turn range, when you want several turns around one moment. Requires turn."}, "include_prose": map[string]any{"type": "boolean", "description": "Return the narration itself, not just what changed. Costly—ask only when the wording matters."}, "limit": map[string]any{"type": "integer", "description": "How many turns to return. Defaults to a few."}}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "user_choice", Description: "Present the player with 2-4 mutually exclusive options. ONLY use when: (1) the player's action has exactly 2-4 meaningful, dramatically distinct outcomes; (2) you cannot narrate forward without knowing which they choose; (3) the moment is critical enough to warrant explicit choice. For normal gameplay where the player types an action, just narrate the outcome. Do NOT use this as a generic \"What do you do?\" prompt. REQUIREMENTS: call output_narration in the same response, with prose that poses the question—the menu is shown underneath it. The player's answer comes back to you as this tool's result, and the turn continues: narrate what their choice leads to. Never include a 'Type your answer' option—it's added automatically." + playerLanguageNote("The options are"), Parameters: map[string]any{"type": "object", "properties": map[string]any{"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of 2-4 mutually exclusive options. Do NOT include a 'Type your answer' or freeform option—it is added automatically."}}, "required": []string{"options"}}}},
 		createLocationTool(),
 		reloadWeaponTool(),
@@ -317,6 +398,7 @@ func getCharacterFromJSON(w *rules.World, jsonArgs string) (*rules.Character, ma
 // items do not each grow two versions of themselves, and so a location
 // destination is validated identically wherever it turns up.
 type itemDestination struct {
+	world     *rules.World
 	character *rules.Character
 	location  *rules.Location
 	where     string
@@ -331,7 +413,7 @@ func destination(w *rules.World, characterID, locationID, where string) (*itemDe
 		if err != nil {
 			return nil, err
 		}
-		return &itemDestination{character: ch}, nil
+		return &itemDestination{world: w, character: ch}, nil
 	}
 	if characterID != "" {
 		return nil, fmt.Errorf("name one holder: character_id or location, not both")
@@ -344,13 +426,21 @@ func destination(w *rules.World, characterID, locationID, where string) (*itemDe
 	// says so itself; destroying something does not, because the name alone
 	// usually finds it and the lookup asks for a spot only when two stacks of
 	// that name are lying about.
-	return &itemDestination{location: loc, where: where}, nil
+	return &itemDestination{world: w, location: loc, where: where}, nil
 }
 
 // add puts a newly created stack where the call said. The character's state is
 // returned with it, as every mutating call does; a location has no sheet, so its
 // half reports the spot instead.
 func (d *itemDestination) add(proto *rules.Item, count int) (string, error) {
+	// Minted here rather than by each of the three callers, because this is the
+	// one path every newly created item takes and an unminted proto is refused
+	// outright: an item whose id nobody assigned could not be addressed by a
+	// later call, which is the whole failure this identity work set out to end.
+	// A proto that merges into a stack already held never spends the id.
+	if proto.ID == "" {
+		proto.ID = d.world.MintItemID(proto.Name)
+	}
 	if d.location != nil {
 		item, err := d.location.AddItem(proto, d.where, count)
 		if err != nil {

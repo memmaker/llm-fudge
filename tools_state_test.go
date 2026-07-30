@@ -100,7 +100,12 @@ func TestCharacterToString(t *testing.T) {
 		Gifts: []string{"quick-draw"}, Faults: []string{"wanted"}, FudgePoints: 3,
 	}
 	ch.Wounds.ApplyDamage(4) // Hurt, -1
-	ch.AddItem("Peacemaker", "A nicked .45.", 2)
+	// Items are minted into a world's id keyspace now, so one has to exist even
+	// for a character assembled by hand.
+	w := &rules.World{Characters: map[string]*rules.Character{ch.ID: ch}, Locations: map[string]*rules.Location{}}
+	if _, err := w.GiveItem(ch, "Peacemaker", "A nicked .45.", 2); err != nil {
+		t.Fatal(err)
+	}
 	ch.AddCoins(40)
 
 	got := ch.ToString()
@@ -108,7 +113,7 @@ func TestCharacterToString(t *testing.T) {
 		"Kyle Katarn", "id:kyle-katarn", "human", "desc:Rebel saboteur.",
 		"wounds:hurt", "penalty:-1", "fudge-points:3",
 		"attributes:grit+1", "skills:shootin+2", "gifts:quick-draw", "faults:wanted",
-		"coins:40", "Peacemaker x2|A nicked .45.",
+		"coins:40", "Peacemaker x2|id:peacemaker|A nicked .45.",
 		// Position is stated now that the engine maintains it: the narration
 		// names the scene every turn and move_character moves everybody else.
 		"at:dryfall",
@@ -222,32 +227,69 @@ func TestCreateCharacterReturnsCharacterState(t *testing.T) {
 	}
 }
 
-// Prose never enters the context — the condensed state replaces it — so a
-// narration that carries no state would leave the turn with no record at all.
-// A narration with no location is as unusable: position is the engine's, and
-// this call is what maintains it. Both are refused here, before the player is
-// shown anything, so the DM can send the turn again complete.
-func TestNarrationRequiresWorldUpdate(t *testing.T) {
+// Prose and location are always required: the player reads one and the engine
+// keeps position out of the other, and both are refused here, before the player
+// is shown anything, so the DM can send the turn again complete.
+//
+// world_update is required of the opening narration only. Once play is running a
+// turn that establishes nothing the engine does not already hold is ordinary —
+// a round of pure fighting is all engine facts — and demanding an update there
+// would only teach the DM to invent a property to satisfy the check. The opening
+// scene has nothing recorded behind it to fall back on.
+func TestNarrationRequiresProseAndLocation(t *testing.T) {
+	const ops = `[{"op":"set","entity":"clerk","properties":{"refused":"handgun-ammo"}}]`
 	for _, c := range []struct {
-		name string
-		args string
-		ok   bool
+		name     string
+		args     string
+		baseline bool
+		ok       bool
 	}{
-		{"all three", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":"clerk|refused:handgun-ammo"}`, true},
-		{"no state", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, false},
-		{"blank state", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":"  "}`, false},
-		{"no prose", `{"location":"gun-shop","world_update":"clerk|refused:handgun-ammo"}`, false},
-		{"no location", `{"prose":"The clerk shrugs.","world_update":"clerk|refused:handgun-ammo"}`, false},
-		{"blank location", `{"prose":"The clerk shrugs.","location":" ","world_update":"clerk|refused:handgun-ammo"}`, false},
+		{"all three", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":` + ops + `}`, false, true},
+		{"no update mid-game", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, false, true},
+		{"empty update mid-game", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[]}`, false, true},
+		{"no update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop"}`, true, false},
+		{"empty update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[]}`, true, false},
+		{"update on the opening", `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":` + ops + `}`, true, true},
+		{"no prose", `{"location":"gun-shop","world_update":` + ops + `}`, false, false},
+		{"no location", `{"prose":"The clerk shrugs.","world_update":` + ops + `}`, false, false},
+		{"blank location", `{"prose":"The clerk shrugs.","location":" ","world_update":` + ops + `}`, false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := parseNarration(inventoryCall("output_narration", c.args))
+			_, err := parseNarration(inventoryCall("output_narration", c.args), c.baseline)
 			if c.ok && err != nil {
-				t.Fatalf("rejected a complete narration: %v", err)
+				t.Fatalf("rejected a usable narration: %v", err)
 			}
 			if !c.ok && err == nil {
-				t.Fatal("accepted an incomplete narration")
+				t.Fatal("accepted an unusable narration")
 			}
 		})
+	}
+}
+
+// The operations reach the parse as structured data, not as text to be pulled
+// apart later. This is what the provider validates against the tool schema, and
+// it is the difference between a malformed report being caught before it lands
+// and being salvaged afterwards.
+func TestNarrationParsesOperations(t *testing.T) {
+	args := `{"prose":"The clerk shrugs.","location":"gun-shop","world_update":[` +
+		`{"op":"set","entity":"clerk","properties":{"mood":"bored","suspicion":0.4}},` +
+		`{"op":"delete","entity":"rumor-old"}]}`
+
+	parsed, err := parseNarration(inventoryCall("output_narration", args), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.WorldUpdate) != 2 {
+		t.Fatalf("parsed %d operations, want 2", len(parsed.WorldUpdate))
+	}
+	first := parsed.WorldUpdate[0]
+	if first.Op != "set" || first.Entity != "clerk" {
+		t.Errorf("first operation is %+v", first)
+	}
+	if first.Properties["mood"] != "bored" {
+		t.Errorf("properties did not survive the parse: %+v", first.Properties)
+	}
+	if second := parsed.WorldUpdate[1]; second.Op != "delete" || len(second.Properties) != 0 {
+		t.Errorf("delete operation is %+v, want no properties", second)
 	}
 }

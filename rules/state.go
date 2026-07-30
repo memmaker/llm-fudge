@@ -79,9 +79,18 @@ type Armor struct {
 	Worn       bool
 }
 
-// Item is one stack in a character's inventory. Name and Description are the
-// DM's words, shown to the player on the character sheet; the inventory keys
-// on the slugified name, so "Rope" and "rope" land on the same stack.
+// Item is one stack of a thing, either in a character's inventory or lying at a
+// location. Name and Description are the DM's words, shown to the player on the
+// character sheet.
+//
+// ID is the item's identity, minted once by the engine and never written again.
+// It used not to exist: an inventory keyed on the slugified name and a location's
+// floor keyed on name-plus-spot, which meant an item's address *was* its name and
+// where it happened to be. Moving it therefore changed everything about how it
+// was found, and nothing linked what vanished from the old key to what appeared
+// under the new one — inventory tracking broke in play for exactly this reason.
+// Name and spot are still how the DM refers to a thing in prose, so they remain
+// a lookup onto the id; they are no longer the identity itself.
 //
 // Weapon and Armor are the specialisations: an item carries at most one of them,
 // and plain gear carries neither. They hold the ratings combat needs, so a hit
@@ -92,6 +101,7 @@ type Armor struct {
 // saying where in that place it rests. A carried thing lies nowhere, so picking
 // one up clears it.
 type Item struct {
+	ID          string
 	Name        string
 	Description string
 	Count       int
@@ -104,6 +114,12 @@ type Item struct {
 // nothing with the original. Count and Where are left to whoever places it:
 // how many moved and where they came to rest are the move's business, not the
 // original's.
+//
+// The id is left behind too, and deliberately. A clone is what MoveItem sends to
+// the destination, and whether that stack keeps the original's identity or needs
+// a freshly minted one depends on whether the whole stack moved — a question only
+// the caller can answer. Copying the id here would quietly put two live stacks
+// under one identity the first time half a pile was handed over.
 func (it *Item) clone() *Item {
 	copied := &Item{Name: it.Name, Description: it.Description}
 	if it.Weapon != nil {
@@ -208,6 +224,104 @@ func (w *World) Character(id string) (*Character, error) {
 		return nil, fmt.Errorf("character not found: %s — nobody exists yet, create them first", id)
 	}
 	return nil, fmt.Errorf("character not found: %s — the characters that exist are: %s. Use one of those ids, or create this one first if they are new", id, strings.Join(w.CharacterIDs(), ", "))
+}
+
+// EntityIDs lists every id the world holds, characters first, then locations,
+// then items, each group sorted. It exists for the same reason CharacterIDs
+// does: a refusal that names what exists can be corrected on the next turn,
+// where one that does not can only be guessed at again.
+func (w *World) EntityIDs() []string {
+	ids := w.CharacterIDs()
+	ids = append(ids, w.LocationIDs()...)
+	return append(ids, w.ItemIDs()...)
+}
+
+// HasEntity reports whether an id is taken anywhere in the world: by a
+// character, a location, or an item in anybody's pockets or on any floor.
+//
+// There is one global id keyspace, not one per type, because the DM addresses
+// entities by bare id in tool calls — `iron-key` has to mean exactly one thing or
+// the call is a coin toss. It is exported because the narrative-entity store
+// mints ids into this same keyspace and must check it before doing so; a rumor
+// and a character colliding would be the same ambiguity one layer out.
+func (w *World) HasEntity(id string) bool {
+	if id == "" {
+		return false
+	}
+	if _, taken := w.Characters[id]; taken {
+		return true
+	}
+	if _, taken := w.Locations[id]; taken {
+		return true
+	}
+	for _, ch := range w.Characters {
+		if _, taken := ch.Inventory[id]; taken {
+			return true
+		}
+	}
+	for _, loc := range w.Locations {
+		if _, taken := loc.Items[id]; taken {
+			return true
+		}
+	}
+	return false
+}
+
+// MintItemID picks the id an item will carry for the rest of its existence. The
+// name is the obvious starting point — an id the DM can read and reuse without
+// looking it up — and a numeric suffix settles the second iron key, since two
+// things sharing an id is the one thing the keyspace cannot survive.
+func (w *World) MintItemID(name string) string {
+	base := slug(name)
+	if base == "" {
+		// A name of nothing but punctuation still needs an addressable id;
+		// returning the empty string would mint a thing nobody can name.
+		base = "item"
+	}
+	id := base
+	for n := 2; w.HasEntity(id); n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	return id
+}
+
+// ItemByID finds an item anywhere in the world. Like Character, a miss names what
+// does exist: the DM reads an item's id off the result of the call that created or
+// last moved it, so a miss is a mistake to correct rather than a licence to guess.
+func (w *World) ItemByID(id string) (*Item, error) {
+	for _, cid := range w.CharacterIDs() {
+		if it, held := w.Characters[cid].Inventory[id]; held {
+			return it, nil
+		}
+	}
+	for _, lid := range w.LocationIDs() {
+		if it, lying := w.Locations[lid].Items[id]; lying {
+			return it, nil
+		}
+	}
+	existing := w.ItemIDs()
+	if len(existing) == 0 {
+		return nil, fmt.Errorf("item not found: %s — no items exist anywhere yet, create it first with add_item", id)
+	}
+	return nil, fmt.Errorf("item not found: %s — the items that exist are: %s. Use one of those ids, or create this one first with add_item if it is new", id, strings.Join(existing, ", "))
+}
+
+// ItemIDs lists every item id in the world, sorted, for the roster an error hands
+// back.
+func (w *World) ItemIDs() []string {
+	var ids []string
+	for _, cid := range w.CharacterIDs() {
+		for id := range w.Characters[cid].Inventory {
+			ids = append(ids, id)
+		}
+	}
+	for _, lid := range w.LocationIDs() {
+		for id := range w.Locations[lid].Items {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // CharacterIDs lists every character's id, sorted, for the roster an error hands
@@ -347,12 +461,17 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 	return ch, nil
 }
 
-// AddItem puts count copies of plain gear into the inventory. An item the
+// GiveItem puts count copies of plain gear into a character's hands. An item the
 // character already carries stacks onto the existing entry instead of opening a
 // second one; a description given for it replaces the old wording, an empty one
 // leaves it as it was.
-func (c *Character) AddItem(name, description string, count int) (*Item, error) {
-	return c.addStack(name, description, count, "gear", nil)
+//
+// It hangs off World rather than Character, along with GiveWeapon and GiveArmor,
+// because minting an id needs to see the whole keyspace. Putting creation here is
+// what keeps every route into the world going through one minter instead of each
+// caller inventing its own convention.
+func (w *World) GiveItem(c *Character, name, description string, count int) (*Item, error) {
+	return c.Accept(&Item{ID: w.MintItemID(name), Name: name, Description: description}, count)
 }
 
 // NewWeaponItem builds a rated weapon, settling its magazine: an unstated load
@@ -383,24 +502,26 @@ func NewArmorItem(name, description string, armor Armor) (*Item, error) {
 	return &Item{Name: name, Description: description, Armor: &armor}, nil
 }
 
-// AddWeapon puts a rated weapon into the inventory. Restocking one the character
-// already carries stacks onto it and leaves the ratings — and a partly emptied
+// GiveWeapon puts a rated weapon into a character's hands. Restocking one they
+// already carry stacks onto it and leaves the ratings — and a partly emptied
 // magazine — as they stand, so a second knife does not silently reload the first.
-func (c *Character) AddWeapon(name, description string, count int, weapon Weapon) (*Item, error) {
+func (w *World) GiveWeapon(c *Character, name, description string, count int, weapon Weapon) (*Item, error) {
 	proto, err := NewWeaponItem(name, description, weapon)
 	if err != nil {
 		return nil, err
 	}
+	proto.ID = w.MintItemID(name)
 	return c.Accept(proto, count)
 }
 
-// AddArmor puts a rated piece of armor into the inventory, worn unless the
+// GiveArmor puts a rated piece of armor into a character's hands, worn unless the
 // caller says otherwise.
-func (c *Character) AddArmor(name, description string, count int, armor Armor) (*Item, error) {
+func (w *World) GiveArmor(c *Character, name, description string, count int, armor Armor) (*Item, error) {
 	proto, err := NewArmorItem(name, description, armor)
 	if err != nil {
 		return nil, err
 	}
+	proto.ID = w.MintItemID(name)
 	return c.Accept(proto, count)
 }
 
@@ -408,50 +529,63 @@ func (c *Character) AddArmor(name, description string, count int, armor Armor) (
 // it arrives with. It is the inventory's counterpart to Location.AddItem, and
 // the reason a retrieved weapon comes back able to fight: nothing about it is
 // restated along the way, so nothing about it can be restated wrongly.
-func (c *Character) Accept(proto *Item, count int) (*Item, error) {
-	return c.addStack(proto.Name, proto.Description, count, proto.Kind(), func(it *Item) {
-		it.Weapon = proto.Weapon
-		it.Armor = proto.Armor
-	})
-}
-
-// addStack is the one place an inventory entry is opened or grown. rate fills in
-// the specialisation of a newly opened entry and is not run again on a restock:
-// the ratings an item was recorded with are the ones it keeps.
+//
+// It is the one place an inventory entry is opened or grown, and it takes a proto
+// whose id the caller has already minted. Landing on a stack the character
+// already carries grows that stack and keeps *its* id, retiring the proto's: one
+// pile of rations is one entity, and carrying two ids for it would be exactly the
+// ambiguity the id exists to remove.
 //
 // An item already carried as something else is refused rather than converted.
 // Naming loot after a weapon on the sheet would otherwise wipe the ratings that
 // weapon fights with, and the DM would only find out mid-swing.
-func (c *Character) addStack(name, description string, count int, kind string, rate func(*Item)) (*Item, error) {
-	if strings.TrimSpace(name) == "" {
+func (c *Character) Accept(proto *Item, count int) (*Item, error) {
+	if proto == nil || strings.TrimSpace(proto.Name) == "" {
 		return nil, fmt.Errorf("item name is required")
 	}
 	if count < 1 {
 		return nil, fmt.Errorf("item count must be at least 1")
 	}
-	key := slug(name)
-	if key == "" {
-		return nil, fmt.Errorf("invalid item name: %s", name)
+	if slug(proto.Name) == "" {
+		return nil, fmt.Errorf("invalid item name: %s", proto.Name)
 	}
 	if c.Inventory == nil {
 		c.Inventory = make(map[string]*Item)
 	}
-	item, held := c.Inventory[key]
-	if held && item.Kind() != kind {
-		return nil, fmt.Errorf("%s already carries %s as %s, not as %s", c.Name, item.Name, item.Kind(), kind)
+	item := c.carried(proto.Name)
+	if item != nil && item.Kind() != proto.Kind() {
+		return nil, fmt.Errorf("%s already carries %s as %s, not as %s", c.Name, item.Name, item.Kind(), proto.Kind())
 	}
-	if !held {
-		item = &Item{Name: name}
-		if rate != nil {
-			rate(item)
+	if item == nil {
+		if proto.ID == "" {
+			return nil, fmt.Errorf("no id minted for %s: mint one with MintItemID before handing it over, or an item lands where nothing can address it", proto.Name)
 		}
-		c.Inventory[key] = item
+		item = &Item{ID: proto.ID, Name: proto.Name, Weapon: proto.Weapon, Armor: proto.Armor}
+		c.Inventory[item.ID] = item
 	}
-	if description != "" {
-		item.Description = description
+	if proto.Description != "" {
+		item.Description = proto.Description
 	}
 	item.Count += count
 	return item, nil
+}
+
+// carried finds the one stack of a name on this sheet. The inventory keys on the
+// item's id now, so a name is a lookup rather than an address, and the lookup is a
+// scan. That costs nothing worth measuring — this is one character's pockets — and
+// Accept never opens a second entry under a name already on the sheet, so the scan
+// can never have two answers to choose between.
+func (c *Character) carried(name string) *Item {
+	wanted := slug(name)
+	if wanted == "" {
+		return nil
+	}
+	for _, it := range c.Inventory {
+		if slug(it.Name) == wanted {
+			return it
+		}
+	}
+	return nil
 }
 
 // RemoveItem takes count copies off a stack and drops the entry once nothing is
@@ -464,8 +598,8 @@ func (c *Character) RemoveItem(name string, count int) (*Item, int, error) {
 	if count < 1 {
 		return nil, 0, fmt.Errorf("item count must be at least 1")
 	}
-	item, held := c.Inventory[slug(name)]
-	if !held {
+	item := c.carried(name)
+	if item == nil {
 		return nil, 0, fmt.Errorf("%s does not carry any %s", c.Name, name)
 	}
 	if count > item.Count {
@@ -473,7 +607,7 @@ func (c *Character) RemoveItem(name string, count int) (*Item, int, error) {
 	}
 	item.Count -= count
 	if item.Count == 0 {
-		delete(c.Inventory, slug(name))
+		delete(c.Inventory, item.ID)
 	}
 	return item, item.Count, nil
 }

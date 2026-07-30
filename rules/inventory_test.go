@@ -5,23 +5,28 @@ import (
 	"testing"
 )
 
-// Items are keyed by the slugified name so the DM naming the same thing twice
-// adds to one stack instead of opening a second entry the player then sees
-// twice on their sheet.
+// A stack is found by name, so the DM naming the same thing twice adds to one
+// stack instead of opening a second entry the player then sees twice on their
+// sheet — and the second naming does not mint a second id either.
 func TestAddItemStacksByName(t *testing.T) {
-	ch := &Character{Name: "Kyle"}
+	w := locationWorld()
+	ch := w.CreateCharacter("kyle", "Kyle", nil, nil)
 
-	if _, err := ch.AddItem("Ration Pack", "Dried protein bricks.", 2); err != nil {
+	first, err := w.GiveItem(ch, "Ration Pack", "Dried protein bricks.", 2)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ch.AddItem("ration pack", "", 3); err != nil {
+	if _, err := w.GiveItem(ch, "ration pack", "", 3); err != nil {
 		t.Fatal(err)
+	}
+	if first.ID != "ration-pack" {
+		t.Errorf("id = %q, want it minted from the name", first.ID)
 	}
 
 	if len(ch.Inventory) != 1 {
 		t.Fatalf("inventory has %d entries, want 1", len(ch.Inventory))
 	}
-	item := ch.Inventory["ration-pack"]
+	item := ch.carried("ration-pack")
 	if item.Count != 5 {
 		t.Errorf("count = %d, want 5", item.Count)
 	}
@@ -35,8 +40,9 @@ func TestAddItemStacksByName(t *testing.T) {
 }
 
 func TestRemoveItem(t *testing.T) {
-	ch := &Character{Name: "Kyle"}
-	if _, err := ch.AddItem("Thermal Detonator", "Scavenged, and touchy.", 2); err != nil {
+	w := locationWorld()
+	ch := w.CreateCharacter("kyle", "Kyle", nil, nil)
+	if _, err := w.GiveItem(ch, "Thermal Detonator", "Scavenged, and touchy.", 2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,7 +51,7 @@ func TestRemoveItem(t *testing.T) {
 	if _, _, err := ch.RemoveItem("Thermal Detonator", 3); err == nil {
 		t.Error("removing more than carried should fail")
 	}
-	if ch.Inventory["thermal-detonator"].Count != 2 {
+	if ch.carried("thermal-detonator").Count != 2 {
 		t.Error("a failed removal must not change the stack")
 	}
 
@@ -56,7 +62,7 @@ func TestRemoveItem(t *testing.T) {
 	if _, left, err := ch.RemoveItem("Thermal Detonator", 1); err != nil || left != 0 {
 		t.Errorf("RemoveItem = %d, %v; want 0, nil", left, err)
 	}
-	if _, held := ch.Inventory["thermal-detonator"]; held {
+	if ch.carried("thermal-detonator") != nil {
 		t.Error("emptied stack should be dropped from the inventory")
 	}
 	if _, _, err := ch.RemoveItem("Thermal Detonator", 1); err == nil {
@@ -91,10 +97,10 @@ func TestCoins(t *testing.T) {
 func TestStateFileTextListsInventory(t *testing.T) {
 	w := &World{Characters: map[string]*Character{}, Player: "kyle-katarn"}
 	ch := w.CreateCharacter("kyle-katarn", "Kyle Katarn", nil, nil)
-	if _, err := ch.AddItem("Blaster Pistol", "A worn DL-44 with a scored barrel.", 1); err != nil {
+	if _, err := w.GiveItem(ch, "Blaster Pistol", "A worn DL-44 with a scored barrel.", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ch.AddItem("Power Cell", "Spares for the blaster.", 4); err != nil {
+	if _, err := w.GiveItem(ch, "Power Cell", "Spares for the blaster.", 4); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ch.AddCoins(75); err != nil {

@@ -113,7 +113,7 @@ func TestItemToolsRefuseTwoHolders(t *testing.T) {
 func TestAThrownKnifeSurvivesTheRoundTrip(t *testing.T) {
 	w := placedWorld(t)
 	pc, _ := w.Character("kyle-katarn")
-	pc.AddWeapon("Throwing Knife", "Balanced for the point.", 1, rules.Weapon{Damage: 1})
+	w.GiveWeapon(pc, "Throwing Knife", "Balanced for the point.", 1, rules.Weapon{Damage: 1})
 
 	if _, err := executeAction(w, inventoryCall("move_item", `{"item":"Throwing Knife","to_location":"cellar","location_description":"quivering in the door frame"}`)); err != nil {
 		t.Fatal(err)
