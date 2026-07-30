@@ -90,7 +90,7 @@ func TestSceneIsMarkedAndExpanded(t *testing.T) {
 	if !strings.Contains(got, "Damp, stacked with casks.") {
 		t.Errorf("the scene's description is missing:\n%s", got)
 	}
-	if !strings.Contains(got, "here: [Kyle Katarn]") {
+	if !strings.Contains(got, "here: [kyle-katarn]") {
 		t.Errorf("who is present is missing:\n%s", got)
 	}
 	// A room nobody is standing in keeps its description to itself: repeating

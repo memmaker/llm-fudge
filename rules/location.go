@@ -316,7 +316,7 @@ func (w *World) CharactersAt(id string) []string {
 	var present []string
 	for _, cid := range w.CharacterIDs() {
 		if w.Characters[cid].Location == id {
-			present = append(present, w.Characters[cid].Name)
+			present = append(present, cid)
 		}
 	}
 	return present

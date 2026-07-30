@@ -492,13 +492,17 @@ func (a *applier) proto(name, description string, fields map[string]any) (*rules
 		ranged, _ := wf.optionalFlag("ranged")
 		ammo, _ := wf.optionalNumber("ammo")
 		capacity, _ := wf.optionalNumber("capacity")
+		ammoItem := wf.text("takes")
+		if ammoItem != "" && !rules.ValidID(ammoItem) {
+			return nil, fmt.Errorf("ammo item %q is not a valid id — lowercase words joined by single hyphens, e.g. revolver-rounds", ammoItem)
+		}
 		return rules.NewWeaponItem(name, description, rules.Weapon{
 			Damage:          damage,
 			Ranged:          ranged,
 			DamageAttribute: wf.text("adds"),
 			Ammo:            ammo,
 			AmmoCapacity:    capacity,
-			AmmoItem:        wf.text("takes"),
+			AmmoItem:        ammoItem,
 		})
 	}
 	if ar, ok := f.submap("armor"); ok {
@@ -774,7 +778,11 @@ func (a *applier) rateWeapon(item *rules.Item, stated map[string]any) {
 		}
 	}
 	if v := f.text("takes"); v != "" {
-		item.Weapon.AmmoItem = v
+		if !rules.ValidID(v) {
+			a.note("state: %s's ammo item %q is not a valid id — lowercase words joined by single hyphens, e.g. revolver-rounds", item.ID, v)
+		} else {
+			item.Weapon.AmmoItem = v
+		}
 	}
 	a.record("weapon", []string{item.ID}, rules.Flow("item", item.Name, "damage", item.Weapon.Damage))
 }

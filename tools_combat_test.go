@@ -39,7 +39,7 @@ func TestOpposedAttackResolvesEverythingInOneCall(t *testing.T) {
 	bandit, _ := w.Character("dust-bandit")
 
 	for _, c := range []struct{ tool, args string }{
-		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":6,"ammo_item":"Cartridge Box"}`},
+		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":6,"ammo_item":"cartridge-box"}`},
 		{"add_armor", `{"character_id":"dust-bandit","name":"Duster","description":"Oiled canvas.","protection":1}`},
 	} {
 		if _, err := executeAction(w, inventoryCall(c.tool, c.args)); err != nil {
@@ -115,8 +115,8 @@ func TestReloadSpendsAmmunition(t *testing.T) {
 	kyle, _ := w.Character("kyle-katarn")
 
 	for _, c := range []struct{ tool, args string }{
-		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":1,"ammo_item":"Cartridge Box"}`},
-		{"add_item", `{"character_id":"kyle-katarn","name":"Cartridge Box","description":"Loose rounds.","count":1}`},
+		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":1,"ammo_item":"cartridge-box"}`},
+		{"add_item", `{"character_id":"kyle-katarn","name":"cartridge-box","description":"Loose rounds.","count":1}`},
 	} {
 		if _, err := executeAction(w, inventoryCall(c.tool, c.args)); err != nil {
 			t.Fatalf("%s: %v", c.tool, err)
@@ -181,7 +181,7 @@ func TestWeaponAndArmorRatingsReachTheDM(t *testing.T) {
 	kyle, _ := w.Character("kyle-katarn")
 
 	for _, c := range []struct{ tool, args string }{
-		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":6,"ammo":4,"ammo_item":"Cartridge Box"}`},
+		{"add_weapon", `{"character_id":"kyle-katarn","name":"Peacemaker","description":"A nicked .45.","damage":3,"ranged":true,"ammo_capacity":6,"ammo":4,"ammo_item":"cartridge-box"}`},
 		{"add_weapon", `{"character_id":"kyle-katarn","name":"Bowie Knife","description":"Heavy.","damage":1,"damage_attribute":"grit"}`},
 		{"add_armor", `{"character_id":"kyle-katarn","name":"Duster","description":"Oiled canvas.","protection":1,"worn":false}`},
 	} {

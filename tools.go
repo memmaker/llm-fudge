@@ -653,6 +653,9 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 				return "", fmt.Errorf("unknown damage_attribute %q: use one of the setting's attributes, or omit it for a weapon that does not depend on the wielder", args.DamageAttribute)
 			}
 		}
+		if args.AmmoItem != "" && !rules.ValidID(args.AmmoItem) {
+			return "", fmt.Errorf("ammo_item %q is not a valid item id — lowercase words joined by single hyphens, e.g. revolver-rounds", args.AmmoItem)
+		}
 		if args.Count == 0 {
 			args.Count = 1
 		}
