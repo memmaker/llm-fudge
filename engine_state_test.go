@@ -59,8 +59,51 @@ func TestTheRenderIsCurrent(t *testing.T) {
 	if !strings.Contains(got, "wounds: hurt") {
 		t.Errorf("the render does not show the wound that was applied:\n%s", got)
 	}
-	if strings.Count(got, "wounds: undamaged") != 2 {
-		t.Errorf("the two unwounded characters are not both reported undamaged:\n%s", got)
+	// Undamaged is what the header declares an unstated character to be, so the
+	// two who were never hit say nothing at all — only the wounded one does.
+	if n := strings.Count(got, "wounds:"); n != 1 {
+		t.Errorf("wounds is stated %d times, want only the wounded character:\n%s", n, got)
+	}
+}
+
+// A default stated is a default paid for on every turn. Wounds, points and coins
+// are on every character in the world, and on most of them all three are at the
+// value the block's own header already gives.
+func TestDefaultsAreLeftUnstated(t *testing.T) {
+	got := rendered(rosterWorld(t))
+
+	for _, unwanted := range []string{"wounds: undamaged", "fudge_points: 0", "coins: 0"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("%q is stated though it is the default:\n%s", unwanted, got)
+		}
+	}
+
+	// Traits too: only what sets the character apart is worth two lines a turn.
+	// Fair is +0 and untrained is -2, and the header says so.
+	for _, unwanted := range []string{"agility: +0", "charm: +0", "occult: -2", "ridin: -2"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("%q is stated though it is the default:\n%s", unwanted, got)
+		}
+	}
+	// And the traits that do differ are still there, or the block would be lying.
+	for _, want := range []string{"grit: +1", "shootin: +1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q is missing though it is not the default:\n%s", want, got)
+		}
+	}
+
+	// And they are still stated the moment they are not the default.
+	kyle, err := rosterWorld(t).Character("kyle-katarn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kyle.Coins, kyle.FudgePoints = 7, 2
+	var b strings.Builder
+	writeCharacter(&b, kyle)
+	for _, want := range []string{"coins: 7", "fudge_points: 2"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("%q is missing once it is not the default:\n%s", want, b.String())
+		}
 	}
 }
 
@@ -265,22 +308,48 @@ func TestSynonymsForEngineFactsAreRefusedToo(t *testing.T) {
 }
 
 // played fills an archive with n turns, each one distinguishable from the others
-// in input, events and prose.
+// in input, events and prose. Every turn carries one resolved event and one
+// bookkeeping event, which is the ordinary mix and the one the timeline has to
+// tell apart.
 func played(n int) *archive.Archive {
 	a := archive.New()
 	for i := 1; i <= n; i++ {
 		a.Record(archive.Turn{
 			Number:      i,
 			PlayerInput: fmt.Sprintf("player line <%d>", i),
-			Events: []archive.Event{{
-				Tool:     "world_update",
-				Entities: []string{"thing"},
-				Headline: fmt.Sprintf("set thing state: %d", i),
-			}},
+			Events: []archive.Event{
+				{
+					Tool:     "unopposed_check",
+					Entities: []string{"thing"},
+					Headline: fmt.Sprintf("rolled it: %d", i),
+				},
+				{
+					Tool:     "move_character",
+					Entities: []string{"thing"},
+					Headline: fmt.Sprintf("set thing state: %d", i),
+				},
+			},
 			Prose: fmt.Sprintf("narration <%d>", i),
 		})
 	}
 	return a
+}
+
+// The entity list above the timeline already states what a bookkeeping event
+// changed, currently and under the id. Repeating it in the chronology spends the
+// block twice on one fact, and leaves the older of the two copies in the DM's
+// way. Only what the engine resolved — what the dice said — belongs here.
+func TestTimelineKeepsResolutionsAndDropsBookkeeping(t *testing.T) {
+	got := timeline(played(3))
+
+	for i := 1; i <= 3; i++ {
+		if !strings.Contains(got, fmt.Sprintf("rolled it: %d", i)) {
+			t.Errorf("turn %d dropped what the engine resolved:\n%s", i, got)
+		}
+		if strings.Contains(got, fmt.Sprintf("set thing state: %d", i)) {
+			t.Errorf("turn %d repeated bookkeeping the entity list already states:\n%s", i, got)
+		}
+	}
 }
 
 // A chronology is followed forward. The DM reads it to see how the state came
@@ -297,10 +366,26 @@ func TestTimelineRunsOldestFirst(t *testing.T) {
 	}
 }
 
-// Prose is the expensive part of the block, so only the newest turns carry it —
-// enough to hold a scene, not enough to re-send the session.
-func TestTimelineKeepsProseOnTheNewestTurnsOnly(t *testing.T) {
+// The chronology carries no narration at all: prose is the expensive part of the
+// block and it has a section of its own, so a timeline that also held it would
+// be sending every scene twice.
+func TestTimelineCarriesNoProse(t *testing.T) {
 	got := timeline(played(timelineWindow))
+
+	for i := 1; i <= timelineWindow; i++ {
+		if strings.Contains(got, fmt.Sprintf("narration <%d>", i)) {
+			t.Errorf("turn %d put its prose in the timeline:\n%s", i, got)
+		}
+		if !strings.Contains(got, fmt.Sprintf("player line <%d>", i)) {
+			t.Errorf("turn %d fell out of the window early:\n%s", i, got)
+		}
+	}
+}
+
+// Only the newest turns keep their narration — enough to hold a scene, not
+// enough to re-send the session.
+func TestRecentProseKeepsTheNewestTurnsOnly(t *testing.T) {
+	got := recentProse(played(timelineWindow))
 
 	for i := timelineWindow - proseWindow + 1; i <= timelineWindow; i++ {
 		if !strings.Contains(got, fmt.Sprintf("narration <%d>", i)) {
@@ -311,10 +396,13 @@ func TestTimelineKeepsProseOnTheNewestTurnsOnly(t *testing.T) {
 		if strings.Contains(got, fmt.Sprintf("narration <%d>", i)) {
 			t.Errorf("turn %d kept prose it should have shed:\n%s", i, got)
 		}
-		// The turn itself stays; it is only its prose that goes.
-		if !strings.Contains(got, fmt.Sprintf("player line <%d>", i)) {
-			t.Errorf("turn %d fell out of the window early:\n%s", i, got)
-		}
+	}
+
+	// Oldest first, the same direction the timeline runs.
+	first := strings.Index(got, fmt.Sprintf("narration <%d>", timelineWindow-proseWindow+1))
+	last := strings.Index(got, fmt.Sprintf("narration <%d>", timelineWindow))
+	if first > last {
+		t.Errorf("recent prose runs backwards:\n%s", got)
 	}
 }
 

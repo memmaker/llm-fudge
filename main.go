@@ -43,12 +43,12 @@ const (
 	maxTurnRequests = 5
 	// maxRetryDelay is the ceiling on the wait between retried requests.
 	maxRetryDelay = 30 * time.Second
-	// pinnedMessages is how many messages sit above the WORLD STATE block and
-	// never change again: the DM prompt and the opening briefing, built once in
-	// runGamePhase. They are the whole of the history between turns, and being
-	// byte-identical all session is what makes them worth caching. Anything
-	// added to that pair has to be counted here too, or the block would be
-	// pinned above it.
+	// pinnedMessages is the most that may sit above the WORLD STATE block: the
+	// DM prompt, and on the opening turn only, the briefing under it. Both are
+	// built once in runGamePhase and never change, which is what makes them
+	// worth caching; the briefing is dropped once it has been played, and the
+	// ceiling applies to whatever is actually there. Anything added above the
+	// block has to be counted here too, or the block would be pinned above it.
 	pinnedMessages = 2
 )
 
@@ -775,6 +775,22 @@ func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) er
 	} else {
 		writer.WriteString("(no turn has been played yet)")
 	}
+	// The tools go in the request beside the messages, so they are part of what a
+	// turn costs — and they were the part nobody could see. A dump that showed
+	// only the prose sections had the prompt looking like the whole bill while a
+	// third of it sat in schemas nothing printed.
+	writer.WriteString("\n\n=== TOOLS (sent with every request) ===\n\n")
+	toolTotal := 0
+	for _, tool := range queryTools() {
+		encoded, err := json.Marshal(tool)
+		if err != nil {
+			continue
+		}
+		toolTotal += len(encoded)
+		fmt.Fprintf(writer, "%-20s %6d bytes\n", tool.Function.Name, len(encoded))
+	}
+	fmt.Fprintf(writer, "%-20s %6d bytes\n", "TOTAL", toolTotal)
+
 	writer.WriteString("\n\n=== ARCHIVE ===\n\n")
 	writer.WriteString(s.archive.Dump())
 	writer.WriteString("\n\n=== MESSAGE CONTEXT ===\n\n")
@@ -847,6 +863,13 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 	// so the turn opens on the briefing alone.
 	fmt.Println()
 	s.processGameTurn(chat, &messages, "")
+
+	// The briefing has been played and it never applies again: it is an
+	// instruction to open a scene, and the scene is open. What it established is
+	// in the block now, in the DM's own words, so leaving it here would carry a
+	// second and steadily staler account of the world in every later request.
+	// Dropping it costs one cache miss and saves its length on every turn after.
+	messages = messages[:1]
 
 	for {
 		// Get player input

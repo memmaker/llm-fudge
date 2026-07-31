@@ -22,9 +22,17 @@ const (
 	// proseWindow is how many of those turns keep their narration verbatim.
 	// Events preserve facts and lose voice: what the room was already said to
 	// look like, the phrasing used for a character, a thread left hanging
-	// mid-sentence. Three turns is a scene rather than a beat, and it is by far
-	// the largest thing in the block — the first knob to turn if it must shrink.
-	proseWindow = 3
+	// mid-sentence. Verbatim prose is by far the largest thing in the block, so
+	// this is the first knob to turn if it must shrink. One turn is what carrying
+	// a voice forward actually needs: the scene just written, which is the one
+	// the next scene has to sound like and follow on from. What happened before
+	// it is in the timeline as facts, and one recall away as words.
+	proseWindow = 1
+	// The levels a trait sits at when nothing says otherwise, which is what the
+	// rules reference tells the DM to assume and therefore what the block does
+	// not have to spell out. Attributes are Fair, skills Poor.
+	defaultAttribute = 0
+	defaultSkill     = -2
 )
 
 // session is everything a game remembers between turns. It exists so that the
@@ -69,23 +77,36 @@ func newSession(w *rules.World) *session {
 // came to be. It is rebuilt from the three stores every turn and never stored,
 // so it cannot drift from them and cannot go stale the way a message in the
 // history did.
+// The block is three sections and they are kept apart on purpose: what is true
+// now, then what was played, then how the last of it was written. Reading one of
+// them is a different question from reading the others, and the interleaved form
+// this replaced answered all three at once — a page where a paragraph of
+// narration sat between two turns' event lists, so neither the state nor the
+// chronology could be scanned without reading past prose.
 func (s *session) engineState() string {
 	var b strings.Builder
 
-	b.WriteString("=== WORLD STATE ===\n")
-	b.WriteString("This is the record. It outranks your memory and anything the prose implied.\n")
-	b.WriteString("Every entity that exists is here, once, under the id every call must name.\n")
-	b.WriteString("Top-level fields are the engine's and are current. `narrative` is yours, and @tN\n")
-	b.WriteString("marks the turn it was last set — recall that turn to see how it got that way.\n")
-	b.WriteString("Write it all back the same way, in the <state> block under your prose. A thing\n")
-	b.WriteString("that is not here does not exist.\n\n")
+	b.WriteString("=== WORLD STATE — the record. It outranks your memory and anything the prose\n")
+	b.WriteString("implied. Everything that exists is here, once, under the id every call must\n")
+	b.WriteString("name. `narrative` is yours and @tN marks the turn it was set. Unstated means\n")
+	b.WriteString("the default: undamaged, no fudge points, no coins, Fair in an attribute and\n")
+	b.WriteString("Poor in a skill. Only what differs is listed. ===\n\n")
 	b.WriteString(entities(s.world, s.narrative))
 
-	b.WriteString("\n\n=== TIMELINE — the last ")
-	fmt.Fprintf(&b, "%d turns in order, oldest first. The most recent %d keep the\n", timelineWindow, proseWindow)
-	b.WriteString("prose you wrote, so you can carry your own voice forward. Older turns are in\n")
-	b.WriteString("the archive; reach them with recall. ===\n\n")
+	fmt.Fprintf(&b, "\n\n=== TIMELINE — the last %d turns, oldest first: what the player did and what\n", timelineWindow)
+	b.WriteString("the engine resolved. What it changed is above, current. Older turns are in the\n")
+	b.WriteString("archive; reach them with recall. ===\n\n")
 	b.WriteString(timeline(s.archive))
+
+	if recent := recentProse(s.archive); recent != "" {
+		scenes := "scenes"
+		if proseWindow == 1 {
+			scenes = "scene"
+		}
+		fmt.Fprintf(&b, "\n\n=== RECENT PROSE — your last %d %s as you wrote them, so you can\n", proseWindow, scenes)
+		b.WriteString("carry your own voice forward. ===\n\n")
+		b.WriteString(recent)
+	}
 
 	return b.String()
 }
@@ -182,7 +203,14 @@ func writeCharacter(b *strings.Builder, c *rules.Character) {
 		fmt.Fprintf(b, "    desc: %s\n", yamlString(c.Description))
 	}
 
-	fmt.Fprintf(b, "    wounds: %s\n", strings.ToLower(c.Wounds.Level.String()))
+	// Wounds, points and coins are stated only when they are not at the value the
+	// header already declares. Every character in a scene carries all three, and
+	// on most of them all three are the default: a cast of five NPCs spent five
+	// lines a turn, every turn, to say that nobody is hurt and nobody has any
+	// money. Absence says it in none.
+	if c.Wounds.Level != rules.Undamaged {
+		fmt.Fprintf(b, "    wounds: %s\n", strings.ToLower(c.Wounds.Level.String()))
+	}
 	if c.Wounds.Scratches > 0 {
 		fmt.Fprintf(b, "    scratches: %d/3\n", c.Wounds.Scratches)
 	}
@@ -192,11 +220,15 @@ func writeCharacter(b *strings.Builder, c *rules.Character) {
 	if !c.Wounds.CanAct() {
 		b.WriteString("    cannot_act: true\n")
 	}
-	fmt.Fprintf(b, "    fudge_points: %d\n", c.FudgePoints)
-	fmt.Fprintf(b, "    coins: %d\n", c.Coins)
+	if c.FudgePoints != 0 {
+		fmt.Fprintf(b, "    fudge_points: %d\n", c.FudgePoints)
+	}
+	if c.Coins != 0 {
+		fmt.Fprintf(b, "    coins: %d\n", c.Coins)
+	}
 
-	writeTraits(b, "attributes", c.Attributes)
-	writeTraits(b, "skills", c.Skills)
+	writeTraits(b, "attributes", c.Attributes, defaultAttribute)
+	writeTraits(b, "skills", c.Skills, defaultSkill)
 	if len(c.Gifts) > 0 {
 		fmt.Fprintf(b, "    gifts: [%s]\n", strings.Join(c.Gifts, ", "))
 	}
@@ -351,13 +383,25 @@ func yamlFlowScalar(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }
 
-func writeTraits(b *strings.Builder, label string, traits map[string]int) {
-	if len(traits) == 0 {
-		return
-	}
+// writeTraits renders only the traits that are not at the level the rules give
+// them by default — Fair for an attribute, Poor for an untrained skill.
+//
+// A cast of NPCs is mostly default by construction: a bystander is Fair at
+// everything and Poor at every skill, and spelling that out cost two full lines
+// each, every turn, to say nothing. What is left is what actually distinguishes
+// the character, which is the reading the DM wanted from these lines anyway.
+// The world still holds every trait, so a check may name one that is not
+// printed and it resolves at its default exactly as before.
+func writeTraits(b *strings.Builder, label string, traits map[string]int, def int) {
 	parts := make([]string, 0, len(traits))
 	for _, name := range slices.Sorted(maps.Keys(traits)) {
+		if traits[name] == def {
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s: %+d", name, traits[name]))
+	}
+	if len(parts) == 0 {
+		return
 	}
 	fmt.Fprintf(b, "    %s: {%s}\n", label, strings.Join(parts, ", "))
 }
@@ -454,8 +498,34 @@ func yamlString(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }
 
-// timeline renders the recent past as the player and the DM made it: what was
-// typed, what it changed, and lately what was said about it.
+// resolved names the operations whose outcome nothing else in the block can
+// show: what the dice said, what a table gave, what a blow came to. Everything
+// left out of it is bookkeeping — a thing created, moved, renamed, re-rated —
+// and bookkeeping is exactly what the entity list above already states, in its
+// current form, under the id. Repeating it here said the same fact twice a turn,
+// and the copy in the timeline was the stale one.
+//
+// An allowlist rather than a list of what to drop, so a bookkeeping operation
+// added later stays out of the block by default instead of quietly appearing in
+// it. Nothing is lost either way: the archive keeps every event, and `recall`
+// reaches them all.
+var resolved = map[string]bool{
+	"unopposed_check":  true,
+	"opposed_check":    true,
+	"opposed_attack":   true,
+	"unopposed_attack": true,
+	"roll_on_table":    true,
+	"reload_weapon":    true,
+	"apply_damage":     true,
+	"heal":             true,
+	"declare_dead":     true,
+}
+
+// timeline renders the recent past as facts: what was typed and what the engine
+// resolved, one turn after another with nothing between them. The narration that
+// went with it is recentProse's, below, and keeping the two apart is what lets
+// this be skimmed — it is a chronology, and a chronology broken up by paragraphs
+// of prose is one nobody reads to the end.
 func timeline(a *archive.Archive) string {
 	turns := a.Recent(timelineWindow)
 	if len(turns) == 0 {
@@ -463,23 +533,33 @@ func timeline(a *archive.Archive) string {
 	}
 
 	var b strings.Builder
-	for i, t := range turns {
-		if i > 0 {
-			b.WriteString("\n")
-		}
+	for _, t := range turns {
 		fmt.Fprintf(&b, "t%d player: %s\n", t.Number, t.PlayerInput)
 		for _, event := range t.Events {
-			if event.Headline == "" {
+			if event.Headline == "" || !resolved[event.Tool] {
 				continue
 			}
 			fmt.Fprintf(&b, "    %s: %s\n", event.Tool, event.Headline)
 		}
-		// Prose rides on the newest turns only, counted from the end so the
-		// window slides rather than sticking to the turns that happen to be
-		// first in this render.
-		if len(turns)-i <= proseWindow && t.Prose != "" {
-			fmt.Fprintf(&b, "    prose: %s\n", t.Prose)
-		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// recentProse renders the newest turns' narration verbatim, oldest first. The
+// window is counted from the end of the archive so it slides with play rather
+// than sticking to whichever turns happen to be first in this render.
+func recentProse(a *archive.Archive) string {
+	turns := a.Recent(proseWindow)
+
+	var b strings.Builder
+	for _, t := range turns {
+		if t.Prose == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(&b, "t%d: %s", t.Number, t.Prose)
+	}
+	return b.String()
 }

@@ -94,9 +94,8 @@ func LoadPrompt(setting *rules.SettingInfos, language string, filenames ...strin
 		return "", fmt.Errorf("failed to load always.md: %w", err)
 	}
 
-	// Replace ESC placeholders with actual escape character
 	var b strings.Builder
-	b.WriteString(strings.ReplaceAll(string(always), "ESC", "\033"))
+	b.Write(always)
 
 	for _, filename := range filenames {
 		content, err := os.ReadFile(filename)
