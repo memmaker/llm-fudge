@@ -25,8 +25,8 @@ An API key is required — see [Configuration](#configuration) below.
 Each turn also overwrites a few plain files in the working directory, for
 whatever wants to read the current state without parsing terminal output:
 `charsheet.txt` (the player character's sheet), `narration.txt` (the last
-scene's prose), and — with `-img-gen` — `img-gen.md` (an image prompt for the
-current scene).
+scene's prose), and — with `-img-gen`, or on demand via `/image` — `img-gen.md`
+(an image prompt for the current scene).
 
 ## CLI usage
 
@@ -50,6 +50,7 @@ Typed at the `>` prompt during play, anything starting with `/`:
 | `/quit`, `/exit` | End the session. |
 | `/context` | Dump the DM's current context — world state, timeline, archive, tool schemas, and the raw message list — to `context.txt`. The tool for inspecting what a turn actually costs and what the model actually sees. |
 | `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session (e.g. `/style Write shorter scenes.`). Bare `/style` clears it. |
+| `/image` | Write an image prompt for the current scene to `img-gen.md` — a one-off request, using the same guidance as `-img-gen`, without turning it on for the rest of the session. Costs one extra LLM call, only when asked for. |
 
 ### Scripted play
 

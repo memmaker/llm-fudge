@@ -190,7 +190,11 @@ func loadCharacterPrompt(promptFile string, w *rules.World) (string, error) {
 func loadDMPrompt(w *rules.World) (string, error) {
 	files := []string{"system-prompts/dm.md"}
 	if imgGen {
-		files = append(files, "system-prompts/img-style.md")
+		// image-guidance.md is the shared half: what makes a good image prompt,
+		// independent of when one is asked for. img-style.md is only the part
+		// specific to doing it every turn; /image's on-demand prompt reads the
+		// same guidance file without it.
+		files = append(files, "system-prompts/img-style.md", "system-prompts/image-guidance.md")
 	}
 	return prompts.LoadPrompt(w.Setting, language, files...)
 }
@@ -706,7 +710,7 @@ func slugify(s string) string {
 	return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
 }
 
-func (s *session) handleMetaCommand(line string, messages *[]llm.Message) {
+func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm.Message) {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
 		return
@@ -726,13 +730,61 @@ func (s *session) handleMetaCommand(line string, messages *[]llm.Message) {
 		}
 	case "/style":
 		setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
+	case "/image":
+		if err := s.requestImagePrompt(chat); err != nil {
+			fmt.Printf("Error generating image prompt: %v\n", err)
+		} else {
+			fmt.Println("Image prompt written to img-gen.md")
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		fmt.Println("Available commands:")
 		fmt.Println("  /quit, /exit - Exit the game")
 		fmt.Println("  /context - Write current message context to context.txt")
 		fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
+		fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
 	}
+}
+
+// requestImagePrompt is -img-gen for one scene instead of every one: the same
+// guidance, asked for once, on demand, rather than paid on every turn whether
+// anyone wanted a picture or not.
+//
+// It is a request of its own rather than a reply to the ongoing conversation.
+// The turn's own messages carry tool calls and results an image prompt has no
+// business seeing, and the model that writes a good scene is not necessarily
+// worth asking twice for the same thing in two different capacities — this
+// asks the narrow question directly, from the block the DM itself was just
+// reading, and nothing else.
+func (s *session) requestImagePrompt(chat chatRound) error {
+	if s.lastBlock == "" {
+		return fmt.Errorf("no scene yet — play a turn first")
+	}
+	guidance, err := os.ReadFile("system-prompts/image-guidance.md")
+	if err != nil {
+		return err
+	}
+
+	var sys strings.Builder
+	sys.WriteString("Write a single image generation prompt for the CURRENT scene described below: the game's state exactly as it stands right now. Your entire reply is that prompt — no preamble, no markdown fencing, nothing before or after it.\n\n")
+	sys.Write(guidance)
+	if s.world.Setting != nil && s.world.Setting.Description != "" {
+		fmt.Fprintf(&sys, "\nSetting: %s\n", s.world.Setting.Description)
+	}
+
+	response, err := chat([]llm.Message{
+		{Role: llm.RoleSystem, Content: sys.String()},
+		{Role: llm.RoleUser, Content: s.lastBlock},
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	prompt := strings.TrimSpace(response.Message.Content)
+	if prompt == "" {
+		return fmt.Errorf("the model returned no prompt")
+	}
+	return writeImagePrompt(prompt)
 }
 
 // styleMarker separates the DM prompt from whatever /style last appended. The
@@ -887,7 +939,7 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 
 		// Handle meta commands
 		if strings.HasPrefix(line, "/") {
-			s.handleMetaCommand(line, &messages)
+			s.handleMetaCommand(chat, line, &messages)
 			continue
 		}
 
