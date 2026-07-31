@@ -1251,6 +1251,15 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 // refused is lost rather than risked being applied twice, which is the safer of
 // the two ways to be wrong about a wound.
 func (s *session) correctState(chat chatRound, messages *[]llm.Message, notes []string, log *turnLog) {
+	// Announced up front in debug, because what follows otherwise reads exactly
+	// like an ordinary turn's request and response — same generic labels — and
+	// is not: the player has already been shown the scene, this round is asked
+	// to write no prose at all, and an empty reply from it means the refusal was
+	// right rather than that the model produced nothing.
+	if debug {
+		fmt.Println("\033[90m[correcting the state block the engine refused; nothing here reaches the player]\033[0m")
+	}
+
 	// Rebuilt rather than reused: the turn's own block has moved things since
 	// the one above it was rendered, and a correction written against a stale
 	// roster is how a retry lands an item on somebody who has just walked out.
@@ -1266,6 +1275,9 @@ func (s *session) correctState(chat chatRound, messages *[]llm.Message, notes []
 	reply := parseResponse(response.Message.Content)
 	events, remaining := s.applyState(reply.State)
 	log.events = append(log.events, events...)
+	if debug && reply.State == "" {
+		fmt.Println("\033[90m[correction: empty block — the refusal stands, nothing needed fixing]\033[0m")
+	}
 	for _, note := range remaining {
 		if debug {
 			fmt.Printf("\033[90m[uncorrected: %s]\033[0m\n", note)
