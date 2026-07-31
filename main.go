@@ -1045,7 +1045,16 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			// The scene reaches the player before a line of the state block is
 			// read. It is valid however the bookkeeping under it turns out, and
 			// nobody should wait on bookkeeping to find out what happened.
-			fmt.Println(ui.WrapText(reply.Prose, ui.TerminalWidth()))
+			if debug {
+				// Debug wants the reply exactly as the model wrote it: the <state>
+				// block and the event tags are what a bad turn is diagnosed from,
+				// and both are cut from what a player sees. Unwrapped, because
+				// wrapping YAML at the terminal width breaks the indentation that
+				// makes it readable.
+				fmt.Println(strings.TrimSpace(response.Message.Content))
+			} else {
+				fmt.Println(ui.WrapText(reply.Prose, ui.TerminalWidth()))
+			}
 			fmt.Println()
 			log.shown = append(log.shown, reply.Prose)
 			// The player has read the scene already, so a failed write is worth
