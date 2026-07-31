@@ -47,6 +47,7 @@ Typed at the `>` prompt during play, anything starting with `/`:
 
 | Command | Effect |
 | --- | --- |
+| `/help` | List these commands. |
 | `/quit`, `/exit` | End the session. |
 | `/context` | Dump the DM's current context — world state, timeline, archive, tool schemas, and the raw message list — to `context.txt`. The tool for inspecting what a turn actually costs and what the model actually sees. |
 | `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session (e.g. `/style Write shorter scenes.`). Bare `/style` clears it. |

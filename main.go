@@ -736,14 +736,26 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		} else {
 			fmt.Println("Image prompt written to img-gen.md")
 		}
+	case "/help":
+		printMetaCommands()
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
-		fmt.Println("Available commands:")
-		fmt.Println("  /quit, /exit - Exit the game")
-		fmt.Println("  /context - Write current message context to context.txt")
-		fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
-		fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
+		printMetaCommands()
 	}
+}
+
+// printMetaCommands is the one list of what "/" can be followed by. /help
+// prints it because that is what it is for; unknown-command prints the same
+// list because the question a bad command is asking is the same question
+// /help answers, and a second copy of this list is a second place to forget
+// to update when a command is added.
+func printMetaCommands() {
+	fmt.Println("Available commands:")
+	fmt.Println("  /help - List these commands")
+	fmt.Println("  /quit, /exit - Exit the game")
+	fmt.Println("  /context - Write current message context to context.txt")
+	fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
+	fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
 }
 
 // requestImagePrompt is -img-gen for one scene instead of every one: the same
@@ -1429,9 +1441,10 @@ func chatInternal(client *llm.Client, model string, messages []llm.Message, tool
 	stopSpinner := startSpinner()
 
 	response, err := client.Chat(ctx, llm.Request{
-		Model:    model,
-		Messages: messages,
-		Tools:    tools,
+		Model:           model,
+		Messages:        messages,
+		Tools:           tools,
+		ReasoningEffort: llm.ReasoningEffortNone,
 	})
 	stopSpinner()
 	if err != nil {
