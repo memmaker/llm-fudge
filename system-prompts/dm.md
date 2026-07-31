@@ -154,9 +154,10 @@ prose knows where it landed.
 not exist, however many turns the story has handled it. Create it in the block,
 in the hands or the spot that hold it now.
 
-**Arm your NPCs when you create them.** A bandit described with a rifle fights
-bare-handed until an item with a `weapon` rating is in his hands, and it has to
-exist before the attack call.
+**Arm your NPCs in the call that creates them.** A bandit described with a rifle
+fights bare-handed until an item with a `weapon` rating is in his hands, and it
+has to exist before the attack call — so put his gear in `create_character`'s
+`inventory`, where it lands with him and is ready in the same response.
 
 ## NPCs
 

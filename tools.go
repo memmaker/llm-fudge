@@ -49,10 +49,76 @@ func adventureCreationTools() []llm.Tool {
 
 func characterCreationTools() []llm.Tool {
 	tools := []llm.Tool{
-		{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create a new character. The character ID is automatically generated from the name. Only use traits (attributes, skills, gifts, faults) that exist in the setting. Species is required.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"name", "species"}}}},
+		createCharacterTool(false),
 		setupUserChoiceTool(),
 	}
 	return append(tools, creationInventoryTools()...)
+}
+
+// characterSchema is what a character is, for both calls that make one. The two
+// differ in exactly one thing — whether the DM chooses the id or the engine
+// derives it from the name — and a character is otherwise the same thing in both
+// places, so it is described once. The bodies were duplicated in full before,
+// which is how a field could be added to one and quietly missed on the other.
+func characterSchema(withID bool) (properties map[string]any, required []string) {
+	properties = map[string]any{
+		"name":        map[string]any{"type": "string"},
+		"species":     map[string]any{"type": "string"},
+		"description": map[string]any{"type": "string"},
+		"location":    map[string]any{"type": "string"},
+		"attributes":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+		"skills":      map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+		"gifts":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"faults":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"coins":       map[string]any{"type": "integer", "description": "What is in their purse to start with."},
+		"inventory":   inventorySchema(),
+	}
+	required = []string{"name", "species"}
+	if withID {
+		properties["id"] = map[string]any{"type": "string", "description": "The id they keep permanently, e.g. \"merchant-alric\". Must not already be in WORLD STATE."}
+		required = append([]string{"id"}, required...)
+	}
+	return properties, required
+}
+
+// inventorySchema is everything the character is created holding, written the
+// way the `<state>` block writes an item: a name, a line of description, and a
+// `weapon` or `armor` map when the thing is one. Nesting the ratings rather than
+// flattening them into the item keeps one vocabulary for items across the whole
+// engine — the block, this call, and what the DM reads back every turn are the
+// same shape.
+//
+// It is here because arming somebody was three or four calls that could only
+// follow the one that created them, and mid-turn it could not be done at all:
+// add_weapon is not on the table during play, so a bandit created for a fight
+// fought bare-handed no matter how the prose described him. Now he is armed in
+// the call that makes him, in the same response as the attack.
+func inventorySchema() map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": "What they carry, created with them. Every blade, gun, club or bow needs the weapon map and every piece of protection needs armor — an item without one is plain gear, and plain gear cannot be swung, fired or worn no matter what its name says.",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":        map[string]any{"type": "string", "description": "The item's name as the player reads it."},
+				"description": map[string]any{"type": "string", "description": "One short concrete sentence about this particular thing."},
+				"count":       map[string]any{"type": "integer", "description": "How many. Defaults to 1."},
+				"weapon": map[string]any{"type": "object", "description": "Only for a weapon. damage: -1 fist, +0 knife, +1 sword, +2 large one-handed, +3 heavy two-handed, +2 to +3 a handgun, +5 and up a heavy firearm.", "properties": map[string]any{
+					"damage":   map[string]any{"type": "integer"},
+					"ranged":   map[string]any{"type": "boolean"},
+					"adds":     map[string]any{"type": "string", "description": "The setting's strength-like attribute, for muscle-powered weapons only. Omit for firearms."},
+					"ammo":     map[string]any{"type": "integer", "description": "Shots loaded now. Defaults to full."},
+					"capacity": map[string]any{"type": "integer", "description": "Shots when full. Omit to not count shots."},
+					"takes":    map[string]any{"type": "string", "description": "The id of the ammunition item a reload spends, which is its name lowercased and hyphenated: an item named \"Revolver rounds\" is revolver-rounds. Carry that item too or they cannot reload. Its own name stays ordinary prose."},
+				}},
+				"armor": map[string]any{"type": "object", "description": "Only for armor. protection: +1 leather, +2 mail or flak, +3 medium metal, +4 plate.", "properties": map[string]any{
+					"protection": map[string]any{"type": "integer"},
+					"worn":       map[string]any{"type": "boolean", "description": "Defaults to true. Only worn armor protects."},
+				}},
+			},
+			"required": []string{"name", "description"},
+		},
+	}
 }
 
 // addWeaponTool and addArmorTool are built on their own because they stand on
@@ -134,14 +200,89 @@ func reloadWeaponTool() llm.Tool {
 	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "reload_weapon", Description: "Reload a ranged weapon, spending one of the ammunition items it feeds on. It costs the character their action in the fiction. Fails when they carry no ammunition left.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"character_id": map[string]any{"type": "string", "description": "Whose weapon is reloaded. Omit to mean the player character."}, "weapon": map[string]any{"type": "string", "description": "The weapon's name as it is carried."}}, "required": []string{"weapon"}}}}
 }
 
+// itemSpec is one entry of create_character's inventory: an item written the way
+// the `<state>` block writes one, with its ratings nested under `weapon` or
+// `armor` rather than flattened alongside the name.
+type itemSpec struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Count       int    `json:"count"`
+	Weapon      *struct {
+		Damage   int    `json:"damage"`
+		Ranged   bool   `json:"ranged"`
+		Adds     string `json:"adds"`
+		Ammo     int    `json:"ammo"`
+		Capacity int    `json:"capacity"`
+		Takes    string `json:"takes"`
+	} `json:"weapon"`
+	Armor *struct {
+		Protection int   `json:"protection"`
+		Worn       *bool `json:"worn"`
+	} `json:"armor"`
+}
+
+// proto builds the item and says how many of it there are. The ratings go
+// through the same constructors the block and the add_* calls use, so an item
+// created alongside its owner fights and protects identically to one created any
+// other way — there is one definition of what a weapon is, and this is not a
+// second copy of it.
+func (s itemSpec) proto(w *rules.World) (*rules.Item, int, error) {
+	count := s.Count
+	if count == 0 {
+		count = 1
+	}
+	switch {
+	case s.Weapon != nil:
+		// The attribute a weapon draws its strength from has to be one the
+		// setting actually has, or the arm behind every swing counts for nothing
+		// and nothing ever says so.
+		adds := strings.ToLower(s.Weapon.Adds)
+		if adds != "" && w.Setting != nil {
+			if _, ok := w.Setting.Attributes[adds]; !ok {
+				return nil, 0, fmt.Errorf("%s: unknown weapon attribute %q — use one of the setting's attributes, or omit it for a weapon that does not depend on the wielder", s.Name, s.Weapon.Adds)
+			}
+		}
+		if s.Weapon.Takes != "" && !rules.ValidID(s.Weapon.Takes) {
+			return nil, 0, fmt.Errorf("%s: ammo item %q is not a valid id — lowercase words joined by single hyphens, e.g. revolver-rounds", s.Name, s.Weapon.Takes)
+		}
+		proto, err := rules.NewWeaponItem(s.Name, s.Description, rules.Weapon{
+			Damage:          s.Weapon.Damage,
+			Ranged:          s.Weapon.Ranged,
+			DamageAttribute: adds,
+			Ammo:            s.Weapon.Ammo,
+			AmmoCapacity:    s.Weapon.Capacity,
+			AmmoItem:        s.Weapon.Takes,
+		})
+		return proto, count, err
+	case s.Armor != nil:
+		// Worn unless it says otherwise, the same default add_armor has: the
+		// common case by far is somebody who has it on, and armor recorded as
+		// cargo protects nobody.
+		worn := s.Armor.Worn == nil || *s.Armor.Worn
+		proto, err := rules.NewArmorItem(s.Name, s.Description, rules.Armor{Protection: s.Armor.Protection, Worn: worn})
+		return proto, count, err
+	default:
+		return &rules.Item{Name: s.Name, Description: s.Description}, count, nil
+	}
+}
+
 // createCharacterTool mints an NPC mid-turn, and it survives the state block for
 // one reason: a check cannot name somebody who does not exist, so an NPC the
 // player has just turned on has to be created in the same response the roll is
 // made in. That is the rule for every tool still on this list — a tool exists
 // when a query depends on the state it sets. Everything else waits for the
 // state block, where it is declared rather than commanded.
-func createCharacterTool() llm.Tool {
-	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: "Create an NPC mid-turn, only when a check or attack in this same response is about to name them. An NPC who merely walks into your prose needs no call: declare them in the <state> block instead. Traits must come from the Setting Information list.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string", "description": "The id they keep permanently, e.g. \"merchant-alric\". Must not already be in WORLD STATE."}, "name": map[string]any{"type": "string"}, "species": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}, "location": map[string]any{"type": "string"}, "attributes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "skills": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "gifts": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "faults": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, "required": []string{"id", "name", "species"}}}}
+// withID is what separates the two: mid-turn the DM chooses the id, because it
+// has the block in front of it and has to keep the id unique against everything
+// already there. During character creation there is no block and no DM yet, so
+// the engine derives the id from the name.
+func createCharacterTool(withID bool) llm.Tool {
+	description := "Create a new character, with everything they own. The id is derived from the name. Only use traits listed in the setting; species is required."
+	if withID {
+		description = "Create an NPC mid-turn, armed and equipped in the same call, only when a check or attack in this same response is about to name them. An NPC who merely walks into your prose needs no call: declare them in the <state> block instead. Traits must come from the Setting Information list."
+	}
+	properties, required := characterSchema(withID)
+	return llm.Tool{Type: "function", Function: llm.ToolFunction{Name: "create_character", Description: description, Parameters: map[string]any{"type": "object", "properties": properties, "required": required}}}
 }
 
 // ================================= Queries =================================
@@ -159,7 +300,7 @@ func createCharacterTool() llm.Tool {
 func queryTools() []llm.Tool {
 	tools := []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{Name: "unopposed_check", Description: "Roll an uncertain action nothing is actively resisting: climbing a wall, picking a lock, recalling lore. If an opponent resists it, use opposed_check instead.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string"}, "trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "trait_slug": map[string]any{"type": "string"}, "difficulty": map[string]any{"type": "string", "enum": rules.DifficultyNames(), "description": "How hard the task is."}, "situational_modifier": map[string]any{"type": "integer", "description": "Circumstances, roughly -4 to +4, 0 the common case."}, "add_one": map[string]any{"type": "boolean", "description": "Spend one Fudge Point for +1."}, "reroll": map[string]any{"type": "boolean", "description": "Spend one Fudge Point to roll twice and keep the better."}}, "required": []string{"actor_id", "trait_type", "trait_slug", "difficulty"}}}},
-		createCharacterTool(),
+		createCharacterTool(true),
 		{Type: "function", Function: llm.ToolFunction{Name: "opposed_check", Description: "Resolve a conflict between two characters that is not a blow: a grapple, a chase, a deception, a stare-down, resisting a spell. Never wounds anybody; for an actual attack use opposed_attack. If an NPC does not exist yet, call create_character first in the same response.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"actor_id": map[string]any{"type": "string", "description": "Whoever initiated."}, "actor_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "actor_trait_slug": map[string]any{"type": "string"}, "actor_modifier": map[string]any{"type": "integer"}, "opponent_id": map[string]any{"type": "string", "description": "Whoever reacts."}, "opponent_trait_type": map[string]any{"type": "string", "enum": []string{"attribute", "skill"}}, "opponent_trait_slug": map[string]any{"type": "string"}, "opponent_modifier": map[string]any{"type": "integer"}, "add_one": map[string]any{"type": "boolean"}}, "required": []string{"actor_id", "actor_trait_type", "actor_trait_slug", "opponent_id", "opponent_trait_type", "opponent_trait_slug"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "roll_on_table", Description: "Roll for an outcome no character is choosing, rather than deciding it yourself. npc-reaction: how an uncharacterized NPC takes the party. npc-morale: whether an NPC presses on, wavers or breaks. weather: conditions outdoors. situational-roll: how luck breaks with no actor to check.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"table": map[string]any{"type": "string", "enum": rules.TableNames()}, "modifier": map[string]any{"type": "integer", "description": "Whatever the fiction says should tilt it, roughly -4 to +4."}}, "required": []string{"table"}}}},
 		{Type: "function", Function: llm.ToolFunction{Name: "recall", Description: "Look up a turn from earlier in this session, for something you cannot see above: what an NPC actually said, the terms of a deal, what a room looked like the first time.", Parameters: map[string]any{"type": "object", "properties": map[string]any{"entity": map[string]any{"type": "string", "description": "An entity id from WORLD STATE, returning every turn it took part in. The sharpest question here. The id exactly, not a name."}, "query": map[string]any{"type": "string", "description": "Words to search across input, records and narration. For subjects rather than entities."}, "turn": map[string]any{"type": "integer", "description": "A turn number, e.g. the 12 from an @t12 marker."}, "to": map[string]any{"type": "integer", "description": "End of a turn range. Requires turn."}, "include_prose": map[string]any{"type": "boolean", "description": "Return the narration itself. Costly: ask only when the wording matters."}, "limit": map[string]any{"type": "integer", "description": "How many turns to return. Defaults to a few."}}}}},
@@ -579,9 +720,24 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			Skills      map[string]int `json:"skills"`
 			Gifts       []string       `json:"gifts"`
 			Faults      []string       `json:"faults"`
+			Coins       int            `json:"coins"`
+			Inventory   []itemSpec     `json:"inventory"`
 		}
 		if err := json.Unmarshal([]byte(call.Function.Arguments), &req); err != nil {
 			return "", fmt.Errorf("parse create_character: %w", err)
+		}
+		// Every item is built before the character exists, so a bad rating is a
+		// refusal rather than a half-outfitted character somebody has to notice
+		// and repair. Nothing has been written to the world at this point.
+		protos := make([]*rules.Item, 0, len(req.Inventory))
+		counts := make([]int, 0, len(req.Inventory))
+		for _, spec := range req.Inventory {
+			proto, count, err := spec.proto(w)
+			if err != nil {
+				return "", fmt.Errorf("%s: %w", req.Name, err)
+			}
+			protos = append(protos, proto)
+			counts = append(counts, count)
 		}
 		charReq := rules.CharacterRequest{
 			// Empty during character creation, where the engine still derives the
@@ -604,10 +760,21 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 			}
 			return "", err
 		}
+		dest := &itemDestination{world: w, character: ch}
+		for i, proto := range protos {
+			if _, err := dest.add(proto, counts[i]); err != nil {
+				return "", err
+			}
+		}
+		if req.Coins != 0 {
+			if _, err := ch.AddCoins(req.Coins); err != nil {
+				return "", err
+			}
+		}
 		// The character is the whole answer: nothing about them was known a
 		// moment ago, and their id — the handle every later call needs — is the
-		// first field of it. A "created character X" headline on top would only
-		// say that again.
+		// first field of it. What they carry and what is in their purse are in
+		// that same sheet, so the items need no report of their own either.
 		return ch.ToString(), nil
 	case "add_item":
 		var args struct {

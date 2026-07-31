@@ -219,3 +219,88 @@ func TestCreateCharacterReturnsCharacterState(t *testing.T) {
 		t.Errorf("result does not carry the generated id:\n%s", result)
 	}
 }
+
+// Outfitting somebody used to be a call each for the knife, the apron, the kit
+// and the purse, every one of them waiting on the id the first call returned.
+// Mid-turn it could not be done at all: add_weapon is not on the table during
+// play, so an NPC created for a fight fought bare-handed however the prose
+// described him. One call now, and the ratings have to survive it — an item
+// created here is one an attack reads.
+func TestCreateCharacterOutfitsInOneCall(t *testing.T) {
+	w, err := rules.NewWorld(1, "settings/deadlands")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := executeAction(w, inventoryCall("create_character", `{
+		"name":"Mackie","species":"human","description":"A sharp-eyed knife sharpener.",
+		"coins":18,
+		"inventory":[
+			{"name":"Slim Work Knife","description":"A balanced utility blade.","weapon":{"damage":0,"adds":"grit"}},
+			{"name":"Worn Leather Apron","description":"Stiff with filings and oil.","armor":{"protection":1}},
+			{"name":"Whetstones","description":"Fine stones in a wooden box.","count":3}
+		]}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	ch, err := w.Character("mackie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.Coins != 18 {
+		t.Errorf("purse = %d, want 18", ch.Coins)
+	}
+	if len(ch.Inventory) != 3 {
+		t.Fatalf("carrying %d items, want 3", len(ch.Inventory))
+	}
+
+	knife, ok := ch.Inventory["slim-work-knife"]
+	if !ok || knife.Weapon == nil {
+		t.Fatalf("the knife is not carried as a weapon: %+v", ch.Inventory)
+	}
+	// A weapon whose rating did not survive the call is gear that cannot be
+	// swung, which is the whole failure this replaces.
+	if knife.Weapon.DamageAttribute != "grit" {
+		t.Errorf("the arm behind the knife was lost: %+v", knife.Weapon)
+	}
+
+	apron, ok := ch.Inventory["worn-leather-apron"]
+	if !ok || apron.Armor == nil {
+		t.Fatalf("the apron is not carried as armor: %+v", ch.Inventory)
+	}
+	// Worn by default, as add_armor has always had it: armor recorded as cargo
+	// protects nobody, and nothing would ever say so.
+	if !apron.Armor.Worn {
+		t.Error("armor created without an explicit `worn` is not being worn")
+	}
+	if apron.Armor.Protection != 1 {
+		t.Errorf("protection = %d, want 1", apron.Armor.Protection)
+	}
+
+	if stones := ch.Inventory["whetstones"]; stones == nil || stones.Count != 3 {
+		t.Errorf("count did not survive: %+v", stones)
+	}
+}
+
+// A rating the setting cannot honour is refused, and refused before the
+// character lands: a half-outfitted NPC is one somebody has to notice and
+// repair, and nothing downstream is looking.
+func TestCreateCharacterRefusesBadGearWithoutCreatingAnybody(t *testing.T) {
+	w, err := rules.NewWorld(1, "settings/deadlands")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = executeAction(w, inventoryCall("create_character", `{
+		"name":"Mackie","species":"human",
+		"inventory":[{"name":"Odd Blade","description":"Wrong.","weapon":{"damage":1,"adds":"strength"}}]}`))
+	if err == nil {
+		t.Fatal("an attribute the setting does not have was accepted")
+	}
+	if !strings.Contains(err.Error(), "strength") {
+		t.Errorf("the error does not name the bad attribute: %v", err)
+	}
+	if _, err := w.Character("mackie"); err == nil {
+		t.Error("the character was created despite the refusal")
+	}
+}

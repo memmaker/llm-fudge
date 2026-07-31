@@ -13,10 +13,10 @@ themselves, one decision at a time.
 6. Starting gear: offer 2-3 kits via user_choice, each a themed handful of items
    with a sum of coins, described in one line ("Scoundrel's kit: lockpicks, a
    hold-out blaster, forged papers, 40 credits").
-7. Call create_character with all their choices, then add_item for each item in
-   the kit they picked and add_coins for its money. Weapons in the kit go on
-   through add_weapon and armor through add_armor, so they carry the rating
-   combat needs — a blade added as plain gear cannot be swung.
+7. Call create_character once, with all their choices, the kit's coins, and the
+   kit itself as its `inventory`. Weapons in it need a `weapon` map and armor an
+   `armor` map, or they carry no rating combat can read: a blade listed as plain
+   gear cannot be swung.
 
 ## Approach
 

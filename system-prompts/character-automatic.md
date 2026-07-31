@@ -11,11 +11,10 @@ every mechanical decision yourself.
    the setting justify. A rogue owns lockpicks; a drifter owns almost nothing.
 4. Present the full character, gear and purse included, and explain briefly why each choice fits.
 5. Wait for approval. Do NOT call create_character before they approve.
-6. On approval, call create_character with the chosen traits, then add_item for
-   each piece of starting equipment and add_coins for their money. Anything they
-   would fight with goes on through add_weapon, and anything worn as protection
-   through add_armor, so it carries the rating combat needs — a sabre added as
-   plain gear cannot be swung.
+6. On approval, call create_character once, with the traits, the coins and the
+   whole of their gear in its `inventory`. Anything they would fight with needs
+   a `weapon` map and anything worn as protection an `armor` map, or it carries
+   no rating combat can read: a sabre listed as plain gear cannot be swung.
 7. On a revision request, make the change and call create_character again.
 
 ## Approach
