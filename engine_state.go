@@ -241,8 +241,13 @@ func writeCharacter(b *strings.Builder, c *rules.Character) {
 	// they do this with what they have" is the question the DM asks most, and
 	// answering it by scanning every item in the world for a matching location is
 	// exactly the sort of reading a model does badly.
+	//
+	// Marked read-only right here, not just in the prompt's rules, for the same
+	// reason `here` is on the location render: a list of ids on a character reads
+	// exactly like something to hand-edit, and moving an item is a location on
+	// the item, never a line here.
 	if ids := carriedIDs(c); len(ids) > 0 {
-		fmt.Fprintf(b, "    inventory: [%s]\n", strings.Join(ids, ", "))
+		fmt.Fprintf(b, "    inventory: [%s]  # derived, don't write this back — set location on the item instead\n", strings.Join(ids, ", "))
 	}
 }
 
@@ -261,8 +266,14 @@ func writeLocation(b *strings.Builder, w *rules.World, loc *rules.Location) {
 		if loc.Description != "" {
 			fmt.Fprintf(b, "    desc: %s\n", yamlString(loc.Description))
 		}
+		// Marked read-only at the point of rendering rather than only in the
+		// prompt's rules: this is a list of ids sitting on a location exactly
+		// where a real field would, and "write the world back in the shape you
+		// read it" is the DM's own governing instruction — so of everything
+		// this line could do wrong, copying it back into the block is the one
+		// the prompt itself invites.
 		if here := w.CharactersAt(loc.ID); len(here) > 0 {
-			fmt.Fprintf(b, "    here: [%s]\n", strings.Join(here, ", "))
+			fmt.Fprintf(b, "    here: [%s]  # derived, don't write this back — move the character instead\n", strings.Join(here, ", "))
 		}
 	}
 }

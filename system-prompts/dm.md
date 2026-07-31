@@ -70,13 +70,18 @@ delete: [rumor-crypt]
 | `location` | `name` `desc` `parent` `narrative` |
 | anything else | `narrative` — a rumour, a debt, a job, a faction's standing |
 
+Only those fields. WORLD STATE also shows you `inventory` on a character,
+`here` on a location, and `penalty`, `cannot_act`, `scene`, `wounds` and
+`scratches` — every one of them rendered for you to read, not to write back:
+they are the engine's, computed from what you did write elsewhere (an item's
+own `location`, a character's own wounds), and repeating them in your block
+does nothing. Move the item, or the character — never the list.
+
 `location` on an item is the id of whoever or whatever holds it. An item at a
 place also needs `spot`, where in there it rests ("quivering in the door
 frame"). `weapon` is `{damage: +2, ranged: true, adds: strength, ammo: 6,
 capacity: 6, takes: cartridge-box}`; `armor` is `{protection: +2, worn: true}`.
 Any other field is refused, synonyms like `held_by` or `hp` included.
-`inventory`, `here`, `penalty`, `cannot_act`, `scene`, `wounds` and `scratches`
-are the engine's and are never written here.
 
 **The first block of a game** has nothing recorded yet, so sweep your opening
 narration and write all of it: the place, the player's position, every NPC and
