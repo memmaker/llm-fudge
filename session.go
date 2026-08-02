@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"fudge/prompts"
+
 	"github.com/memmaker/gollum/llm"
 )
 
@@ -47,6 +49,42 @@ type session struct {
 	turn          int
 	milestones    int
 	lastNarration string
+
+	prompts gamePrompts
+}
+
+// gamePrompts is the text the turn loop sends that has nowhere to report a
+// missing file: the narration demand mid-turn, the header above the sheet on
+// every request. They are loaded once at the start of the game phase so an
+// absent or malformed prompt file fails there, loudly, rather than turning into
+// an empty string three turns in.
+type gamePrompts struct {
+	narrationDemand string
+	emptyReply      string
+	charsheetHeader string
+	sheetNag        string
+	styleMarker     string
+}
+
+func loadGamePrompts() (gamePrompts, error) {
+	var p gamePrompts
+	for _, load := range []struct {
+		into *string
+		file string
+	}{
+		{&p.narrationDemand, "turn-narration-demand.md"},
+		{&p.emptyReply, "turn-empty-reply.md"},
+		{&p.charsheetHeader, "charsheet-header.md"},
+		{&p.sheetNag, "sheet-nag.md"},
+		{&p.styleMarker, "style-override.md"},
+	} {
+		text, err := prompts.Fill(load.file, nil)
+		if err != nil {
+			return gamePrompts{}, err
+		}
+		*load.into = text
+	}
+	return p, nil
 }
 
 func newSession() *session {
@@ -234,7 +272,8 @@ func (s *session) withCharsheet(msgs []llm.Message) []llm.Message {
 		return msgs
 	}
 	var b strings.Builder
-	b.WriteString("CHARACTER SHEET — this is the current state of the game, and it outranks anything said earlier in the conversation. Keep it up to date with the edit tool.\n\n")
+	b.WriteString(s.prompts.charsheetHeader)
+	b.WriteString("\n\n")
 	b.Write(body)
 	out := make([]llm.Message, 0, len(msgs)+1)
 	out = append(out, msgs...)

@@ -164,13 +164,13 @@ func main() {
 }
 
 func loadDMPrompt(s *session) (string, error) {
-	files := []string{"system-prompts/dm.md"}
+	files := []string{"dm.md"}
 	if imgGen {
 		// image-guidance.md is the shared half: what makes a good image prompt,
 		// independent of when one is asked for. img-style.md is only the part
 		// specific to doing it every turn; /image's on-demand prompt reads the
 		// same guidance file without it.
-		files = append(files, "system-prompts/img-style.md", "system-prompts/image-guidance.md")
+		files = append(files, "img-style.md", "image-guidance.md")
 	}
 	return prompts.LoadPrompt(s.settingDesc, language, files...)
 }
@@ -294,10 +294,17 @@ func setupSetting(s *session, rl *readline.Instance) error {
 	}
 
 	// Phase 1: clarification, refined until the player says yes.
-	clarifyPrompt, _ := prompts.LoadPrompt("", language, "system-prompts/setting-clarification.md")
+	clarifyPrompt, err := prompts.LoadPrompt("", language, "setting-clarification.md")
+	if err != nil {
+		return err
+	}
+	conceptRequest, err := prompts.Fill("setting-concept-request.md", map[string]string{"CONCEPT": description})
+	if err != nil {
+		return err
+	}
 	clarifyMessages := []llm.Message{
 		{Role: llm.RoleSystem, Content: clarifyPrompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("I'd like to create a setting with this concept: %s", description)},
+		{Role: llm.RoleUser, Content: conceptRequest},
 	}
 
 	var agreedConcept string
@@ -327,10 +334,20 @@ func setupSetting(s *session, rl *readline.Instance) error {
 
 	// Phase 2: creation. The player is still being spoken to, so this phase
 	// speaks their language; the folder name it writes stays English.
-	createPrompt, _ := prompts.LoadPrompt("", language, "system-prompts/setting-creation.md")
+	createPrompt, err := prompts.LoadPrompt("", language, "setting-creation.md")
+	if err != nil {
+		return err
+	}
+	creationRequest, err := prompts.Fill("setting-creation-request.md", map[string]string{
+		"CONCEPT": description,
+		"DESIGN":  agreedConcept,
+	})
+	if err != nil {
+		return err
+	}
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s\n\nThe agreed-upon design:\n%s", description, agreedConcept)},
+		{Role: llm.RoleUser, Content: creationRequest},
 	}
 
 	fmt.Println()
@@ -383,7 +400,21 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 	// English regardless of what the player reads: this phase says nothing to
 	// them at all — it runs silent and its whole output is a file, which becomes
 	// the DM's briefing.
-	prompt, _ := prompts.LoadPrompt("", prompts.DefaultLanguage, "system-prompts/adventure-creation.md")
+	prompt, err := prompts.LoadPrompt("", prompts.DefaultLanguage, "adventure-creation.md")
+	if err != nil {
+		return err
+	}
+	request, err := prompts.Fill("adventure-request.md", map[string]string{
+		"SETTING":  s.settingDesc,
+		"SCENARIO": scenario,
+	})
+	if err != nil {
+		return err
+	}
+	retry, err := prompts.Fill("adventure-retry.md", nil)
+	if err != nil {
+		return err
+	}
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		return err
@@ -391,7 +422,7 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: prompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", s.settingDesc, scenario)},
+		{Role: llm.RoleUser, Content: request},
 	}
 
 	fmt.Println()
@@ -409,7 +440,7 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 			}
 			messages = append(messages, llm.Message{
 				Role:    llm.RoleUser,
-				Content: "You did not save the adventure. Call write_adventure with the title and full content now.",
+				Content: retry,
 			})
 			continue
 		}
@@ -503,7 +534,7 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 			fmt.Println("Context written to context.txt")
 		}
 	case "/style":
-		setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
+		s.setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
 	case "/image":
 		if err := s.requestImagePrompt(chat); err != nil {
 			fmt.Printf("Error generating image prompt: %v\n", err)
@@ -513,7 +544,7 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 	case "/inv":
 		// The nag, and the only enforcement the sheet has. It goes in as an
 		// ordinary player line so the DM answers it in the ordinary way.
-		s.processGameTurn(chat, messages, sheetNag)
+		s.processGameTurn(chat, messages, s.prompts.sheetNag)
 	case "/milestone":
 		if err := s.milestone(chat, messages); err != nil {
 			fmt.Printf("Error writing milestone: %v\n", err)
@@ -525,13 +556,6 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		printMetaCommands()
 	}
 }
-
-// sheetNag is what /inv sends. It asks for a comparison rather than accusing:
-// told it has fallen behind, the DM argues the point instead of looking — in
-// play it replied that "nothing has changed since then to edit" on a turn that
-// had just moved the character into a different building. Asked to walk the
-// sheet against the scene, it has to actually check.
-const sheetNag = "(Out of character: go through charsheet.md section by section and compare each one against what has actually happened in this session so far. Where they differ, fix it with edit_file. Check at least: where the character is now, their wounds and fudge points, what they are carrying and what they have spent, every NPC's condition and disposition, and whether anything learned or opened or promised is missing from Known Facts/History. Report which sections you checked and what you changed. Do not narrate a scene for this.)"
 
 func printMetaCommands() {
 	fmt.Println("Available commands:")
@@ -562,12 +586,10 @@ func (s *session) milestone(chat chatRound, messages *[]llm.Message) error {
 		return err
 	}
 
-	demand := fmt.Sprintf(`The player has called a milestone: the conversation so far is about to be archived and you will continue from a clean slate.
-
-Do two things and nothing else — write no prose for the player:
-
-1. write_file %q — a full account of everything that happened in this stretch: what was done, what was found, who was met and how they stand, what changed in the world, and what is unresolved. Write it for yourself to read later. Be complete; nothing else of this conversation survives.
-2. edit_file charsheet.md — append one line to the Known Facts/History section summarising this stretch in a sentence, and make sure the rest of the sheet is current.`, name)
+	demand, err := prompts.Fill("milestone-demand.md", map[string]string{"MILESTONE_FILE": name})
+	if err != nil {
+		return err
+	}
 
 	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: demand})
 
@@ -588,10 +610,11 @@ Do two things and nothing else — write no prose for the player:
 	// charsheet needs no reinstating — it rides at the tail of every request —
 	// but the adventure does: it was only ever in the opening briefing, and that
 	// briefing is part of what is being cleared.
-	*messages = append((*messages)[:1], llm.Message{
-		Role:    llm.RoleUser,
-		Content: s.adventureBriefing(),
-	})
+	adventure, err := s.adventureBriefing()
+	if err != nil {
+		return err
+	}
+	*messages = append((*messages)[:1], llm.Message{Role: llm.RoleUser, Content: adventure})
 	if s.lastNarration != "" {
 		*messages = append(*messages, llm.Message{
 			Role:    llm.RoleAssistant,
@@ -628,13 +651,19 @@ func (s *session) requestImagePrompt(chat chatRound) error {
 	if s.lastNarration == "" {
 		return fmt.Errorf("no scene yet — play a turn first")
 	}
-	guidance, err := os.ReadFile("system-prompts/image-guidance.md")
+	guidance, err := os.ReadFile(prompts.Path("image-guidance.md"))
+	if err != nil {
+		return err
+	}
+
+	request, err := prompts.Fill("image-request.md", nil)
 	if err != nil {
 		return err
 	}
 
 	var sys strings.Builder
-	sys.WriteString("Write a single image generation prompt for the CURRENT scene described below: the game's state exactly as it stands right now. Your entire reply is that prompt — no preamble, no markdown fencing, nothing before or after it.\n\n")
+	sys.WriteString(request)
+	sys.WriteString("\n\n")
 	sys.Write(guidance)
 	if s.settingDesc != "" {
 		fmt.Fprintf(&sys, "\nSetting: %s\n", s.settingDesc)
@@ -655,23 +684,22 @@ func (s *session) requestImagePrompt(chat chatRound) error {
 	return writeImagePrompt(prompt)
 }
 
-// styleMarker separates the DM prompt from whatever /style last appended. The
-// override is rewritten from the marker down, so the base prompt is never stored
-// twice and never has to be rebuilt to drop it.
-const styleMarker = "\n\n## Style Override\n\nThis outranks any style rule above it:\n\n"
-
 // setStyle rewrites the DM's style directive in place. It moves the system
 // message, which is the head of the cached prefix, so the turn after a /style
 // pays for the whole prompt again — cheap for a debug session, which is what
 // this is for, and it is why the directive goes last: nothing below it moves.
-func setStyle(messages *[]llm.Message, style string) {
-	base, _, _ := strings.Cut((*messages)[0].Content, styleMarker)
+func (s *session) setStyle(messages *[]llm.Message, style string) {
+	// The marker separates the DM prompt from whatever /style last appended. The
+	// override is rewritten from the marker down, so the base prompt is never
+	// stored twice and never has to be rebuilt to drop it.
+	marker := "\n\n" + s.prompts.styleMarker + "\n\n"
+	base, _, _ := strings.Cut((*messages)[0].Content, marker)
 	if style == "" {
 		(*messages)[0].Content = base
 		fmt.Println("Style override cleared.")
 		return
 	}
-	(*messages)[0].Content = base + styleMarker + style
+	(*messages)[0].Content = base + marker + style
 	fmt.Printf("Style override set: %s\n", style)
 }
 
@@ -718,7 +746,23 @@ func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) er
 }
 
 func runGamePhase(s *session, rl *readline.Instance) {
+	// Every prompt the turn loop will need, loaded before the first request. A
+	// missing file is a startup failure rather than an empty string sent to the
+	// model three turns in.
+	loaded, err := loadGamePrompts()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	s.prompts = loaded
+
 	dmPrompt, err := loadDMPrompt(s)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	briefing, err := s.openingBriefing()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -732,7 +776,7 @@ func runGamePhase(s *session, rl *readline.Instance) {
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
-		{Role: llm.RoleUser, Content: s.openingBriefing()},
+		{Role: llm.RoleUser, Content: briefing},
 	}
 
 	chat := func(msgs []llm.Message, tools []llm.Tool) (llm.Response, error) {
@@ -768,26 +812,23 @@ func runGamePhase(s *session, rl *readline.Instance) {
 
 // openingBriefing hands the DM the adventure and the two jobs that come before
 // the first scene: make the character with the player, then put the game on
-// disk. The briefing stays in the history — unlike the old engine-held design,
-// there is no block that would otherwise re-state it, and the adventure is the
-// one thing the DM cannot look up again.
-func (s *session) openingBriefing() string {
-	var b strings.Builder
-	b.WriteString("Play begins now. Before the first scene there are two things to do, in this order.\n\n")
-	b.WriteString("FIRST, make the player character with them, in conversation. Ask what they want to play; offer to pick the traits yourself if they would rather not. Fudge characters have attributes and skills on the ladder, a gift or two, a fault or two, some fudge points and whatever they carry. Keep it short — a few exchanges, not an interrogation.\n\n")
-	b.WriteString("THEN, once the character is settled: call create_session_directory with their name and the adventure's title, read charsheet_template.md to see the shape a sheet takes, and write_file charsheet.md with the finished character in it. The template is an example from another game — follow its structure, not its contents.\n\n")
-	b.WriteString("ONLY THEN write the opening scene. Put the player character in it and stop where they can act.\n\n")
-	b.WriteString(s.adventureBriefing())
-	return b.String()
+// disk. The briefing stays in the history — there is no block that would
+// otherwise re-state it, and the adventure is the one thing the DM cannot look
+// up again.
+func (s *session) openingBriefing() (string, error) {
+	adventure, err := s.adventureBriefing()
+	if err != nil {
+		return "", err
+	}
+	return prompts.Fill("opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": adventure})
 }
 
 // adventureBriefing is the adventure itself, without the instructions that only
 // apply to the first turn. It is re-sent after a milestone: the adventure text
 // exists nowhere the DM can look it up, so clearing the chat that carried it
 // would take the scenario with it.
-func (s *session) adventureBriefing() string {
-	return "ADVENTURE BRIEFING (the player has not read this):\n\n" + s.adventure +
-		"\n\nThe world state, the NPCs and the facts of this adventure go in charsheet.md as the game establishes them — that file is the only memory you have that survives."
+func (s *session) adventureBriefing() (string, error) {
+	return prompts.Fill("adventure-briefing.md", map[string]string{"ADVENTURE": s.adventure})
 }
 
 // imgBlock is the one thing still cut out of a reply before the player sees it.
@@ -835,7 +876,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			// with, and the demand says so — tools that quietly vanish read as a
 			// malfunction from the inside, and a malfunction gets retried.
 			tools = nil
-			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: narrationDemand})
+			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.narrationDemand})
 		}
 
 		response, err := chat(s.withCharsheet(*messages), tools)
@@ -907,7 +948,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 		if prose == "" {
 			// A reply with neither calls nor prose says nothing at all.
-			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: emptyReplyDemand})
+			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.emptyReply})
 			continue
 		}
 
@@ -939,13 +980,6 @@ func retryDelay(failures int) time.Duration {
 // narrationDemand rides on the last call a turn is allowed. The tools are gone by
 // the time the DM reads it, so the message says why rather than leaving it to
 // discover that its next call does not exist.
-const narrationDemand = "Stop resolving and narrate. This is the last call of the turn: the dice and the file tools are no longer available to you, and the player has been shown nothing since their last line. Narrate the turn now from what you already know — the results above are what happened, and anything still unsettled is yours to settle in the fiction. Anything the sheet still owes can be written next turn; the player cannot be given this turn back."
-
-// emptyReplyDemand answers a reply that said nothing at all. It costs a call of
-// the turn's budget either way, so it says what was missing rather than resending
-// an identical context and hoping for a different answer.
-const emptyReplyDemand = "That reply was empty: no prose, no calls, nothing the player can read. The turn is not over until you narrate it. Write the scene now as ordinary prose — that text is what the player reads."
-
 const llmRequestTimeout = time.Minute
 
 // chat sends one request and prints the reply's text. It is for the setup

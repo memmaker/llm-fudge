@@ -40,9 +40,24 @@ func replies(responses ...llm.Message) chatRound {
 	}
 }
 
-func TestTurnEndsOnProse(t *testing.T) {
-	t.Chdir(t.TempDir())
+// playSession loads the prompt files from the repo root, then moves the test
+// into a scratch directory. The order matters: prompts live beside the source,
+// and everything a turn writes must not.
+func playSession(t *testing.T) (*session, string) {
+	t.Helper()
+	loaded, err := loadGamePrompts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
 	s := newSession()
+	s.prompts = loaded
+	return s, dir
+}
+
+func TestTurnEndsOnProse(t *testing.T) {
+	s, _ := playSession(t)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 
 	s.processGameTurn(replies(llm.Message{Content: "The door swings open."}), &messages, "open the door")
@@ -56,8 +71,7 @@ func TestTurnEndsOnProse(t *testing.T) {
 }
 
 func TestProseWrittenAlongsideARollIsHeldBack(t *testing.T) {
-	t.Chdir(t.TempDir())
-	s := newSession()
+	s, _ := playSession(t)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 
 	// The DM narrates the outcome and rolls for it in the same response. The
@@ -80,8 +94,7 @@ func TestProseWrittenAlongsideARollIsHeldBack(t *testing.T) {
 }
 
 func TestUnnarratedTurnIsRolledBack(t *testing.T) {
-	t.Chdir(t.TempDir())
-	s := newSession()
+	s, _ := playSession(t)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 
 	// Every round comes back empty, so the turn spends its whole budget and
@@ -97,9 +110,7 @@ func TestUnnarratedTurnIsRolledBack(t *testing.T) {
 }
 
 func TestMilestoneKeepsTheAdventureAndTheLastScene(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	s := newSession()
+	s, dir := playSession(t)
 	s.dir = dir
 	s.adventure = "The bridge at Dryfall has burned."
 	s.lastNarration = "Smoke still hangs over the water."
@@ -128,9 +139,7 @@ func TestMilestoneKeepsTheAdventureAndTheLastScene(t *testing.T) {
 }
 
 func TestMilestoneArchivesTheRawChatAndOpensTheFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	s := newSession()
+	s, dir := playSession(t)
 	s.dir = dir
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 

@@ -165,9 +165,14 @@ tools.go                    Every tool the DM can call, and their handlers
 rules/check.go              The whole engine: the ladder, 4dF, one check
 
 prompts/                    Assembles a system prompt from always.md + the
-                             setting + the language directive
-system-prompts/             The prompt text: always.md (the Fudge reference),
-                             dm.md (the DM's job), and the setup prompts
+                             setting + the language directive, and fills
+                             {{PLACEHOLDER}}s in the rest
+system-prompts/             Every word sent to the model that is not a tool
+                             description: always.md (the Fudge reference),
+                             dm.md (the DM's job), the setup prompts, and the
+                             turn loop's own text — the narration demand, the
+                             milestone instructions, the /inv nag, the header
+                             above the character sheet
 
 settings/<name>/            One folder per playable setting: description.md
   adventures/                and pre-written adventures. Ships with deadlands,

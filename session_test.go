@@ -13,6 +13,11 @@ func newTestSession(t *testing.T) *session {
 	t.Helper()
 	root := t.TempDir()
 	s := newSession()
+	loaded, err := loadGamePrompts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.prompts = loaded
 	s.dir = filepath.Join(root, "0001-garret-dryfall")
 	if err := os.MkdirAll(s.dir, 0755); err != nil {
 		t.Fatal(err)

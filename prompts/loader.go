@@ -3,6 +3,7 @@ package prompts
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -62,6 +63,46 @@ func NormalizeLanguage(language string) string {
 	return language
 }
 
+// dir is where every prompt file lives. Prompts are read from disk rather than
+// embedded so they can be edited between runs without a rebuild, which is most
+// of what working on this project consists of — but the path is resolved once,
+// at init, so a later chdir cannot move it out from under a turn in progress.
+var dir = absolutePromptDir()
+
+func absolutePromptDir() string {
+	abs, err := filepath.Abs("system-prompts")
+	if err != nil {
+		return "system-prompts"
+	}
+	return abs
+}
+
+// Path is the full path of one prompt file, for the callers that read a prompt
+// themselves rather than through Fill.
+func Path(name string) string { return filepath.Join(dir, name) }
+
+// Fill reads one prompt file and substitutes each {{KEY}} with its value, the
+// same convention language.md already uses. A key left in the file with nothing
+// to fill it is an error rather than a placeholder shipped to the model.
+func Fill(name string, vars map[string]string) (string, error) {
+	content, err := os.ReadFile(Path(name))
+	if err != nil {
+		return "", fmt.Errorf("failed to load prompt %q: %w", name, err)
+	}
+	text := string(content)
+	for key, value := range vars {
+		text = strings.ReplaceAll(text, "{{"+key+"}}", value)
+	}
+	if i := strings.Index(text, "{{"); i >= 0 {
+		end := strings.Index(text[i:], "}}")
+		if end < 0 {
+			end = len(text[i:]) - 1
+		}
+		return "", fmt.Errorf("prompt %q has an unfilled placeholder %s", name, text[i:i+end+2])
+	}
+	return strings.TrimSpace(text), nil
+}
+
 // LanguageSection is the directive that splits what the player reads from what
 // the engine stores. It comes back empty for English: every prompt file is
 // already written in it, so there is nothing to say and no reason to spend the
@@ -70,7 +111,7 @@ func LanguageSection(language string) (string, error) {
 	if NormalizeLanguage(language) == DefaultLanguage {
 		return "", nil
 	}
-	content, err := os.ReadFile("system-prompts/language.md")
+	content, err := os.ReadFile(Path("language.md"))
 	if err != nil {
 		return "", fmt.Errorf("failed to load language.md: %w", err)
 	}
@@ -87,7 +128,7 @@ func LanguageSection(language string) (string, error) {
 // survive everything above it: the files it overrides are themselves written in
 // English, and the setting between them is a list of English slugs.
 func LoadPrompt(setting string, language string, filenames ...string) (string, error) {
-	always, err := os.ReadFile("system-prompts/always.md")
+	always, err := os.ReadFile(Path("always.md"))
 	if err != nil {
 		return "", fmt.Errorf("failed to load always.md: %w", err)
 	}
@@ -96,7 +137,7 @@ func LoadPrompt(setting string, language string, filenames ...string) (string, e
 	b.Write(always)
 
 	for _, filename := range filenames {
-		content, err := os.ReadFile(filename)
+		content, err := os.ReadFile(Path(filename))
 		if err != nil {
 			return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
 		}
