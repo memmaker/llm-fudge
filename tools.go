@@ -123,6 +123,20 @@ func gameTools() []llm.Tool {
 	}
 }
 
+// bookkeepingTools is what the DM has in the round after its prose: the files,
+// and nothing else. A check rolled now would be a roll for something already
+// narrated, and there is no one left to offer a menu to.
+func bookkeepingTools() []llm.Tool {
+	var out []llm.Tool
+	for _, tool := range gameTools() {
+		switch tool.Function.Name {
+		case "read_file", "write_file", "edit_file":
+			out = append(out, tool)
+		}
+	}
+	return out
+}
+
 func loadSetting(s *session, name string) error {
 	path := filepath.Join("settings", name)
 	info, err := os.Stat(path)

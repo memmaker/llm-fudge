@@ -55,11 +55,21 @@ Decision
    seam. Milestone files sit flat in the session directory rather than under a
    `milestones/` subdirectory: decision 4 admits no paths, so a subdirectory
    would be unreachable by the tool that has to write into it.
-7. **Turn order is check → Edit → narrate**, stated in the ground rules, with
-   updating `charsheet.md` as rule #1. Enforcement is a player-triggered nag,
-   `/inv`, which sends a reminder as a user message. A harness-enforced variant
-   was specified and dropped: it costs a wasted round on every turn where
-   nothing changed.
+7. **A turn has three phases: resolve, narrate, record.** Amended after play —
+   it was originally check → Edit → narrate, and that was wrong twice over. The
+   loop returned the moment prose appeared, so no round existed in which the
+   edit could happen; and asking for the edit *before* the prose asks the DM to
+   predict what its own unwritten scene will establish. ADR 005 had already
+   settled that point in the other direction and this reversed it by accident.
+   Now: rolls come alone (prose written beside a roll predates the dice and is
+   discarded), the narration is the turn's output, and a third request follows
+   it with the scene closed and only the file tools available, asking the DM to
+   read back what it wrote and record it. That round is skipped when the turn
+   already wrote, so it costs a request on ordinary turns and nothing on turns
+   that kept their own books. `/inv` remains as the player's manual nag. A
+   harness-enforced variant that rejected narration until an edit arrived was
+   specified and dropped; the bookkeeping round achieves the same thing without
+   holding the scene hostage.
 8. **Settings collapse to prose.** `description.md` and `adventures/*.md`
    only. `rules/setting.go` and the `recfile/` package go with the `.rec` game
    data: structured data with no validator is a worse markdown. `llm_model.rec`

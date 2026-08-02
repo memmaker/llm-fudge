@@ -64,6 +64,7 @@ type gamePrompts struct {
 	charsheetHeader string
 	sheetNag        string
 	styleMarker     string
+	bookkeeping     string
 }
 
 func loadGamePrompts() (gamePrompts, error) {
@@ -77,6 +78,7 @@ func loadGamePrompts() (gamePrompts, error) {
 		{&p.charsheetHeader, "charsheet-header.md"},
 		{&p.sheetNag, "sheet-nag.md"},
 		{&p.styleMarker, "style-override.md"},
+		{&p.bookkeeping, "turn-bookkeeping.md"},
 	} {
 		text, err := prompts.Fill(load.file, nil)
 		if err != nil {

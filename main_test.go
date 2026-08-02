@@ -60,13 +60,102 @@ func TestTurnEndsOnProse(t *testing.T) {
 	s, _ := playSession(t)
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 
-	s.processGameTurn(replies(llm.Message{Content: "The door swings open."}), &messages, "open the door")
+	s.processGameTurn(replies(
+		llm.Message{Content: "The door swings open."},
+		llm.Message{Content: "NOTHING"},
+	), &messages, "open the door")
 
-	if len(messages) != 3 {
-		t.Fatalf("history holds %d messages, want system + player + reply", len(messages))
-	}
 	if s.lastNarration != "The door swings open." {
 		t.Fatalf("lastNarration = %q", s.lastNarration)
+	}
+}
+
+// Phase three: a narrated turn that wrote nothing gets a round of its own to put
+// the scene on the sheet. Without it there is no moment in a turn at which the
+// bookkeeping can happen, which is why it was not happening.
+func TestNarratedTurnGetsABookkeepingRound(t *testing.T) {
+	s, dir := playSession(t)
+	s.dir = dir
+	if _, err := s.writeFile("charsheet.md", "- Location: the hall\n"); err != nil {
+		t.Fatal(err)
+	}
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
+
+	s.processGameTurn(replies(
+		llm.Message{Content: "You step through into the cellar."},
+		llm.Message{ToolCalls: []llm.ToolCall{{
+			ID: "1",
+			Function: llm.ToolCallFunction{
+				Name:      "edit_file",
+				Arguments: `{"filename":"charsheet.md","old_string":"- Location: the hall","new_string":"- Location: the cellar"}`,
+			},
+		}}},
+	), &messages, "go through the door")
+
+	sheet, err := s.readFile("charsheet.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sheet, "the cellar") {
+		t.Fatalf("the bookkeeping round did not reach the sheet: %q", sheet)
+	}
+	if !strings.Contains(strings.Join(contents(messages), "\n"), "the turn's narration is closed") {
+		t.Fatal("the bookkeeping demand was never sent")
+	}
+}
+
+// A DM that kept its own books mid-turn should not be asked again: the round
+// costs a request, and it only exists because the writing usually does not
+// happen on its own.
+func TestTurnThatAlreadyWroteSkipsBookkeeping(t *testing.T) {
+	s, dir := playSession(t)
+	s.dir = dir
+	if _, err := s.writeFile("charsheet.md", "- Location: the hall\n"); err != nil {
+		t.Fatal(err)
+	}
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
+
+	s.processGameTurn(replies(llm.Message{
+		Content: "You step through into the cellar.",
+		ToolCalls: []llm.ToolCall{{
+			ID: "1",
+			Function: llm.ToolCallFunction{
+				Name:      "edit_file",
+				Arguments: `{"filename":"charsheet.md","old_string":"- Location: the hall","new_string":"- Location: the cellar"}`,
+			},
+		}},
+	}), &messages, "go through the door")
+
+	if strings.Contains(strings.Join(contents(messages), "\n"), "the turn's narration is closed") {
+		t.Fatal("a turn that already wrote was asked to write again")
+	}
+}
+
+// Character creation happens before the session directory exists, so there is
+// nothing for a bookkeeping round to write to and it must not cost a request.
+func TestBookkeepingWaitsForTheSessionDirectory(t *testing.T) {
+	s, _ := playSession(t)
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
+
+	s.processGameTurn(replies(llm.Message{Content: "What kind of person is Rob?"}), &messages, "")
+
+	if strings.Contains(strings.Join(contents(messages), "\n"), "the turn's narration is closed") {
+		t.Fatal("bookkeeping ran before there was a sheet to write")
+	}
+}
+
+// Nothing in the bookkeeping round can roll dice or stop for the player: the
+// scene is already told, and there is nobody left to ask.
+func TestBookkeepingToolsAreFilesOnly(t *testing.T) {
+	for _, tool := range bookkeepingTools() {
+		switch tool.Function.Name {
+		case "read_file", "write_file", "edit_file":
+		default:
+			t.Errorf("%s is available after the narration", tool.Function.Name)
+		}
+	}
+	if len(bookkeepingTools()) != 3 {
+		t.Fatalf("bookkeeping offers %d tools, want the three file tools", len(bookkeepingTools()))
 	}
 }
 

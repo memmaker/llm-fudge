@@ -70,17 +70,22 @@ See [scripts/dryfall.txt](scripts/dryfall.txt) for a worked example.
 
 ## How a turn works
 
-Each player line becomes a turn. The DM gets up to six requests to finish it:
+Each player line becomes a turn, and a turn has three phases:
 
-1. **Roll**, if anything is uncertain — one `check` call, and no prose in that
-   response. The result comes back on the next one.
-2. **Write it down.** Whatever the outcome made true goes into `charsheet.md`
-   through `edit_file`, one edit per thing that changed.
-3. **Narrate.** Ordinary prose, exactly what the player reads.
+1. **Resolve.** If anything is uncertain, one `check` call and no prose in that
+   response. The result comes back on the next one. Prose written beside a roll
+   was written before the dice were known, so the harness drops it and the
+   player never sees it.
+2. **Narrate.** Ordinary prose, exactly what the player reads. This is the
+   turn's output and the last request has every tool withdrawn to force it, so a
+   turn always ends with the player having read something.
+3. **Record.** One more request with the scene closed and only the file tools
+   left, asking the DM to make `charsheet.md` match what its prose established.
 
-The last request has every tool withdrawn and exists purely to force a narration
-if the earlier ones didn't produce one — a turn always ends with the player
-having read something.
+Phase three is a separate request on purpose. Asked before the prose exists,
+"what changed?" is a prediction; asked after, it is a reading. It is skipped
+when the turn already wrote to the sheet, so a well-behaved turn costs nothing
+extra.
 
 ## What the DM sees
 

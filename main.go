@@ -37,6 +37,10 @@ const (
 	// a turn has maxTurnRequests-1 rounds to roll, read and edit, and one to end
 	// on. A turn still unnarrated after that is an error.
 	maxTurnRequests = 6
+	// maxBookkeepingRequests bounds the round after the narration. One response
+	// is the normal case, since a reply can carry every edit at once; the second
+	// exists for a DM that reads the sheet before writing to it.
+	maxBookkeepingRequests = 2
 	// maxRetryDelay is the ceiling on the wait between retried requests.
 	maxRetryDelay = 30 * time.Second
 )
@@ -868,6 +872,10 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
+	// wrote records whether the DM has already put this turn's changes on the
+	// sheet. If it has, the bookkeeping round below is not worth a request.
+	var wrote bool
+
 	var failures int
 	for request := 1; request <= maxTurnRequests; request++ {
 		tools := gameTools()
@@ -905,6 +913,8 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 				answeredChoice = true
 			case "check":
 				rolled = true
+			case "edit_file", "write_file":
+				wrote = true
 			}
 		}
 
@@ -952,6 +962,18 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			continue
 		}
 
+		// Phase three. The scene is on the player's screen and cannot be taken
+		// back, so nothing here risks the turn — only how much of what just
+		// happened ends up on the sheet. It is a separate request because asking
+		// "what changed?" before the prose exists is asking for a prediction,
+		// while asking after it is asking for a reading.
+		// Not before the session directory exists: during character creation
+		// there is no sheet to reconcile against, and the round would spend a
+		// request asking for edits to a file that cannot be written yet.
+		if !wrote && s.dir != "" {
+			s.recordChanges(chat, messages)
+		}
+
 		if debug {
 			fmt.Printf("\033[90m[turn %d done; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
 		}
@@ -964,6 +986,38 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 	// beside a scene the player was never shown.
 	*messages = (*messages)[:turnStart]
 	fmt.Printf("\nError: the DM did not narrate this turn within %d calls. Try rephrasing your action.\n", maxTurnRequests)
+}
+
+// recordChanges is the turn's last phase: the DM reads back the scene it just
+// wrote and puts what it established on the sheet. It runs only when the turn
+// did not already write, so an ordinary turn costs one request more and a turn
+// that kept its own books costs nothing extra.
+//
+// Failure here is reported and dropped. The player has read the scene; a sheet
+// that missed one turn is a smaller problem than a turn that appears to have
+// gone wrong after it plainly did not.
+func (s *session) recordChanges(chat chatRound, messages *[]llm.Message) {
+	if debug {
+		fmt.Println("\033[90m[bookkeeping round; nothing here reaches the player]\033[0m")
+	}
+
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.bookkeeping})
+
+	for request := 1; request <= maxBookkeepingRequests; request++ {
+		response, err := chat(s.withCharsheet(*messages), bookkeepingTools())
+		if err != nil {
+			fmt.Printf("\nLLM error while recording the turn: %v\n", err)
+			return
+		}
+		*messages = append(*messages, response.Message)
+		if len(response.Message.ToolCalls) == 0 {
+			if debug && strings.Contains(strings.ToUpper(response.Message.Content), "NOTHING") {
+				fmt.Println("\033[90m[bookkeeping: the DM reports the scene changed nothing]\033[0m")
+			}
+			return
+		}
+		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+	}
 }
 
 // retryDelay is how long to wait before trying a failed request again: longer
