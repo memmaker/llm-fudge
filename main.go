@@ -526,9 +526,12 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 	}
 }
 
-// sheetNag is what /inv sends. Written as the player speaking, because that is
-// the channel it arrives on and the DM should answer it as one.
-const sheetNag = "(Out of character: you have not been keeping charsheet.md up to date. Bring it current now with edit_file — everything that has changed since you last touched it — and keep updating it every turn, as the rules say. Do not narrate anything for this; a one-line acknowledgement is enough.)"
+// sheetNag is what /inv sends. It asks for a comparison rather than accusing:
+// told it has fallen behind, the DM argues the point instead of looking — in
+// play it replied that "nothing has changed since then to edit" on a turn that
+// had just moved the character into a different building. Asked to walk the
+// sheet against the scene, it has to actually check.
+const sheetNag = "(Out of character: go through charsheet.md section by section and compare each one against what has actually happened in this session so far. Where they differ, fix it with edit_file. Check at least: where the character is now, their wounds and fudge points, what they are carrying and what they have spent, every NPC's condition and disposition, and whether anything learned or opened or promised is missing from Known Facts/History. Report which sections you checked and what you changed. Do not narrate a scene for this.)"
 
 func printMetaCommands() {
 	fmt.Println("Available commands:")
@@ -853,6 +856,27 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		*messages = append(*messages, response.Message)
 
 		prose, img := splitImagePrompt(response.Message.Content)
+
+		var answeredChoice, rolled bool
+		for _, call := range response.Message.ToolCalls {
+			switch call.Function.Name {
+			case "user_choice":
+				answeredChoice = true
+			case "check":
+				rolled = true
+			}
+		}
+
+		// Prose written in the same response as a roll was written before the
+		// dice were known, whatever it claims happened. dm.md asks for the roll
+		// on its own, and this is where that is made true rather than trusted:
+		// the prose is held back, the result goes in, and the next round writes
+		// the scene from what actually came up. Observed in play — the DM
+		// narrated a successful sneak and then rolled for it.
+		if rolled {
+			prose = ""
+		}
+
 		// A menu blocks on the player, so the question above it has to be on
 		// screen before the options are.
 		if prose != "" {
@@ -868,13 +892,6 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 				if err := writeImagePrompt(img); err != nil {
 					fmt.Println("\nImage prompt error:", err)
 				}
-			}
-		}
-
-		var answeredChoice bool
-		for _, call := range response.Message.ToolCalls {
-			if call.Function.Name == "user_choice" {
-				answeredChoice = true
 			}
 		}
 

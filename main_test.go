@@ -55,6 +55,30 @@ func TestTurnEndsOnProse(t *testing.T) {
 	}
 }
 
+func TestProseWrittenAlongsideARollIsHeldBack(t *testing.T) {
+	t.Chdir(t.TempDir())
+	s := newSession()
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
+
+	// The DM narrates the outcome and rolls for it in the same response. The
+	// prose predates the dice, so it must not reach the player; the turn goes on
+	// and the next round narrates from the result.
+	s.processGameTurn(replies(
+		llm.Message{
+			Content: "You slip past the guard unseen.",
+			ToolCalls: []llm.ToolCall{{
+				ID:       "1",
+				Function: llm.ToolCallFunction{Name: "check", Arguments: `{"level":"Fair","vs":"Average","what":"sneaking"}`},
+			}},
+		},
+		llm.Message{Content: "The guard turns. You freeze."},
+	), &messages, "sneak past")
+
+	if s.lastNarration != "The guard turns. You freeze." {
+		t.Fatalf("the player was shown prose written before the roll: %q", s.lastNarration)
+	}
+}
+
 func TestUnnarratedTurnIsRolledBack(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s := newSession()
