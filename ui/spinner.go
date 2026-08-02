@@ -6,7 +6,7 @@ import (
 )
 
 func ShowLoadingSpinner(duration time.Duration, done <-chan struct{}) {
-	if Scripted() {
+	if scripted() {
 		<-done
 		return
 	}

@@ -12,19 +12,19 @@ import (
 // output is a transcript to read or diff, so they write nothing there.
 
 func ClearScreen() {
-	if !Scripted() {
+	if !scripted() {
 		fmt.Print("\033[H\033[2J")
 	}
 }
 
 func HideCursor() {
-	if !Scripted() {
+	if !scripted() {
 		fmt.Print("\033[?25l")
 	}
 }
 
 func ShowCursor() {
-	if !Scripted() {
+	if !scripted() {
 		fmt.Print("\033[?25h")
 	}
 }
@@ -35,7 +35,7 @@ func ShowCursor() {
 // scrolling, which keeps everything above in scrollback; the cursor-up puts the
 // cursor back where it was, and whatever prints next overwrites the blanks.
 func ScrollLastLineToTop() {
-	if Scripted() {
+	if scripted() {
 		return
 	}
 	_, height, err := term.GetSize(int(os.Stdout.Fd()))
@@ -62,12 +62,12 @@ func WrapText(text string, width int) string {
 			wrapped = append(wrapped, "")
 			continue
 		}
-		wrapped = append(wrapped, WrapLine(line, width)...)
+		wrapped = append(wrapped, wrapLine(line, width)...)
 	}
 	return strings.Join(wrapped, "\n")
 }
 
-func WrapLine(line string, width int) []string {
+func wrapLine(line string, width int) []string {
 	if width <= 0 {
 		return []string{line}
 	}
@@ -101,9 +101,9 @@ func WrapLine(line string, width int) []string {
 	return wrapped
 }
 
-func DisplayContextUsage(percent int, debug bool) {
-	if !debug || percent < 0 {
+func DisplayContextUsage(tokens int, debug bool) {
+	if !debug || tokens <= 0 {
 		return
 	}
-	fmt.Printf("\033[90m[context: %d%%]\033[0m\n", percent)
+	fmt.Printf("\033[90m[context: %d tokens]\033[0m\n", tokens)
 }

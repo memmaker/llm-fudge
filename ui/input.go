@@ -19,12 +19,12 @@ func TypeYourAnswer() string {
 
 // script is the queue a -script run answers every prompt from: one line per
 // answer, in the order the game asks for them. It is nil in an interactive
-// session, and Scripted() is what the terminal control sequences check — a
+// session, and scripted() is what the terminal control sequences check — a
 // transcript meant to be read or diffed should not be threaded with cursor
 // moves and screen clears.
 var script []string
 
-func Scripted() bool { return script != nil }
+func scripted() bool { return script != nil }
 
 // LoadScript reads the answers a run will play. Blank lines and # comments are
 // dropped so a script can be annotated; everything else is an answer verbatim,
@@ -54,14 +54,37 @@ func nextScripted() (string, bool) {
 	return line, true
 }
 
+// GetInput never returns a blank line: an empty answer is not an answer, and it
+// goes straight back to the prompt without costing a request. The guard lives
+// here rather than at the call sites so it covers the setup questions too,
+// where a bare Enter used to be sent to the model as if it were a reply.
 func GetInput(rl *readline.Instance, prompt string) (string, error) {
-	if Scripted() {
+	for {
+		line, err := readOnce(rl, prompt)
+		if err != nil || strings.TrimSpace(line) != "" {
+			return line, err
+		}
+	}
+}
+
+func readOnce(rl *readline.Instance, prompt string) (string, error) {
+	if scripted() {
 		line, ok := nextScripted()
 		if !ok {
 			return "", io.EOF
 		}
 		fmt.Printf("%s%s\n", prompt, line)
 		return line, nil
+	}
+	if rl == nil {
+		// A caller with no instance of its own — the user_choice tool, which is
+		// reached from the tool layer — gets a throwaway one. Cheaper than
+		// threading the game's readline through every tool handler.
+		var err error
+		if rl, err = readline.New(""); err != nil {
+			return "", err
+		}
+		defer rl.Close()
 	}
 	ShowCursor()
 	rl.SetPrompt(prompt)
@@ -70,7 +93,7 @@ func GetInput(rl *readline.Instance, prompt string) (string, error) {
 	return line, err
 }
 
-func ReadKey() (string, error) {
+func readKey() (string, error) {
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -114,7 +137,7 @@ func ShowChoiceMenu(options []string) (string, error) {
 	// A scripted run picks by naming the option. A line that names none of them
 	// is the answer the menu's own "type your answer" branch is about to ask
 	// for, so it goes back on the queue rather than being spent here.
-	if Scripted() {
+	if scripted() {
 		line, ok := nextScripted()
 		if !ok {
 			return "", io.EOF
@@ -171,7 +194,7 @@ func ShowChoiceMenu(options []string) (string, error) {
 
 		firstDraw = false
 
-		key, err := ReadKey()
+		key, err := readKey()
 		if err != nil {
 			return "", err
 		}

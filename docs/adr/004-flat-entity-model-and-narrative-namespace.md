@@ -1,5 +1,5 @@
 ADR 004: Flat entity model, narrative namespace, and entity-indexed history
-Status: Accepted
+Status: Superseded by ADR 006
 Supersedes: ADR 002 §§1–6 and §8 (the ledger, its merge/retraction grammar, and the ROSTER rendering it fed) and the plain-text shape of `archive.Turn.Update`/`Events`. Leaves ADR 002 §7 (TIMELINE), §9 (pinned system message), §10 (recall counts as a round) and all of ADR 003 (locations, conservation, position ownership) unchanged.
 
 Context

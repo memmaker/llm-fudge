@@ -1,5 +1,10 @@
 ADR 001: Deterministic LLM-driven RPG Engine
-Status: Proposed
+Status: Superseded by ADR 006
+
+Note (ADR 006): the determinism this record is named for is gone. World state is
+now prose written by the model, so replaying a seed and an action sequence does
+not reproduce a session. Only the dice are still seeded. The rest of this
+document describes the design as it stood.
 
 Context
 - We want a roleplaying engine where the DM/Narrator is an LLM. The core game state, rules, and transitions must be deterministic and implemented in Go.

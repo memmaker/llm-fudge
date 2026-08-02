@@ -1,5 +1,5 @@
 ADR 003: Locations, engine-held position, and item conservation
-Status: Accepted
+Status: Superseded by ADR 006
 Supersedes: ADR 002 §5 (the `at:` half only) and the "A move Action" entry under Out of Scope in docs/engine-held-context-spec.md
 
 Context

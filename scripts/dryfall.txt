@@ -1,10 +1,10 @@
-# A scripted run: Deadlands, the Dryfall adventure, an automatic character.
+# A scripted run: Deadlands, the Dryfall adventure.
 # One answer per line. Menu answers name the option; the rest is typed verbatim.
+# Character creation is a conversation now, so everything after the adventure is
+# an ordinary answer to whatever the DM asks next.
 deadlands
 blood-moon-over-dryfall
-Automatic - I describe my concept, you decide the traits
-A man indistuingishable from a zombi
-Rob
+A man indistinguishable from a zombie. Call him Rob, and pick his traits for me.
 Fine
 sneak into the depot
 /context

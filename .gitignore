@@ -2,9 +2,10 @@
 .DS_Store
 .apikey
 fudge
-charsheet.txt
+saves/
 context.txt
 img-gen.md
 narration.txt
 illustration.png
 system-prompts/language.md
+consistency-out/
