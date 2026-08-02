@@ -1,6 +1,6 @@
 # Example Adventure: The Mysterious Tavern
 
-You find yourself in the smoky interior of the Wandering Griffin, a tavern known for attracting adventurers and mercenaries from across the realm. The bartender, a grizzled dwarf with a scarred face, looks up from polishing a glass mug as you enter.
+You find yourself in the smoky interior of the Wandering Griffin, a tavern known for attracting adventurers and mercenaries from across the realm. The bartender, a grizzled human with a scarred face, looks up from polishing a glass mug as you enter.
 
 "Welcome to the Griffin," he says gruffly. "Haven't seen your face around here before. What brings you to our humble tavern?"
 

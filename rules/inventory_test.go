@@ -26,7 +26,7 @@ func TestAddItemStacksByName(t *testing.T) {
 	if len(ch.Inventory) != 1 {
 		t.Fatalf("inventory has %d entries, want 1", len(ch.Inventory))
 	}
-	item := ch.carried("ration-pack")
+	item, _ := ch.FindItem("ration-pack", "")
 	if item.Count != 5 {
 		t.Errorf("count = %d, want 5", item.Count)
 	}
@@ -48,24 +48,24 @@ func TestRemoveItem(t *testing.T) {
 
 	// More than is carried fails outright rather than clamping: the DM needs to
 	// learn they cannot spend it, so the scene can go the other way.
-	if _, _, err := ch.RemoveItem("Thermal Detonator", 3); err == nil {
+	if _, _, err := ch.RemoveItem("Thermal Detonator", "", 3); err == nil {
 		t.Error("removing more than carried should fail")
 	}
-	if ch.carried("thermal-detonator").Count != 2 {
+	if item, _ := ch.FindItem("thermal-detonator", ""); item.Count != 2 {
 		t.Error("a failed removal must not change the stack")
 	}
 
-	if _, left, err := ch.RemoveItem("thermal detonator", 1); err != nil || left != 1 {
+	if _, left, err := ch.RemoveItem("thermal detonator", "", 1); err != nil || left != 1 {
 		t.Errorf("RemoveItem = %d, %v; want 1, nil", left, err)
 	}
 	// The last one taken drops the entry, so the sheet does not list "x0".
-	if _, left, err := ch.RemoveItem("Thermal Detonator", 1); err != nil || left != 0 {
+	if _, left, err := ch.RemoveItem("Thermal Detonator", "", 1); err != nil || left != 0 {
 		t.Errorf("RemoveItem = %d, %v; want 0, nil", left, err)
 	}
-	if ch.carried("thermal-detonator") != nil {
+	if item, _ := ch.FindItem("thermal-detonator", ""); item != nil {
 		t.Error("emptied stack should be dropped from the inventory")
 	}
-	if _, _, err := ch.RemoveItem("Thermal Detonator", 1); err == nil {
+	if _, _, err := ch.RemoveItem("Thermal Detonator", "", 1); err == nil {
 		t.Error("removing an item not carried should fail")
 	}
 }

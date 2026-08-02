@@ -149,6 +149,10 @@ func itemPlacementArgs() (characterID, location, locationDescription map[string]
 	// A destination is a character or a place, never both and never one field
 	// holding either: both namespaces are slugs, so an NPC called Mira and a
 	// room called Mira would be indistinguishable in the one place it matters.
+	// Named location here, matching this tool's own args, though the <state>
+	// block's equivalent field is container — this call only ever places
+	// something at a plain location, never inside a container item, since
+	// nothing is a container yet at character-creation time.
 	location = map[string]any{"type": "string", "description": "Create the item lying at this location instead of in somebody's hands—a crate already in the cellar, a body's gear on the ground, a sword in the stone. Give the location's slug, and give location_description with it. Leave both out to give the item to a character."}
 	locationDescription = map[string]any{"type": "string", "description": "Where in that location the thing rests, in a few words: \"on the top shelf\", \"half-buried in ash\", \"nailed above the door\". Required whenever location is given."}
 	return characterID, location, locationDescription
@@ -438,7 +442,7 @@ func (d *itemDestination) add(proto *rules.Item, count int) (string, error) {
 		return rules.Flow("location", d.location.ID, "added", count, "item", item.ID, "type", item.Kind(), "lies", item.Where, "total", item.Count), nil
 	}
 	before := d.character.ToString()
-	item, err := d.character.Accept(proto, count)
+	item, err := d.character.AddItem(proto, "", count)
 	if err != nil {
 		return "", err
 	}
@@ -455,7 +459,7 @@ func (d *itemDestination) remove(name string, count int) (string, error) {
 		return rules.Flow("location", d.location.ID, "removed", count, "item", item.ID, "remaining", left), nil
 	}
 	before := d.character.ToString()
-	item, left, err := d.character.RemoveItem(name, count)
+	item, left, err := d.character.RemoveItem(name, "", count)
 	if err != nil {
 		return "", err
 	}
@@ -595,9 +599,9 @@ func executeAction(w *rules.World, call llm.ToolCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		successStr := "no"
+		successStr := "failure"
 		if result.Success {
-			successStr = "ok"
+			successStr = "success"
 		}
 		// A rerolled check names the roll it threw away, so the DM can narrate the
 		// Fudge Point doing something: the fumble that was, and then was not.

@@ -159,7 +159,7 @@ func TestCarriedItemsRenderBothAsEntitiesAndAsInventory(t *testing.T) {
 	if !strings.Contains(got, "\n  "+item.ID+":\n") {
 		t.Errorf("the key is not an entity of its own:\n%s", got)
 	}
-	if !strings.Contains(got, "location: "+w.Player) {
+	if !strings.Contains(got, "container: "+w.Player) {
 		t.Errorf("the key does not reference who carries it:\n%s", got)
 	}
 	if !strings.Contains(got, "inventory: ["+item.ID+"]") {

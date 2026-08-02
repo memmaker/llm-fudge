@@ -89,7 +89,7 @@ entities:
   whiskey-bottle:
     type: item
     name: Bottle of Whiskey
-    location: barkeep
+    container: barkeep
   barkeep:
     type: character
     name: Ezra Coles
@@ -123,14 +123,14 @@ entities:
   bowie-knife:
     type: item
     name: Bowie Knife
-    location: kyle-katarn
+    container: kyle-katarn
     weapon: {damage: 2}
 `)
 
 	apply(t, s, `
 entities:
   bowie-knife:
-    location: saloon
+    container: saloon
     spot: buried in the bar top
 `)
 
@@ -160,7 +160,7 @@ entities:
   cartridges:
     type: item
     name: Cartridges
-    location: kyle-katarn
+    container: kyle-katarn
     count: 6
 `)
 
@@ -180,7 +180,7 @@ entities:
   cartridges:
     type: item
     name: More Cartridges
-    location: kyle-katarn
+    container: kyle-katarn
 `)
 	if !strings.Contains(notes, "never reused") {
 		t.Errorf("a spent id was handed out again: %s", notes)
@@ -327,7 +327,7 @@ entities:
   drifters-hat:
     type: item
     name: Battered Hat
-    location: drifter
+    container: drifter
   kyle-katarn:
     coins: 12
 `)
@@ -500,7 +500,7 @@ entities:
   cartridges:
     type: item
     name: Cartridges
-    location: kyle-katarn
+    container: kyle-katarn
     count: 6
 `)
 
@@ -509,7 +509,7 @@ entities:
   more-cartridges:
     type: item
     name: Cartridges
-    location: kyle-katarn
+    container: kyle-katarn
     count: 6
 `)
 
@@ -594,5 +594,95 @@ func TestThePromptedSchemaMatchesTheFieldSetTheEngineEnforces(t *testing.T) {
 				t.Errorf("dm.md offers %s.%s and the engine refuses it", kind, field)
 			}
 		}
+	}
+}
+
+// A container is minted from the block exactly like an item, just with the
+// one extra capability: something else may declare it as its own `container`.
+// Moving the container afterward should carry its contents with it, for free.
+func TestContainerItemHoldsAndMovesWithItsContents(t *testing.T) {
+	s := stateSession(t)
+	apply(t, s, `
+entities:
+  saddlebag:
+    type: container
+    name: Saddlebag
+    container: kyle-katarn
+  cartridges:
+    type: item
+    name: Cartridges
+    container: saddlebag
+    spot: in the small pocket
+    count: 6
+`)
+
+	bag, err := s.world.ItemByID("saddlebag")
+	if err != nil {
+		t.Fatalf("the saddlebag was not created: %v", err)
+	}
+	if !bag.IsContainer() {
+		t.Fatal("a type: container entity did not become a container")
+	}
+	if holder, _ := s.world.ItemHolder("cartridges"); holder != "saddlebag" {
+		t.Errorf("the cartridges are held by %q, want the saddlebag", holder)
+	}
+
+	apply(t, s, "entities:\n  saddlebag:\n    container: saloon\n    spot: on the bar\n")
+
+	if holder, _ := s.world.ItemHolder("cartridges"); holder != "saddlebag" {
+		t.Errorf("moving the saddlebag changed the cartridges' holder to %q", holder)
+	}
+}
+
+// A container still holding something cannot simply stop existing: emptying
+// it into count: 0 would strand its contents with no record of where they
+// went, which is exactly the kind of loss the engine exists to prevent.
+func TestRetiringANonEmptyContainerIsRefused(t *testing.T) {
+	s := stateSession(t)
+	apply(t, s, `
+entities:
+  saddlebag:
+    type: container
+    name: Saddlebag
+    container: kyle-katarn
+  cartridges:
+    type: item
+    name: Cartridges
+    container: saddlebag
+    spot: in the small pocket
+`)
+
+	notes := refusals(t, s, "entities:\n  saddlebag:\n    count: 0\n")
+	if !strings.Contains(notes, "still holds") {
+		t.Errorf("emptying a non-empty container was not refused: %s", notes)
+	}
+	if _, err := s.world.ItemByID("saddlebag"); err != nil {
+		t.Error("the saddlebag was retired despite still holding something")
+	}
+}
+
+// A plain item is not a valid `container` for anything else — only a
+// character, a location, or something itself minted `type: container` can
+// hold. The refusal should say so rather than the generic "no character or
+// location" shape left over from before containers existed.
+func TestPuttingAnItemInsideANonContainerIsRefused(t *testing.T) {
+	s := stateSession(t)
+	apply(t, s, `
+entities:
+  cartridges:
+    type: item
+    name: Cartridges
+    container: kyle-katarn
+`)
+
+	notes := refusals(t, s, `
+entities:
+  spare-cartridge:
+    type: item
+    name: Spare Cartridge
+    container: cartridges
+`)
+	if !strings.Contains(notes, "cannot hold") {
+		t.Errorf("putting an item inside a non-container was not refused clearly: %s", notes)
 	}
 }

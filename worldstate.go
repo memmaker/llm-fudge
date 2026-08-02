@@ -45,7 +45,10 @@ type worldDiff struct {
 // denylist could only ever refuse the synonyms somebody thought to list first.
 var writableFields = map[string]map[string]bool{
 	"character": {"type": true, "name": true, "species": true, "desc": true, "location": true, "coins": true, "attributes": true, "skills": true, "gifts": true, "faults": true, "narrative": true},
-	"item":      {"type": true, "name": true, "desc": true, "location": true, "count": true, "spot": true, "weapon": true, "armor": true, "narrative": true},
+	"item":      {"type": true, "name": true, "desc": true, "container": true, "count": true, "spot": true, "weapon": true, "armor": true, "narrative": true},
+	// A container is an item that can itself hold items — same fields, one
+	// more capability. See newKind/mint and mintItem's container branch.
+	"container": {"type": true, "name": true, "desc": true, "container": true, "count": true, "spot": true, "weapon": true, "armor": true, "narrative": true},
 	"location":  {"type": true, "name": true, "desc": true, "parent": true, "narrative": true},
 	"narrative": {"type": true, "narrative": true},
 }
@@ -56,7 +59,8 @@ var writableFields = map[string]map[string]bool{
 // has not invented a word — it has mistaken a view for a fact, and the fix is to
 // state the fact instead.
 var derivedFields = map[string]string{
-	"inventory":    "an inventory follows from each item's own `location` — move the item instead",
+	"inventory":    "an inventory follows from each item's own `container` — move the item instead",
+	"contents":     "a container's contents follow from each item's own `container` — move the item instead",
 	"here":         "who is present follows from each character's own `location` — move the character instead",
 	"scene":        "the scene follows from where the player character stands",
 	"penalty":      "a wound penalty follows from the wound",
@@ -227,7 +231,10 @@ func (a *applier) engineKind(id string) string {
 	if _, ok := a.world.Locations[id]; ok {
 		return "location"
 	}
-	if _, err := a.world.ItemByID(id); err == nil {
+	if it, err := a.world.ItemByID(id); err == nil {
+		if it.IsContainer() {
+			return "container"
+		}
 		return "item"
 	}
 	return ""
@@ -293,8 +300,10 @@ func (a *applier) awaiting(kind string, fields map[string]any, entities map[stri
 	switch kind {
 	case "location":
 		ref, _ = fields["parent"].(string)
-	case "character", "item":
+	case "character":
 		ref, _ = fields["location"].(string)
+	case "item", "container":
+		ref, _ = fields["container"].(string)
 	}
 	if ref == "" || a.exists(ref) {
 		return "", false
@@ -314,7 +323,7 @@ func (a *applier) newKind(id string, fields map[string]any) string {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	if kind == "" {
 		a.failed[id] = true
-		a.note("state: %s is new, so it needs a `type` saying what it is (character, item, location, or a narrative kind of your own such as rumor or debt)", id)
+		a.note("state: %s is new, so it needs a `type` saying what it is (character, item, container, location, or a narrative kind of your own such as rumor or debt)", id)
 		return ""
 	}
 	if !rules.ValidID(id) {
@@ -341,7 +350,9 @@ func (a *applier) mint(id, kind string, fields map[string]any) {
 	case "location":
 		a.mintLocation(id, fields)
 	case "item":
-		a.mintItem(id, fields)
+		a.mintItem(id, fields, false)
+	case "container":
+		a.mintItem(id, fields, true)
 	default:
 		// Anything else is narrative-only: a rumour, a debt, a faction's
 		// standing. The store mints it under the same keyspace and stamps it
@@ -401,16 +412,22 @@ func (a *applier) mintLocation(id string, fields map[string]any) {
 	a.record("create_location", []string{id}, rules.Flow("location", loc.Name, "id", loc.ID, "in", loc.Parent))
 }
 
-func (a *applier) mintItem(id string, fields map[string]any) {
+func (a *applier) mintItem(id string, fields map[string]any, container bool) {
 	f := reader{applier: a, id: id, fields: fields}
 	name := f.text("name")
 	if name == "" {
 		name = id
 	}
-	holder := f.text("location")
-	if holder == "" {
+	holderID := f.text("container")
+	if holderID == "" {
 		a.failed[id] = true
-		a.note("state: %s is a new item and needs a `location`: the id of whoever holds it or the place it lies", id)
+		a.note("state: %s is a new item and needs a `container`: the id of whoever holds it or the place it lies", id)
+		return
+	}
+	holder, err := a.world.ResolveHolder(holderID)
+	if err != nil {
+		a.failed[id] = true
+		a.note("state: %s names no character, location or container as its `container`: %v", id, err)
 		return
 	}
 
@@ -421,43 +438,28 @@ func (a *applier) mintItem(id string, fields map[string]any) {
 		return
 	}
 	proto.ID = id
+	if container {
+		proto.Items = map[string]*rules.Item{}
+	}
 	count := f.count()
 
-	if ch, err := a.world.Character(holder); err == nil {
-		landed, err := ch.Accept(proto, count)
-		if err != nil {
-			a.failed[id] = true
-			a.note("state: %s could not be created: %v", id, err)
-			return
-		}
-		if a.absorbed(id, landed, holder) {
-			return
-		}
-		a.record("add_item", []string{id, holder}, rules.Flow("item", name, "id", id, "to", ch.Name, "count", count))
-		return
-	}
-	loc, err := a.world.Location(holder)
-	if err != nil {
-		a.failed[id] = true
-		a.note("state: %s names no character or location as its `location`: %v", id, err)
-		return
-	}
 	spot := f.text("spot")
-	if spot == "" {
+	if spot == "" && holder.RequiresSpot() {
 		a.failed[id] = true
-		a.note("state: %s lies in %s, so it needs a `spot` saying where in the place it rests", id, holder)
+		a.note("state: %s lies in %s, so it needs a `spot` saying where in it the thing rests", id, holderID)
 		return
 	}
-	landed, err := loc.AddItem(proto, spot, count)
+
+	landed, err := holder.AddItem(proto, spot, count)
 	if err != nil {
 		a.failed[id] = true
 		a.note("state: %s could not be created: %v", id, err)
 		return
 	}
-	if a.absorbed(id, landed, holder) {
+	if a.absorbed(id, landed, holderID) {
 		return
 	}
-	a.record("add_item", []string{id, holder}, rules.Flow("item", name, "id", id, "at", loc.Name, "lies", spot, "count", count))
+	a.record("add_item", []string{id, holderID}, rules.Flow("item", name, "id", id, "in", holderID, "count", count))
 }
 
 // absorbed reports that a new item landed on a stack of the same name that was
@@ -529,7 +531,7 @@ func (a *applier) update(id string, fields map[string]any) {
 		a.updateCharacter(id, fields)
 	case "location":
 		a.updateLocation(id, fields)
-	case "item":
+	case "item", "container":
 		a.updateItem(id, fields)
 	}
 	a.setNarrative(id, fields)
@@ -684,7 +686,7 @@ func (a *applier) updateItem(id string, fields map[string]any) {
 
 	// Position before quantity: a stack that moved and then ran out should end
 	// where the prose left it, and a stack that ran out has nowhere to move to.
-	if to := f.text("location"); to != "" && to != holder {
+	if to := f.text("container"); to != "" && to != holder {
 		if a.skipRef(id, to) {
 			return
 		}
@@ -692,7 +694,7 @@ func (a *applier) updateItem(id string, fields map[string]any) {
 			return
 		}
 		holder = to
-	} else if spot := f.text("spot"); spot != "" && item.Where != "" {
+	} else if spot := f.text("spot"); spot != "" {
 		item.Where = spot
 	}
 
@@ -702,13 +704,7 @@ func (a *applier) updateItem(id string, fields map[string]any) {
 }
 
 func (a *applier) moveItem(id string, item *rules.Item, to, spot string) bool {
-	req := rules.MoveRequest{Item: id, Count: item.Count, Where: spot}
-	if _, err := a.world.Character(to); err == nil {
-		req.ToCharacter = to
-	} else {
-		req.ToLocation = to
-	}
-	res, err := a.world.MoveItem(req)
+	res, err := a.world.MoveItem(rules.MoveRequest{Item: id, Count: item.Count, Where: spot, To: to})
 	if err != nil {
 		a.note("state: %s could not be moved to %s: %v", id, to, err)
 		return false
@@ -740,10 +736,15 @@ func (a *applier) setCount(id, holder string, target int) {
 		return
 	}
 
-	if ch, err := a.world.Character(holder); err == nil {
-		delete(ch.Inventory, id)
-	} else if loc, err := a.world.Location(holder); err == nil {
-		delete(loc.Items, id)
+	if item.IsContainer() && len(item.Items) > 0 {
+		a.note("state: %s still holds something — empty it first, or its contents would be lost with no record of where they went", id)
+		return
+	}
+	if h, err := a.world.ResolveHolder(holder); err == nil {
+		if _, _, err := h.RemoveItem(item.Name, item.Where, item.Count); err != nil {
+			a.note("state: %s's count could not be set: %v", id, err)
+			return
+		}
 	}
 	a.world.Retire(id)
 	a.record("remove_item", []string{id}, rules.Flow("item", item.Name, "gone", true))

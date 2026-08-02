@@ -276,7 +276,8 @@ func TestThrowingIsReportedButLeavesTheSheetToTheDM(t *testing.T) {
 	res := &AttackResult{ActorName: kyle.Name, TargetName: bandit.Name, Hit: true, RelativeDegree: 3}
 	w.resolveBlow(res, kyle, bandit, knives, true)
 
-	if got := kyle.carried("throwing-knife").Count; got != 2 {
+	item, _ := kyle.FindItem("throwing-knife", "")
+	if got := item.Count; got != 2 {
 		t.Errorf("knives left = %d, want both still on the sheet", got)
 	}
 	if !res.Thrown {
@@ -339,7 +340,7 @@ func TestAttacksRefuseTheImpossible(t *testing.T) {
 		return err
 	}
 
-	if err := swing("Vibroblade"); err == nil || !strings.Contains(err.Error(), "does not carry") {
+	if err := swing("Vibroblade"); err == nil || !strings.Contains(err.Error(), "holds no") {
 		t.Errorf("swinging a weapon they do not carry: err = %v", err)
 	}
 	if err := swing("Lucky Coin"); err == nil || !strings.Contains(err.Error(), "not a weapon") {

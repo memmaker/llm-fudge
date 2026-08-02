@@ -20,6 +20,24 @@ func drop(w *World, l *Location, proto *Item, where string, count int) *Item {
 	return item
 }
 
+// carried is a test-only shorthand for what used to be Character.carried: the
+// one stack of a name on the sheet, wherever its spot, or nil.
+func carried(c *Character, ref string) *Item {
+	item, _ := c.FindItem(ref, "")
+	return item
+}
+
+// container mints a container item — Items initialized rather than left nil —
+// and lands it on the given holder, the way mintItem does for `type: container`.
+func container(w *World, holder Holder, name, spot string) *Item {
+	proto := &Item{ID: w.MintItemID(name), Name: name, Items: map[string]*Item{}}
+	item, err := holder.AddItem(proto, spot, 1)
+	if err != nil {
+		panic(err)
+	}
+	return item
+}
+
 // A location is minted from its name the same way a character is, so the DM can
 // read an id off a result instead of deriving one.
 func TestCreateLocationMintsASlug(t *testing.T) {
@@ -143,14 +161,14 @@ func TestMoveCarriesRatingsIntact(t *testing.T) {
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	w.GiveWeapon(catnip, "Dagger", "Notched at the tip.", 1, Weapon{Damage: 1, DamageAttribute: "strength"})
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", ToLocation: "cellar", Where: "quivering in the door frame"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", To: "cellar", Where: "quivering in the door frame"}); err != nil {
 		t.Fatal(err)
 	}
-	if catnip.carried("dagger") != nil {
+	if carried(catnip, "dagger") != nil {
 		t.Error("the dagger should have left the sheet")
 	}
 
-	if _, err := w.MoveItem(MoveRequest{Item: "dagger", ToCharacter: "catnip"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "dagger", To: "catnip"}); err != nil {
 		t.Fatal(err)
 	}
 	back, err := catnip.WeaponItem("Dagger")
@@ -177,20 +195,20 @@ func TestASplitStackDoesNotShareItsRatings(t *testing.T) {
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	w.GiveWeapon(catnip, "Pistol", "A worn revolver.", 2, Weapon{Damage: 2, Ranged: true, AmmoCapacity: 6})
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Pistol", ToLocation: "cellar", Where: "on the barrel-head"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Pistol", To: "cellar", Where: "on the barrel-head"}); err != nil {
 		t.Fatal(err)
 	}
 
 	dropped := w.Locations["cellar"].SortedItems()[0]
-	if dropped.ID == "" || dropped.ID == catnip.carried("pistol").ID {
+	if dropped.ID == "" || dropped.ID == carried(catnip, "pistol").ID {
 		t.Fatalf("the two halves of the split share the id %q, so they are one entity with two magazines", dropped.ID)
 	}
 	dropped.Weapon.Ammo = 0
-	if got := catnip.carried("pistol").Weapon.Ammo; got != 6 {
+	if got := carried(catnip, "pistol").Weapon.Ammo; got != 6 {
 		t.Errorf("the pistol still holstered is down to %d shots: the two stacks share a magazine", got)
 	}
 
-	holstered := catnip.carried("pistol")
+	holstered := carried(catnip, "pistol")
 	holstered.Weapon.Damage = 99
 	if dropped.Weapon.Damage != 2 {
 		t.Error("the dropped pistol's rating moved with the carried one")
@@ -205,30 +223,30 @@ func TestASplitArmorStackDoesNotShareItsWorn(t *testing.T) {
 	mira := w.CreateCharacter("mira", "Mira", nil, nil)
 	w.GiveArmor(catnip, "Jerkin", "Boiled leather.", 2, Armor{Protection: 1, Worn: true})
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Jerkin", ToCharacter: "mira"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Jerkin", To: "mira"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mira.EquipArmor("Jerkin", false); err != nil {
 		t.Fatal(err)
 	}
-	if !catnip.carried("jerkin").Armor.Worn {
+	if !carried(catnip, "jerkin").Armor.Worn {
 		t.Error("mira taking hers off stripped catnip too")
 	}
 }
 
-// An item on the floor loses its spot the moment somebody picks it up: a spot
-// describes where a thing lies, and a carried thing lies nowhere.
+// An item on the floor loses its spot the moment somebody picks it up: nothing
+// carries the spot across unless the destination is given one of its own.
 func TestPickingUpClearsTheSpot(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	w.GiveItem(catnip, "Rope", "Forty feet.", 1)
-	w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar", Where: "coiled by the stair"})
+	w.MoveItem(MoveRequest{Item: "Rope", To: "cellar", Where: "coiled by the stair"})
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Rope", ToCharacter: "catnip"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Rope", To: "catnip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.carried("rope").Where; got != "" {
+	if got := carried(catnip, "rope").Where; got != "" {
 		t.Errorf("spot = %q, want it cleared on pickup", got)
 	}
 }
@@ -240,13 +258,13 @@ func TestMoveHandsPartOfAStackToAnotherCharacter(t *testing.T) {
 	mira := w.CreateCharacter("mira", "Mira", nil, nil)
 	w.GiveItem(catnip, "Ration Pack", "Dried bricks.", 5)
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Ration Pack", ToCharacter: "mira", Count: 2}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Ration Pack", To: "mira", Count: 2}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.carried("ration-pack").Count; got != 3 {
+	if got := carried(catnip, "ration-pack").Count; got != 3 {
 		t.Errorf("catnip keeps %d, want 3", got)
 	}
-	if got := mira.carried("ration-pack").Count; got != 2 {
+	if got := carried(mira, "ration-pack").Count; got != 2 {
 		t.Errorf("mira received %d, want 2", got)
 	}
 }
@@ -261,7 +279,7 @@ func TestAmbiguousMoveNamesEveryHolder(t *testing.T) {
 	w.GiveItem(catnip, "Dagger", "Notched.", 1)
 	w.GiveItem(mira, "Dagger", "Plain.", 1)
 
-	_, err := w.MoveItem(MoveRequest{Item: "Dagger", ToLocation: "cellar", Where: "on the floor"})
+	_, err := w.MoveItem(MoveRequest{Item: "Dagger", To: "cellar", Where: "on the floor"})
 	if err == nil {
 		t.Fatal("an ambiguous name must be refused")
 	}
@@ -272,7 +290,7 @@ func TestAmbiguousMoveNamesEveryHolder(t *testing.T) {
 	}
 
 	// Naming the source settles it.
-	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromCharacter: "mira", ToLocation: "cellar", Where: "on the floor"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", From: "mira", To: "cellar", Where: "on the floor"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -285,14 +303,14 @@ func TestMoveDisambiguatesBySpot(t *testing.T) {
 	drop(w, cellar, &Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
 	drop(w, cellar, &Item{Name: "Dagger", Description: "Plain."}, "under the table", 1)
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", ToCharacter: "catnip"}); err == nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", From: "cellar", To: "catnip"}); err == nil {
 		t.Fatal("two stacks of the same name at one location must be ambiguous")
 	}
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", FromWhere: "under the table", ToCharacter: "catnip"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", From: "cellar", FromWhere: "under the table", To: "catnip"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.carried("dagger").Description; got != "Plain." {
+	if got := carried(catnip, "dagger").Description; got != "Plain." {
 		t.Errorf("picked up %q, want the one under the table", got)
 	}
 }
@@ -302,7 +320,7 @@ func TestMoveRefusesWhenNothingIsCalledThat(t *testing.T) {
 	w.CreateLocation("Cellar", "Damp.", "")
 	w.CreateCharacter("catnip", "Catnip", nil, nil)
 
-	_, err := w.MoveItem(MoveRequest{Item: "Halberd", ToLocation: "cellar", Where: "propped up"})
+	_, err := w.MoveItem(MoveRequest{Item: "Halberd", To: "cellar", Where: "propped up"})
 	if err == nil {
 		t.Fatal("moving something nobody has must be refused")
 	}
@@ -319,12 +337,12 @@ func TestMoveToALocationRequiresASpot(t *testing.T) {
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
 	w.GiveItem(catnip, "Rope", "Forty feet.", 1)
 
-	if _, err := w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar"}); err == nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Rope", To: "cellar"}); err == nil {
 		t.Fatal("a move onto the ground must name the spot")
 	}
 }
 
-func TestMoveNeedsExactlyOneDestination(t *testing.T) {
+func TestMoveNeedsADestination(t *testing.T) {
 	w := locationWorld()
 	w.CreateLocation("Cellar", "Damp.", "")
 	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
@@ -332,9 +350,6 @@ func TestMoveNeedsExactlyOneDestination(t *testing.T) {
 
 	if _, err := w.MoveItem(MoveRequest{Item: "Rope"}); err == nil {
 		t.Fatal("a move with no destination must be refused")
-	}
-	if _, err := w.MoveItem(MoveRequest{Item: "Rope", ToCharacter: "catnip", ToLocation: "cellar", Where: "here"}); err == nil {
-		t.Fatal("a move to two destinations must be refused")
 	}
 }
 
@@ -347,7 +362,7 @@ func TestMoveRefusesToMergeDifferentKinds(t *testing.T) {
 	w.GiveWeapon(catnip, "Dagger", "Notched.", 1, Weapon{Damage: 1})
 	drop(w, cellar, &Item{Name: "Dagger", Description: "A wooden prop."}, "on the shelf", 1)
 
-	_, err := w.MoveItem(MoveRequest{Item: "Dagger", FromCharacter: "catnip", ToLocation: "cellar", Where: "on the shelf"})
+	_, err := w.MoveItem(MoveRequest{Item: "Dagger", From: "catnip", To: "cellar", Where: "on the shelf"})
 	if err == nil {
 		t.Fatal("merging a weapon into a gear stack must be refused")
 	}
@@ -395,7 +410,7 @@ func TestAFullMoveKeepsTheItemsID(t *testing.T) {
 	}
 	id := rope.ID
 
-	down, err := w.MoveItem(MoveRequest{Item: "Rope", ToLocation: "cellar", Where: "coiled by the stair"})
+	down, err := w.MoveItem(MoveRequest{Item: "Rope", To: "cellar", Where: "coiled by the stair"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +418,7 @@ func TestAFullMoveKeepsTheItemsID(t *testing.T) {
 		t.Errorf("dropped as %q, want the id it was carried under, %q", down.Item.ID, id)
 	}
 
-	up, err := w.MoveItem(MoveRequest{Item: "Rope", ToCharacter: "catnip"})
+	up, err := w.MoveItem(MoveRequest{Item: "Rope", To: "catnip"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +442,7 @@ func TestAFullMoveWithinOneLocationKeepsTheItem(t *testing.T) {
 	cellar, _ := w.CreateLocation("Cellar", "Damp.", "")
 	dagger := drop(w, cellar, &Item{Name: "Dagger", Description: "Notched."}, "in the door frame", 1)
 
-	res, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: "cellar", ToLocation: "cellar", Where: "on the table"})
+	res, err := w.MoveItem(MoveRequest{Item: "Dagger", From: "cellar", To: "cellar", Where: "on the table"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,11 +471,11 @@ func TestAPartialMoveMintsANewIDForWhatLeft(t *testing.T) {
 	}
 	id := packs.ID
 
-	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", ToCharacter: "mira", Count: 2})
+	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", To: "mira", Count: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := catnip.carried("ration-pack").ID; got != id {
+	if got := carried(catnip, "ration-pack").ID; got != id {
 		t.Errorf("what stayed behind became %q, want the original %q", got, id)
 	}
 	if res.Item.ID == "" {
@@ -503,7 +518,7 @@ func TestMergingKeepsTheDestinationStacksID(t *testing.T) {
 		t.Fatalf("two piles in two pockets share the id %q", his.ID)
 	}
 
-	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", FromCharacter: "catnip", ToCharacter: "mira", Count: 2})
+	res, err := w.MoveItem(MoveRequest{Item: "Ration Pack", From: "catnip", To: "mira", Count: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +624,7 @@ func TestAnUnmintedProtoIsRefused(t *testing.T) {
 	if _, err := cellar.AddItem(&Item{Name: "Torch"}, "in the sconce", 1); err == nil {
 		t.Error("a floor must refuse an item with no id")
 	}
-	if _, err := catnip.Accept(&Item{Name: "Torch"}, 1); err == nil {
+	if _, err := catnip.AddItem(&Item{Name: "Torch"}, "", 1); err == nil {
 		t.Error("an inventory must refuse an item with no id")
 	}
 }
@@ -627,14 +642,14 @@ func TestAnItemIsFoundByItsID(t *testing.T) {
 	}
 
 	// Dropped by id, from a character.
-	if _, err := w.MoveItem(MoveRequest{Item: key.ID, ToLocation: cellar.ID, Where: "under a cask"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: key.ID, To: cellar.ID, Where: "under a cask"}); err != nil {
 		t.Fatalf("move by id from a character: %v", err)
 	}
 	// And picked up by the same id, now that it is on a floor instead.
-	if _, err := w.MoveItem(MoveRequest{Item: key.ID, ToCharacter: "catnip"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: key.ID, To: "catnip"}); err != nil {
 		t.Fatalf("move by id from a location: %v", err)
 	}
-	if catnip.carried(key.ID) == nil {
+	if carried(catnip, key.ID) == nil {
 		t.Error("the key is not addressable by its id after the round trip")
 	}
 }
@@ -652,15 +667,15 @@ func TestAnIDMatchDoesNotSuppressAmbiguity(t *testing.T) {
 	if first.ID != "dagger" {
 		t.Fatalf("expected the first stack to hold the bare id, got %q", first.ID)
 	}
-	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", FromLocation: cellar.ID, ToCharacter: "catnip"}); err == nil {
+	if _, err := w.MoveItem(MoveRequest{Item: "Dagger", From: cellar.ID, To: "catnip"}); err == nil {
 		t.Error("the bare name matched an id and skipped the ambiguity refusal")
 	}
 
 	// The suffixed id is unambiguous, and is how the DM gets out of it.
-	if _, err := w.MoveItem(MoveRequest{Item: second.ID, FromLocation: cellar.ID, ToCharacter: "catnip"}); err != nil {
+	if _, err := w.MoveItem(MoveRequest{Item: second.ID, From: cellar.ID, To: "catnip"}); err != nil {
 		t.Fatalf("the second stack's own id did not resolve: %v", err)
 	}
-	if got := catnip.carried(second.ID); got == nil || got.Description != "Plain." {
+	if got := carried(catnip, second.ID); got == nil || got.Description != "Plain." {
 		t.Errorf("the wrong stack moved: %+v", got)
 	}
 }
@@ -673,5 +688,123 @@ func TestCreateLocationRefusesATakenID(t *testing.T) {
 
 	if _, err := w.CreateLocation("Cellar", "Damp.", ""); err == nil {
 		t.Error("a location opened on an id a character already holds")
+	}
+}
+
+// A container is a Holder like any other, so moving something into one is the
+// same MoveItem every other move is — and the DM never has to know the
+// destination happens to be an item rather than a place.
+func TestItemMovesIntoAContainer(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	backpack := container(w, catnip, "Backpack", "")
+	w.GiveItem(catnip, "Iron Coin", "Worn smooth.", 1)
+
+	if _, err := w.MoveItem(MoveRequest{Item: "Iron Coin", To: backpack.ID, Where: "inside"}); err != nil {
+		t.Fatal(err)
+	}
+	if holder, _ := w.ItemHolder("iron-coin"); holder != backpack.ID {
+		t.Errorf("holder = %q, want the backpack", holder)
+	}
+	if len(backpack.Items) != 1 {
+		t.Fatalf("the backpack holds %d entries, want 1", len(backpack.Items))
+	}
+}
+
+// Moving a container moves everything inside it for free: contents reference
+// the container by id, not by a copy of its position, so nothing about them
+// has to be restated when the container itself changes hands.
+func TestMovingAContainerCarriesItsContents(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	w.CreateCharacter("mira", "Mira", nil, nil)
+	backpack := container(w, catnip, "Backpack", "")
+	w.GiveItem(catnip, "Iron Coin", "Worn smooth.", 1)
+	if _, err := w.MoveItem(MoveRequest{Item: "Iron Coin", To: backpack.ID, Where: "inside"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := w.MoveItem(MoveRequest{Item: "Backpack", To: "mira"}); err != nil {
+		t.Fatal(err)
+	}
+	if holder, _ := w.ItemHolder(backpack.ID); holder != "mira" {
+		t.Errorf("the backpack is held by %q, want mira", holder)
+	}
+	if holder, _ := w.ItemHolder("iron-coin"); holder != backpack.ID {
+		t.Errorf("the coin's holder changed to %q; it should still be the backpack", holder)
+	}
+	coin, err := w.ItemByID("iron-coin")
+	if err != nil || coin.Count != 1 {
+		t.Errorf("the coin is no longer addressable after its container moved: %v, %+v", err, coin)
+	}
+}
+
+// A backpack inside a backpack inside a backpack, moved once, moves the
+// whole chain — this is the nested case the flat container/spot design is
+// for.
+func TestContainersNestArbitrarily(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	outer := container(w, catnip, "Rucksack", "")
+	inner := container(w, outer, "Pouch", "inside")
+	w.GiveItem(catnip, "Bead", "Glass, blue.", 1)
+	if _, err := w.MoveItem(MoveRequest{Item: "Bead", To: inner.ID, Where: "inside"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if holder, _ := w.ItemHolder("bead"); holder != inner.ID {
+		t.Errorf("the bead is held by %q, want the pouch", holder)
+	}
+	if holder, _ := w.ItemHolder(inner.ID); holder != outer.ID {
+		t.Errorf("the pouch is held by %q, want the rucksack", holder)
+	}
+}
+
+// Putting a container inside its own contents would be a cycle nothing could
+// ever render or move again — the DM asking for it is refused rather than
+// silently corrupting the world.
+func TestMoveRefusesACycle(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	outer := container(w, catnip, "Rucksack", "")
+	inner := container(w, outer, "Pouch", "inside")
+
+	if _, err := w.MoveItem(MoveRequest{Item: outer.Name, To: inner.ID, Where: "inside"}); err == nil {
+		t.Fatal("moving the rucksack into its own pouch must be refused")
+	}
+}
+
+// An ordinary item is not a valid destination — only a character, a location,
+// or something explicitly minted as a container can hold anything.
+func TestMoveRefusesANonContainerDestination(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	w.GiveItem(catnip, "Dagger", "Notched.", 1)
+	w.GiveItem(catnip, "Coin", "Worn.", 1)
+
+	if _, err := w.MoveItem(MoveRequest{Item: "Coin", To: "dagger"}); err == nil {
+		t.Fatal("a plain item is not a container and must refuse a move into it")
+	}
+}
+
+// Two containers never merge, even sharing a name and a spot: each is its own
+// thing with its own contents, unlike two piles of the same coin.
+func TestContainersNeverStack(t *testing.T) {
+	w := locationWorld()
+	catnip := w.CreateCharacter("catnip", "Catnip", nil, nil)
+	first := container(w, catnip, "Pouch", "")
+	second := container(w, catnip, "Pouch", "")
+
+	if first.ID == second.ID {
+		t.Fatalf("two pouches merged into one id %q", first.ID)
+	}
+	count := 0
+	for _, it := range catnip.SortedItems() {
+		if it.Name == "Pouch" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("catnip holds %d pouches, want 2 independent entries", count)
 	}
 }

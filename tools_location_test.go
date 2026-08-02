@@ -69,14 +69,14 @@ func TestAThrownKnifeSurvivesTheRoundTrip(t *testing.T) {
 	apply(t, s, `
 entities:
   throwing-knife:
-    location: cellar
+    container: cellar
     spot: quivering in the door frame
 `)
 	if _, held := pc.Inventory["throwing-knife"]; held {
 		t.Error("the knife should have left the sheet")
 	}
 
-	apply(t, s, "entities:\n  throwing-knife:\n    location: kyle-katarn\n")
+	apply(t, s, "entities:\n  throwing-knife:\n    container: kyle-katarn\n")
 
 	knife, err := pc.WeaponItem("Throwing Knife")
 	if err != nil {
@@ -102,11 +102,11 @@ entities:
     type: item
     name: Cavalry Sabre
     desc: Notched.
-    location: cellar
+    container: cellar
     spot: propped by the casks
     weapon: {damage: 2}
 `)
-	apply(t, s, "entities:\n  cavalry-sabre:\n    location: kyle-katarn\n")
+	apply(t, s, "entities:\n  cavalry-sabre:\n    container: kyle-katarn\n")
 
 	pc, _ := s.world.Character("kyle-katarn")
 	sabre, err := pc.WeaponItem("Cavalry Sabre")

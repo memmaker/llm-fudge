@@ -58,7 +58,7 @@ func TestTheBlockReachesTheEngineAndTheRecord(t *testing.T) {
     type: item
     name: Brass Lantern
     desc: Dented, still lit.
-    location: catnip`)}
+    container: catnip`)}
 
 	w := playedWorld(t)
 	messages, s := gameStart(), newSession(w)

@@ -112,7 +112,7 @@ func TestItemsAreEntitiesThatReferenceTheirHolder(t *testing.T) {
 	if !strings.Contains(got, "\n  rope:\n") {
 		t.Errorf("the rope is not an entity of its own:\n%s", got)
 	}
-	if !strings.Contains(got, "location: alley") {
+	if !strings.Contains(got, "container: alley") {
 		t.Errorf("the rope does not reference the alley it lies in:\n%s", got)
 	}
 	if !strings.Contains(got, "coiled by the gate") {

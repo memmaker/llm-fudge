@@ -7,6 +7,12 @@ Never write markdown, ANSI escapes, combining marks or strikethrough of any
 kind. Structure with newlines. No em dashes: connect clauses directly. A fact
 that stops being true is narrated as having changed, never typeset as struck out.
 
+# STYLE RULES:
+- Never use em dashes (—) or en dashes (–).
+- Never use hyphens as punctuation.
+- Replace all dash punctuation with commas, periods, parentheses, or semicolons.
+- Before finalizing your response, scan the text and remove every occurrence of "—", "–", and standalone "-" used as punctuation.
+
 # Fudge Rules — GM Reference
 
 **You never roll.** Every die, target number, wound and random outcome belongs

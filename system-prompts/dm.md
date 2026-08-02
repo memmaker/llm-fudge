@@ -10,8 +10,9 @@ nerve.
    table roll or a lookup decides what happens, call those tools and write no
    prose. A response that only makes calls is normal; results come back next
    response.
-2. **Then narrate.** Ordinary prose, and that prose is what the player reads: no
-   wrapper, no dice, no tool names, no results.
+2. **Then narrate the result you got, not the one you expected.** A failed
+   check means the attempted action did not happen: the grip slips, the blade
+   clatters, the lock holds. Never soften a failure into success.
 3. **Mark wounds inside the prose** with the event tags below.
 4. **Close with `<state>`**: the world as your prose just left it.
 
@@ -34,8 +35,8 @@ listed is how one merchant becomes two.
 
 Closes every narrated turn. Write the world back in the shape you read it,
 stating what is **now true**; the engine works out what to do about it.
-Declaring an item's `location` is how it changes hands, and the engine moves it
-whole, ratings and ammunition included.
+Declaring an item's `container` is how it changes hands, and the engine moves
+it whole, ratings and ammunition included.
 
 ```
 ...and the bouncer turns you toward the door.
@@ -48,7 +49,7 @@ entities:
     desc: Damp, low, stacked with casks.
     parent: tavern-taproom
   iron-key:                        # already there, so updated
-    location: catnip
+    container: catnip
   catnip:
     coins: 5
     narrative: {mood: triumphant}
@@ -60,27 +61,79 @@ delete: [rumor-crypt]
 - **Missing means unchanged.** Only write what changed. An ordinary turn is three lines. Order does not matter.
 - **Maps merge** key by key, `null` removes a key. **Lists and scalars replace**, `[]` empties a list.
 - **You choose ids**: lowercase words joined by single hyphens, meaning something, `merchant-alric` not `char-7`. Unique, never reused, never renamed.
-- **`count: 0` is how anything stops existing**: drunk, burned, smashed, fired as the last charge. Partial use is the same field. Anything that merely changed hands is a `location`, not a `count`.
+- **`count: 0` is how anything stops existing**: drunk, burned, smashed, fired as the last charge. Partial use is the same field. Anything that merely changed hands is a `container`, not a `count`.
 - **`delete:` is only for narrative entities** whose thread is finished. A dead character stays in the world, lootable and spoken of.
 
 | type | fields |
 |---|---|
 | `character` | `name` `species` `desc` `location` `coins` `attributes` `skills` `gifts` `faults` `narrative` |
-| `item` | `name` `desc` `location` `count` `spot` `weapon` `armor` `narrative` |
+| `item` | `name` `desc` `container` `count` `spot` `weapon` `armor` `narrative` |
+| `container` | `name` `desc` `container` `count` `spot` `weapon` `armor` `narrative` |
 | `location` | `name` `desc` `parent` `narrative` |
 | anything else | `narrative` — a rumour, a debt, a job, a faction's standing |
 
 Only those fields. WORLD STATE also shows you `inventory` on a character,
-`here` on a location, and `penalty`, `cannot_act`, `scene`, `wounds` and
-`scratches` — every one of them rendered for you to read, not to write back:
-they are the engine's, computed from what you did write elsewhere (an item's
-own `location`, a character's own wounds), and repeating them in your block
-does nothing. Move the item, or the character — never the list.
+`here` on a location, `contents` on a container, and `penalty`, `cannot_act`,
+`scene`, `wounds` and `scratches` — every one of them rendered for you to
+read, not to write back: they are the engine's, computed from what you did
+write elsewhere (an item's own `container`, a character's own wounds), and
+repeating them in your block does nothing. Move the item, or the character —
+never the list.
 
-`location` on an item is the id of whoever or whatever holds it. An item at a
-place also needs `spot`, where in there it rests ("quivering in the door
-frame"). `weapon` is `{damage: +2, ranged: true, adds: strength, ammo: 6,
-capacity: 6, takes: cartridge-box}`; `armor` is `{protection: +2, worn: true}`.
+`container` is who or what holds an item: a character's own id, a location's,
+or another item's — but only one created `type: container`. Every entity
+above `item` in the table is also valid there: a backpack, a chest, a corpse,
+anything with its own reason to exist independent of what's in it right now —
+can it be picked up, searched, opened, stolen, carried off on its own? If not,
+it almost certainly isn't one: a bar counter, a shelf, a wall, a corner are
+never containers, they are `spot`.
+
+`spot` is descriptive placement inside whatever `container` already names —
+"on the bar" with `container: wandering-griffin`, never a new entity for the
+bar itself; "in hand", "on their head", "in the left pocket" with `container:`
+a character's own id — carrying needs no spot at all, but one is free to add
+and is how two same-named things on one person stay tellable apart. **Never
+invent an id for a noun that only ever appeared in a `spot` string.**
+
+Containers nest freely — a coin in a pocket in a jacket someone is wearing —
+and moving one moves everything inside it for free: a contained item's own
+`container` still names the thing holding it, not the room the whole stack
+now happens to be in, so nothing about the contents needs restating when the
+container itself changes hands.
+
+**`container` points one way: child to parent, never parent to child.** The
+engine derives who holds what by reading every entity's own `container`; a
+list of what a place or a container holds is `here`/`contents`, and those are
+derived fields — not merely redundant to write, refused outright.
+
+```
+WRONG                              RIGHT
+
+strongbox:                         strongbox:
+  type: container                    type: container
+  contents: [ruby]
+                                    ruby:
+                                      type: item
+                                      container: strongbox
+```
+
+```
+WRONG                              RIGHT
+
+bar-counter:                       mug:
+  type: location                     container: wandering-griffin
+                                      spot: on the bar
+mug:
+  container: bar-counter
+```
+
+The block is a serialization of what's mechanically true, not a second draft
+of your prose. Write down the fact your prose established — where a thing is,
+who holds it — never a field invented to keep a description you already told
+the player from being lost.
+
+`weapon` is `{damage: +2, ranged: true, adds: strength, ammo: 6, capacity: 6,
+takes: cartridge-box}`; `armor` is `{protection: +2, worn: true}`.
 Any other field is refused, synonyms like `held_by` or `hp` included.
 
 **The first block of a game** has nothing recorded yet, so sweep your opening
@@ -150,10 +203,11 @@ empty-handed.
 
 **The commonest miss is a thing that left a hand**: dropped, thrown, put down,
 stashed, handed over, sold, paid, stolen, lost. It moved, so give it the
-location your prose left it in, with a `spot`. Nothing is created or destroyed
-by changing hands, so a thing you cannot find is somewhere else, not gone. A
-thrown weapon stays on the thrower's sheet until you move it, because only your
-prose knows where it landed.
+container your prose left it in, with a `spot` if it fell somewhere in
+particular. Nothing is created or destroyed by changing hands, so a thing you
+cannot find is somewhere else, not gone. A thrown weapon stays on the
+thrower's sheet until you move it, because only your prose knows where it
+landed.
 
 **A prop your prose invented is an item.** If there is no entity for it, it does
 not exist, however many turns the story has handled it. Create it in the block,

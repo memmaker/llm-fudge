@@ -4,6 +4,8 @@
 fudge
 charsheet.txt
 context.txt
+state-dump.yaml
+scripts/smoke/out/
 img-gen.md
 narration.txt
 illustration.png

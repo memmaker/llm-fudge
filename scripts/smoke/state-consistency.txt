@@ -1,0 +1,12 @@
+# Smoke test: an item changes hands and a character moves between locations,
+# and the resulting world state stays internally consistent.
+medieval-fantasy
+example-adventure
+Automatic - I describe my concept, you decide the traits
+A curious traveler who talks to everyone
+Sam
+Fine
+I pick up the sealed parchment from the counter and put it in my pack.
+I step outside the tavern into the street to get some air, then come back in.
+/dump-state
+/quit

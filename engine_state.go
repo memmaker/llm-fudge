@@ -108,6 +108,17 @@ func (s *session) engineState() string {
 		b.WriteString(recent)
 	}
 
+	// Rebuilt every turn anyway, so repeating the sharpest, most-violated rules
+	// here costs nothing in cache and lands as the last thing read before the
+	// player's line and the block that follows it — closer to where it is
+	// needed than the same rules stated once, in full, back in the system
+	// prompt. dm.md is the reference; this is the reminder.
+	b.WriteString("\n\n=== WRITING THE <state> BLOCK — closed fields only. `container` is set on\n")
+	b.WriteString("the child and only the child; the engine derives everything upward from it,\n")
+	b.WriteString("so `contents`, `inventory`, `here` and any other list-of-what's-inside field\n")
+	b.WriteString("is refused, not merely unnecessary. Mechanically relevant facts only — do\n")
+	b.WriteString("not invent a field to preserve a description your prose already carries. ===")
+
 	return b.String()
 }
 
@@ -237,17 +248,17 @@ func writeCharacter(b *strings.Builder, c *rules.Character) {
 	}
 
 	// The ids of what they carry, which is the same single fact as each item's
-	// own `location` — one storage, two views. It is worth the second view: "can
+	// own `container` — one storage, two views. It is worth the second view: "can
 	// they do this with what they have" is the question the DM asks most, and
-	// answering it by scanning every item in the world for a matching location is
+	// answering it by scanning every item in the world for a matching container is
 	// exactly the sort of reading a model does badly.
 	//
 	// Marked read-only right here, not just in the prompt's rules, for the same
 	// reason `here` is on the location render: a list of ids on a character reads
-	// exactly like something to hand-edit, and moving an item is a location on
+	// exactly like something to hand-edit, and moving an item is a container on
 	// the item, never a line here.
 	if ids := carriedIDs(c); len(ids) > 0 {
-		fmt.Fprintf(b, "    inventory: [%s]  # derived, don't write this back — set location on the item instead\n", strings.Join(ids, ", "))
+		fmt.Fprintf(b, "    inventory: [%s]  # derived, don't write this back — set container on the item instead\n", strings.Join(ids, ", "))
 	}
 }
 
@@ -278,14 +289,19 @@ func writeLocation(b *strings.Builder, w *rules.World, loc *rules.Location) {
 	}
 }
 
-// writeItem renders one item wherever it lies. `location` is the id of whoever
-// or whatever holds it — a character or a place — and it is the item's single
-// home: this is the field whose absence, when identity was a key built out of
-// position, made an item impossible to follow across a move.
+// writeItem renders one item wherever it lies. `container` is the id of
+// whoever or whatever holds it — a character, a place, or another item that
+// is itself a container — and it is the item's single home: this is the field
+// whose absence, when identity was a key built out of position, made an item
+// impossible to follow across a move.
 func writeItem(b *strings.Builder, it heldItem) {
-	b.WriteString("    type: item\n")
+	if it.item.IsContainer() {
+		b.WriteString("    type: container\n")
+	} else {
+		b.WriteString("    type: item\n")
+	}
 	fmt.Fprintf(b, "    name: %s\n", yamlString(it.item.Name))
-	fmt.Fprintf(b, "    location: %s\n", it.holder)
+	fmt.Fprintf(b, "    container: %s\n", it.holder)
 	if it.item.Count > 1 {
 		fmt.Fprintf(b, "    count: %d\n", it.item.Count)
 	}
@@ -313,6 +329,14 @@ func writeItem(b *strings.Builder, it heldItem) {
 	}
 	if ar := it.item.Armor; ar != nil {
 		fmt.Fprintf(b, "    armor: {protection: %+d, worn: %t}\n", ar.Protection, ar.Worn)
+	}
+	// Read-only, same as a character's `inventory` or a location's `here`: this
+	// is the same fact as each contained item's own `container`, repeated here
+	// because "what does this hold right now" is the question asked of a
+	// container, and answering it by scanning every item in the world is
+	// exactly the reading a model does badly.
+	if ids := containedIDs(it.item); len(ids) > 0 {
+		fmt.Fprintf(b, "    contents: [%s]  # derived, don't write this back — set container on the item instead\n", strings.Join(ids, ", "))
 	}
 }
 
@@ -461,7 +485,8 @@ func locationOrder(w *rules.World) []*rules.Location {
 }
 
 // heldItem is one item and the id of whatever holds it, which is the pair the
-// flat render needs and neither the character nor the location knows on its own.
+// flat render needs and neither the character, the location nor a container
+// item knows on its own.
 type heldItem struct {
 	id     string
 	holder string
@@ -469,27 +494,46 @@ type heldItem struct {
 }
 
 // itemOrder lists every item in the world in a fixed order: by holder, then by
-// id. Both keys are needed — id alone would scatter one character's pockets
-// through the whole list.
+// id, walking into a container's own contents wherever one is found — so a
+// coin in a pocket in a carried jacket still renders once, flat, alongside
+// everything else. The top level follows characterOrder and locationOrder
+// (player first, then tree order) rather than World.WalkItems' own plain
+// alphabetical scan, because this order is what the rest of the block already
+// renders characters and locations in, and a mismatch would rewrite the
+// cached prompt prefix for nothing.
 func itemOrder(w *rules.World) []heldItem {
 	var out []heldItem
-	for _, id := range characterOrder(w) {
-		c := w.Characters[id]
-		for _, itemID := range carriedIDs(c) {
-			out = append(out, heldItem{id: itemID, holder: id, item: c.Inventory[itemID]})
+	var walk func(holder rules.Holder)
+	walk = func(holder rules.Holder) {
+		for _, it := range holder.SortedItems() {
+			out = append(out, heldItem{id: it.ID, holder: holder.HolderID(), item: it})
+			if it.IsContainer() {
+				walk(it)
+			}
 		}
 	}
+	for _, id := range characterOrder(w) {
+		walk(w.Characters[id])
+	}
 	for _, loc := range locationOrder(w) {
-		for _, it := range loc.SortedItems() {
-			out = append(out, heldItem{id: it.ID, holder: loc.ID, item: it})
-		}
+		walk(loc)
 	}
 	return out
 }
 
-// carriedIDs lists the ids of what a character carries, in a fixed order.
+// carriedIDs lists the ids of what a character directly carries, in a fixed
+// order. Nested items — inside a container the character carries — are not
+// here: they render under that container's own `contents`, one level down,
+// the same as the character's own inventory renders one level down from
+// nothing.
 func carriedIDs(c *rules.Character) []string {
 	return slices.Sorted(maps.Keys(c.Inventory))
+}
+
+// containedIDs lists the ids directly inside a container item, in a fixed
+// order — the same derived, read-only view carriedIDs gives a character.
+func containedIDs(it *rules.Item) []string {
+	return slices.Sorted(maps.Keys(it.Items))
 }
 
 // yamlString quotes a value only when leaving it bare would change what the YAML

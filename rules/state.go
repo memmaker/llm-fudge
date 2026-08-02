@@ -81,9 +81,9 @@ type Armor struct {
 	Worn       bool
 }
 
-// Item is one stack of a thing, either in a character's inventory or lying at a
-// location. Name and Description are the DM's words, shown to the player on the
-// character sheet.
+// Item is one stack of a thing, held by a character, a location, or another
+// item that is itself a container. Name and Description are the DM's words,
+// shown to the player on the character sheet.
 //
 // ID is the item's identity, minted once by the engine and never written again.
 // It used not to exist: an inventory keyed on the slugified name and a location's
@@ -99,9 +99,16 @@ type Armor struct {
 // is resolved from what the character actually carries rather than from a
 // severity the DM guessed at.
 //
-// Where is set only while the item lies at a location: it is the short prose
-// saying where in that place it rests. A carried thing lies nowhere, so picking
-// one up clears it.
+// Where is the short prose saying where the item rests within whoever or
+// whatever holds it — "on the top shelf", "in the left pocket". It applies to
+// any holder, not only a place: a spot is never required to carry something,
+// but one may be given to tell two same-named things on the same holder apart.
+//
+// Items is nil for an ordinary item and non-nil — possibly empty — for a
+// container: a backpack, a chest, a corpse, anything that can itself hold
+// other items and be picked up. IsContainer reports which. There is no
+// separate Go type for a container; `type: container` in a state block mints
+// an Item with Items initialized instead of left nil.
 type Item struct {
 	ID          string
 	Name        string
@@ -110,7 +117,44 @@ type Item struct {
 	Weapon      *Weapon
 	Armor       *Armor
 	Where       string
+	Items       map[string]*Item
 }
+
+// IsContainer reports whether this item can itself hold other items.
+func (it *Item) IsContainer() bool {
+	return it.Items != nil
+}
+
+// HolderID, HolderName, RequiresSpot, AddItem, RemoveItem, FindItem and
+// SortedItems make a container Item a Holder exactly as a Character or a
+// Location is, over its own Items map — the same sharing that lets a
+// backpack's contents move with it: they reference the backpack by id, not by
+// copying position, so moving the backpack does nothing to them at all.
+func (it *Item) HolderID() string   { return it.ID }
+func (it *Item) HolderName() string { return it.Name }
+func (it *Item) RequiresSpot() bool { return true }
+
+func (it *Item) AddItem(proto *Item, spot string, count int) (*Item, error) {
+	if it.Items == nil {
+		return nil, fmt.Errorf("%s cannot hold anything — it isn't a container", it.Name)
+	}
+	return addItem(it.Items, it.Name, proto, spot, count)
+}
+
+func (it *Item) RemoveItem(name, spot string, count int) (*Item, int, error) {
+	return removeItem(it.Items, it.Name, name, spot, count)
+}
+
+func (it *Item) FindItem(name, spot string) (*Item, error) {
+	return findInMap(it.Items, it.Name, name, spot)
+}
+
+func (it *Item) SortedItems() []*Item {
+	return sortedItems(it.Items)
+}
+
+// itemsMap satisfies itemsMapHolder for MoveItem's take().
+func (it *Item) itemsMap() map[string]*Item { return it.Items }
 
 // clone copies an item and the ratings hanging off it, so the copy shares
 // nothing with the original. Count and Where are left to whoever places it:
@@ -122,8 +166,14 @@ type Item struct {
 // a freshly minted one depends on whether the whole stack moved — a question only
 // the caller can answer. Copying the id here would quietly put two live stacks
 // under one identity the first time half a pile was handed over.
+//
+// Items is the one field copied by reference rather than left behind: a
+// container is never split (nothing stacks it, so a "move" is always the
+// whole thing), and its contents reference it by id, not by a copy of its
+// position — so the moved item must keep the very same map its contents are
+// already found in, or picking up a backpack would silently empty it.
 func (it *Item) clone() *Item {
-	copied := &Item{Name: it.Name, Description: it.Description}
+	copied := &Item{Name: it.Name, Description: it.Description, Items: it.Items}
 	if it.Weapon != nil {
 		weapon := *it.Weapon
 		copied.Weapon = &weapon
@@ -312,17 +362,42 @@ func (w *World) HasEntity(id string) bool {
 	if _, taken := w.Locations[id]; taken {
 		return true
 	}
-	for _, ch := range w.Characters {
-		if _, taken := ch.Inventory[id]; taken {
-			return true
+	taken := false
+	w.walkItems(func(_ Holder, it *Item) {
+		if it.ID == id {
+			taken = true
 		}
-	}
-	for _, loc := range w.Locations {
-		if _, taken := loc.Items[id]; taken {
-			return true
-		}
+	})
+	if taken {
+		return true
 	}
 	return w.AlsoTaken != nil && w.AlsoTaken(id)
+}
+
+// walkItems visits every item reachable in the world: everything a character
+// carries, everything a location holds, and — recursively — everything held
+// by a container found along the way. holder is whichever Holder the item was
+// found directly under, which is what lets a caller ask "who has this" without
+// its own second scan.
+func (w *World) walkItems(visit func(holder Holder, it *Item)) {
+	var walk func(holder Holder, items map[string]*Item)
+	walk = func(holder Holder, items map[string]*Item) {
+		for _, id := range sortedItemIDs(items) {
+			it := items[id]
+			visit(holder, it)
+			if it.IsContainer() {
+				walk(it, it.Items)
+			}
+		}
+	}
+	for _, id := range w.CharacterIDs() {
+		ch := w.Characters[id]
+		walk(ch, ch.Inventory)
+	}
+	for _, id := range w.LocationIDs() {
+		loc := w.Locations[id]
+		walk(loc, loc.Items)
+	}
 }
 
 // Retire takes an id out of play without freeing it. It is the one way an
@@ -335,22 +410,20 @@ func (w *World) Retire(id string) {
 	w.Retired[id] = true
 }
 
-// ItemHolder names whoever or whatever holds an item — a character or a
-// location — which is the item's `location` as the block renders it. ItemByID
-// answers what the thing is; this answers where, and a caller changing a count
-// to zero needs the holder to take it out of.
+// ItemHolder names whoever or whatever holds an item — a character, a
+// location, or a container item — which is the item's `container` as the
+// block renders it. ItemByID answers what the thing is; this answers where,
+// and a caller changing a count to zero needs the holder to take it out of.
 func (w *World) ItemHolder(id string) (string, bool) {
-	for _, cid := range w.CharacterIDs() {
-		if _, held := w.Characters[cid].Inventory[id]; held {
-			return cid, true
+	holderID := ""
+	found := false
+	w.walkItems(func(holder Holder, it *Item) {
+		if it.ID == id {
+			holderID = holder.HolderID()
+			found = true
 		}
-	}
-	for _, lid := range w.LocationIDs() {
-		if _, lying := w.Locations[lid].Items[id]; lying {
-			return lid, true
-		}
-	}
-	return "", false
+	})
+	return holderID, found
 }
 
 // MintItemID picks the id an item will carry for the rest of its existence. The
@@ -375,15 +448,14 @@ func (w *World) MintItemID(name string) string {
 // does exist: the DM reads an item's id off the result of the call that created or
 // last moved it, so a miss is a mistake to correct rather than a licence to guess.
 func (w *World) ItemByID(id string) (*Item, error) {
-	for _, cid := range w.CharacterIDs() {
-		if it, held := w.Characters[cid].Inventory[id]; held {
-			return it, nil
+	var found *Item
+	w.walkItems(func(_ Holder, it *Item) {
+		if it.ID == id {
+			found = it
 		}
-	}
-	for _, lid := range w.LocationIDs() {
-		if it, lying := w.Locations[lid].Items[id]; lying {
-			return it, nil
-		}
+	})
+	if found != nil {
+		return found, nil
 	}
 	existing := w.ItemIDs()
 	if len(existing) == 0 {
@@ -396,16 +468,9 @@ func (w *World) ItemByID(id string) (*Item, error) {
 // back.
 func (w *World) ItemIDs() []string {
 	var ids []string
-	for _, cid := range w.CharacterIDs() {
-		for id := range w.Characters[cid].Inventory {
-			ids = append(ids, id)
-		}
-	}
-	for _, lid := range w.LocationIDs() {
-		for id := range w.Locations[lid].Items {
-			ids = append(ids, id)
-		}
-	}
+	w.walkItems(func(_ Holder, it *Item) {
+		ids = append(ids, it.ID)
+	})
 	sort.Strings(ids)
 	return ids
 }
@@ -578,7 +643,7 @@ func (w *World) CreateCharacterValidated(req CharacterRequest) (*Character, erro
 // refusal is what catches a route that forgot, rather than a convention that a
 // new caller has no way of knowing about.
 func (w *World) GiveItem(c *Character, name, description string, count int) (*Item, error) {
-	return c.Accept(&Item{ID: w.MintItemID(name), Name: name, Description: description}, count)
+	return c.AddItem(&Item{ID: w.MintItemID(name), Name: name, Description: description}, "", count)
 }
 
 // NewWeaponItem builds a rated weapon, settling its magazine: an unstated load
@@ -618,7 +683,7 @@ func (w *World) GiveWeapon(c *Character, name, description string, count int, we
 		return nil, err
 	}
 	proto.ID = w.MintItemID(name)
-	return c.Accept(proto, count)
+	return c.AddItem(proto, "", count)
 }
 
 // GiveArmor puts a rated piece of armor into a character's hands, worn unless the
@@ -629,70 +694,39 @@ func (w *World) GiveArmor(c *Character, name, description string, count int, arm
 		return nil, err
 	}
 	proto.ID = w.MintItemID(name)
-	return c.Accept(proto, count)
+	return c.AddItem(proto, "", count)
 }
 
-// Accept takes a stack into the inventory, keeping the ratings and the wording
-// it arrives with. It is the inventory's counterpart to Location.AddItem, and
-// the reason a retrieved weapon comes back able to fight: nothing about it is
-// restated along the way, so nothing about it can be restated wrongly.
+// HolderID, HolderName, RequiresSpot, AddItem, RemoveItem, FindItem and
+// SortedItems make a Character a Holder, sharing the same stacking/spot logic
+// a Location or a container Item uses over its own map — carrying is just
+// another way of holding something, and now reads that way in code too.
+func (c *Character) HolderID() string   { return c.ID }
+func (c *Character) HolderName() string { return c.Name }
+func (c *Character) RequiresSpot() bool { return false }
+
+// AddItem takes a stack into the inventory, keeping the ratings and the wording
+// it arrives with. It is the reason a retrieved weapon comes back able to
+// fight: nothing about it is restated along the way, so nothing about it can
+// be restated wrongly.
 //
-// It is the one place an inventory entry is opened or grown, and it takes a proto
-// whose id the caller has already minted. Landing on a stack the character
-// already carries grows that stack and keeps *its* id, retiring the proto's: one
-// pile of rations is one entity, and carrying two ids for it would be exactly the
-// ambiguity the id exists to remove.
+// It is the one place an inventory entry is opened or grown, and it takes a
+// proto whose id the caller has already minted. Landing on a stack of the
+// same name at the same spot grows that stack and keeps *its* id, retiring
+// the proto's: one pile of rations is one entity, and carrying two ids for it
+// would be exactly the ambiguity the id exists to remove.
 //
 // An item already carried as something else is refused rather than converted.
 // Naming loot after a weapon on the sheet would otherwise wipe the ratings that
 // weapon fights with, and the DM would only find out mid-swing.
-func (c *Character) Accept(proto *Item, count int) (*Item, error) {
-	if proto == nil || strings.TrimSpace(proto.Name) == "" {
-		return nil, fmt.Errorf("item name is required")
-	}
-	if count < 1 {
-		return nil, fmt.Errorf("item count must be at least 1")
-	}
-	if slug(proto.Name) == "" {
+func (c *Character) AddItem(proto *Item, spot string, count int) (*Item, error) {
+	if proto != nil && slug(proto.Name) == "" {
 		return nil, fmt.Errorf("invalid item name: %s", proto.Name)
 	}
 	if c.Inventory == nil {
 		c.Inventory = make(map[string]*Item)
 	}
-	item := c.carried(proto.Name)
-	if item != nil && item.Kind() != proto.Kind() {
-		return nil, fmt.Errorf("%s already carries %s as %s, not as %s", c.Name, item.Name, item.Kind(), proto.Kind())
-	}
-	if item == nil {
-		if proto.ID == "" {
-			return nil, fmt.Errorf("no id minted for %s: mint one with MintItemID before handing it over, or an item lands where nothing can address it", proto.Name)
-		}
-		item = &Item{ID: proto.ID, Name: proto.Name, Weapon: proto.Weapon, Armor: proto.Armor}
-		c.Inventory[item.ID] = item
-	}
-	if proto.Description != "" {
-		item.Description = proto.Description
-	}
-	item.Count += count
-	return item, nil
-}
-
-// carried finds the one stack of a name on this sheet. The inventory keys on the
-// item's id now, so a name is a lookup rather than an address, and the lookup is a
-// scan. That costs nothing worth measuring — this is one character's pockets — and
-// Accept never opens a second entry under a name already on the sheet, so the scan
-// can never have two answers to choose between.
-func (c *Character) carried(ref string) *Item {
-	// One inventory holds at most one stack per name, so a scan cannot be
-	// ambiguous here the way a location's floor or the whole world can be. The
-	// order is fixed anyway: Go randomises map iteration, and this engine is
-	// deterministic by design.
-	for _, id := range sortedItemIDs(c.Inventory) {
-		if c.Inventory[id].refers(ref) {
-			return c.Inventory[id]
-		}
-	}
-	return nil
+	return addItem(c.Inventory, c.Name, proto, spot, count)
 }
 
 // sortedItemIDs orders the keys of an item map, so a scan that can match more
@@ -704,27 +738,26 @@ func sortedItemIDs(items map[string]*Item) []string {
 
 // RemoveItem takes count copies off a stack and drops the entry once nothing is
 // left. It returns the item as it stood before the removal, plus how many
-// remain, so callers can report both the name and the new total.
-func (c *Character) RemoveItem(name string, count int) (*Item, int, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, 0, fmt.Errorf("item name is required")
-	}
-	if count < 1 {
-		return nil, 0, fmt.Errorf("item count must be at least 1")
-	}
-	item := c.carried(name)
-	if item == nil {
-		return nil, 0, fmt.Errorf("%s does not carry any %s", c.Name, name)
-	}
-	if count > item.Count {
-		return item, item.Count, fmt.Errorf("%s carries only %d %s", c.Name, item.Count, item.Name)
-	}
-	item.Count -= count
-	if item.Count == 0 {
-		delete(c.Inventory, item.ID)
-	}
-	return item, item.Count, nil
+// remain, so callers can report both the name and the new total. An empty
+// spot searches every spot on the sheet, refusing to guess if more than one
+// matches.
+func (c *Character) RemoveItem(name, spot string, count int) (*Item, int, error) {
+	return removeItem(c.Inventory, c.Name, name, spot, count)
 }
+
+// FindItem looks up one stack by name, disambiguating by spot exactly as
+// RemoveItem does. It is what a weapon or armor lookup, and an attack naming
+// one by hand, both resolve through.
+func (c *Character) FindItem(name, spot string) (*Item, error) {
+	return findInMap(c.Inventory, c.Name, name, spot)
+}
+
+func (c *Character) SortedItems() []*Item {
+	return sortedItems(c.Inventory)
+}
+
+// itemsMap satisfies itemsMapHolder for MoveItem's take().
+func (c *Character) itemsMap() map[string]*Item { return c.Inventory }
 
 // AddCoins credits the character's purse and returns the new balance.
 func (c *Character) AddCoins(amount int) (int, error) {

@@ -50,6 +50,7 @@ Typed at the `>` prompt during play, anything starting with `/`:
 | `/help` | List these commands. |
 | `/quit`, `/exit` | End the session. |
 | `/context` | Dump the DM's current context — world state, timeline, archive, tool schemas, and the raw message list — to `context.txt`. The tool for inspecting what a turn actually costs and what the model actually sees. |
+| `/dump-state` | Write the engine's ground-truth world state (characters, locations, items) to `state-dump.yaml`, unmediated by what the DM believes. Used by the smoke tests under `scripts/smoke/`. |
 | `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session (e.g. `/style Write shorter scenes.`). Bare `/style` clears it. |
 | `/image` | Write an image prompt for the current scene to `img-gen.md` — a one-off request, using the same guidance as `-img-gen`, without turning it on for the rest of the session. Costs one extra LLM call, only when asked for. |
 
@@ -184,3 +185,21 @@ game and inspect `/context`'s output rather than reading assertions:
 ```bash
 ./fudge -script scripts/dryfall.txt
 ```
+
+### Smoke tests
+
+`scripts/smoke/` runs scripted sessions against a real model and checks the
+engine-verifiable facts: no crash, the expected engine calls fired, and none
+of the engine's own `<state>` consistency checks (dangling references, ids
+reused, species outside the setting) tripped. It does not assert on prose,
+which the model is free to vary.
+
+```bash
+scripts/smoke/run.sh              # every fixture in the directory
+scripts/smoke/run.sh core-mechanics
+```
+
+Each `<name>.txt` is a `-script` fixture ending in `/dump-state` (writes the
+engine's ground truth to `state-dump.yaml`) and `/quit`. Each `<name>.expect`
+lists `grep -E` patterns checked against the debug log plus the state dump —
+a `!`-prefixed pattern must be absent, everything else must be present.

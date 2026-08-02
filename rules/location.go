@@ -152,6 +152,15 @@ func (w *World) LocationIDs() []string {
 	return ids
 }
 
+// HolderID, HolderName, RequiresSpot, AddItem, RemoveItem, FindItem and
+// SortedItems make a Location a Holder — see holder.go, which is what a
+// Character and a container Item share this exact implementation with. A
+// location requires a spot because a room's floor is unreadable without one
+// ("where in the room does this lie"); a Character or a container does not.
+func (l *Location) HolderID() string   { return l.ID }
+func (l *Location) HolderName() string { return l.Name }
+func (l *Location) RequiresSpot() bool { return true }
+
 // AddItem puts a stack down at this location. proto supplies the name, the
 // wording, any ratings and the id the caller has already minted; an existing stack
 // of the same name in the same spot grows instead of a second one opening, and
@@ -169,134 +178,37 @@ func (l *Location) AddItem(proto *Item, where string, count int) (*Item, error) 
 	if count < 1 {
 		return nil, fmt.Errorf("item count must be at least 1")
 	}
-	where = strings.TrimSpace(where)
-	if where == "" {
+	if strings.TrimSpace(where) == "" {
 		return nil, fmt.Errorf("say where in %s the %s comes to rest", l.Name, proto.Name)
 	}
 	if l.Items == nil {
 		l.Items = make(map[string]*Item)
 	}
-	item := l.stackAt(proto.Name, where)
-	if item != nil && item.Kind() != proto.Kind() {
-		return nil, fmt.Errorf("%s already holds %s as %s, not as %s", l.Name, item.Name, item.Kind(), proto.Kind())
-	}
-	if item == nil {
-		if proto.ID == "" {
-			return nil, fmt.Errorf("no id minted for %s: mint one with MintItemID before putting it down, or an item lands where nothing can address it", proto.Name)
-		}
-		item = &Item{
-			ID:          proto.ID,
-			Name:        proto.Name,
-			Description: proto.Description,
-			Weapon:      proto.Weapon,
-			Armor:       proto.Armor,
-			Where:       where,
-		}
-		l.Items[item.ID] = item
-	}
-	if proto.Description != "" {
-		item.Description = proto.Description
-	}
-	item.Count += count
-	return item, nil
-}
-
-// stackAt finds the stack of a name lying in a given spot, which is the pair that
-// decides whether an arriving stack merges. It is a scan because the id, not the
-// pair, is now the key; a room's floor holds few enough entries that looking at
-// all of them is cheaper than any index would be.
-func (l *Location) stackAt(ref, where string) *Item {
-	wantedWhere := slug(where)
-	for _, it := range l.SortedItems() {
-		if it.refers(ref) && slug(it.Where) == wantedWhere {
-			return it
-		}
-	}
-	return nil
+	return addItem(l.Items, l.Name, proto, where, count)
 }
 
 // RemoveItem takes a stack, or part of one, off the floor. It is the location's
 // half of destruction: what leaves this way leaves the world.
 func (l *Location) RemoveItem(name, where string, count int) (*Item, int, error) {
-	if count < 1 {
-		return nil, 0, fmt.Errorf("item count must be at least 1")
-	}
-	item, err := l.find(name, where)
-	if err != nil {
-		return nil, 0, err
-	}
-	if count > item.Count {
-		return item, item.Count, fmt.Errorf("%s holds only %d %s", l.Name, item.Count, item.Name)
-	}
-	item.Count -= count
-	if item.Count == 0 {
-		delete(l.Items, item.ID)
-	}
-	return item, item.Count, nil
+	return removeItem(l.Items, l.Name, name, where, count)
 }
 
-// find resolves a name, and optionally a spot, to one stack lying here. Without
-// a spot it will not guess between two stacks of the same name: it says where
-// each of them is and lets the caller name the one it meant.
-//
-// The nameless scan walks SortedItems rather than the map, because map order is
-// randomised and this engine is deterministic by design: which of two like-named
-// stacks a caller gets, and the order the refusal lists them in, must not depend
-// on the run.
-func (l *Location) find(name, where string) (*Item, error) {
-	if strings.TrimSpace(name) == "" {
-		return nil, fmt.Errorf("item name is required")
-	}
-	if strings.TrimSpace(where) != "" {
-		item := l.stackAt(name, where)
-		if item == nil {
-			return nil, fmt.Errorf("no %s lies %s in %s", name, where, l.Name)
-		}
-		return item, nil
-	}
-
-	var matches []string
-	var found *Item
-	for _, item := range l.SortedItems() {
-		if !item.refers(name) {
-			continue
-		}
-		matches = append(matches, item.Where)
-		found = item
-	}
-	switch len(matches) {
-	case 0:
-		return nil, fmt.Errorf("no %s lies in %s", name, l.Name)
-	case 1:
-		return found, nil
-	}
-	sort.Strings(matches)
-	return nil, fmt.Errorf("%s holds %d lots of %s: %s. Name the one you mean", l.Name, len(matches), name, strings.Join(matches, "; "))
+// FindItem resolves a name, and optionally a spot, to one stack lying here.
+// Without a spot it will not guess between two stacks of the same name: it
+// says where each of them is and lets the caller name the one it meant.
+func (l *Location) FindItem(name, where string) (*Item, error) {
+	return findInMap(l.Items, l.Name, name, where)
 }
 
 // SortedItems renders the floor in a fixed order — by name, then by spot — so
 // the block reads the same way every turn and its cached prefix is not rewritten
 // for nothing.
 func (l *Location) SortedItems() []*Item {
-	items := make([]*Item, 0, len(l.Items))
-	for _, it := range l.Items {
-		items = append(items, it)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Name != items[j].Name {
-			return items[i].Name < items[j].Name
-		}
-		if items[i].Where != items[j].Where {
-			return items[i].Where < items[j].Where
-		}
-		// Name and spot together are unique per location, so this never decides
-		// anything today. It is here because the id is the one key that cannot
-		// tie, and a sort that can fall through to "equal" on a randomised map
-		// walk is a determinism bug waiting for the invariant above to relax.
-		return items[i].ID < items[j].ID
-	})
-	return items
+	return sortedItems(l.Items)
 }
+
+// itemsMap satisfies itemsMapHolder for MoveItem's take().
+func (l *Location) itemsMap() map[string]*Item { return l.Items }
 
 // Children lists the locations nested directly inside this one, sorted, so the
 // map renders the same way every turn.
@@ -323,21 +235,17 @@ func (w *World) CharactersAt(id string) []string {
 }
 
 // MoveRequest names one move: what, to whom or where, and — only when the name
-// alone is ambiguous — from whom or where.
-//
-// Source and destination are separate fields for characters and locations
-// rather than one slug apiece, because both namespaces are slugs and an NPC
-// called Mira and a room called Mira would otherwise be indistinguishable at
-// exactly the moment it mattered.
+// alone is ambiguous — from whom or where. To and From are ids in the one
+// shared keyspace — a character, a location, or a container item — resolved
+// through ResolveHolder, so naming a destination is naming one id rather than
+// picking which of several fields to put it in.
 type MoveRequest struct {
-	Item          string
-	FromCharacter string
-	FromLocation  string
-	FromWhere     string
-	ToCharacter   string
-	ToLocation    string
-	Where         string
-	Count         int
+	Item      string
+	From      string
+	FromWhere string
+	Where     string
+	To        string
+	Count     int
 }
 
 // MoveResult reports a completed move in the terms the DM needs to narrate it:
@@ -350,9 +258,9 @@ type MoveResult struct {
 }
 
 // MoveItem is the one way an item changes hands. Picking up, dropping, giving,
-// looting, stashing and retrieving a thrown knife are all this call, because
-// they are all the same fact: an item is in exactly one place, and that place
-// changed.
+// looting, stashing, stowing something in a container and retrieving a thrown
+// knife are all this call, because they are all the same fact: an item is
+// held by exactly one holder, and that holder changed.
 //
 // It moves the thing itself, ratings and wording and all, which is why it beats
 // the remove-then-add pair it replaces. A pair can half-succeed and destroy what
@@ -360,14 +268,8 @@ type MoveResult struct {
 // rating from memory — the DM's memory being the thing the engine exists to
 // stop relying on.
 func (w *World) MoveItem(req MoveRequest) (*MoveResult, error) {
-	if req.ToCharacter != "" && req.ToLocation != "" {
-		return nil, fmt.Errorf("name one destination: a character or a location, not both")
-	}
-	if req.ToCharacter == "" && req.ToLocation == "" {
-		return nil, fmt.Errorf("name a destination: to_character or to_location")
-	}
-	if req.FromCharacter != "" && req.FromLocation != "" {
-		return nil, fmt.Errorf("name one source: a character or a location, not both")
+	if req.To == "" {
+		return nil, fmt.Errorf("name a destination")
 	}
 	count := req.Count
 	if count < 1 {
@@ -383,24 +285,19 @@ func (w *World) MoveItem(req MoveRequest) (*MoveResult, error) {
 	// refusal leaves the world exactly as it was. A move that failed halfway
 	// would destroy the item it was meant to relocate, which is the failure this
 	// whole call exists to make impossible.
-	var toCharacter *Character
-	var toLocation *Location
-	if req.ToCharacter != "" {
-		if toCharacter, err = w.Character(req.ToCharacter); err != nil {
+	to, err := w.ResolveHolder(req.To)
+	if err != nil {
+		return nil, err
+	}
+	if to.RequiresSpot() && strings.TrimSpace(req.Where) == "" {
+		return nil, fmt.Errorf("say where in %s the %s comes to rest", to.HolderName(), source.item.Name)
+	}
+	if to.HolderID() == source.holder.HolderID() && slug(source.item.Where) == slug(req.Where) {
+		return nil, fmt.Errorf("the %s already lies %s in %s", source.item.Name, source.item.Where, to.HolderName())
+	}
+	if item, ok := to.(*Item); ok {
+		if err := w.checkNoCycle(source.item.ID, item); err != nil {
 			return nil, err
-		}
-		if source.character == toCharacter {
-			return nil, fmt.Errorf("%s already carries the %s", toCharacter.Name, source.item.Name)
-		}
-	} else {
-		if toLocation, err = w.Location(req.ToLocation); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(req.Where) == "" {
-			return nil, fmt.Errorf("say where in %s the %s comes to rest", toLocation.Name, source.item.Name)
-		}
-		if source.location == toLocation && slug(source.item.Where) == slug(req.Where) {
-			return nil, fmt.Errorf("the %s already lies %s in %s", source.item.Name, source.item.Where, toLocation.Name)
 		}
 	}
 	if count > source.item.Count {
@@ -425,59 +322,84 @@ func (w *World) MoveItem(req MoveRequest) (*MoveResult, error) {
 	// left needs its own id while whatever stayed behind keeps the original's.
 	//
 	// Either id may still be retired a moment from now, if the destination already
-	// holds a matching stack; Accept and AddItem decide that, and their answer wins.
+	// holds a matching stack; AddItem decides that, and its answer wins.
 	if count == source.item.Count {
 		moved.ID = source.item.ID
 	} else {
 		moved.ID = w.MintItemID(moved.Name)
 	}
 
-	var landed *Item
-	var destination string
-	if toCharacter != nil {
-		// A carried thing lies nowhere, so the spot it had on the floor is not
-		// carried across.
-		if landed, err = toCharacter.Accept(moved, count); err != nil {
-			return nil, err
-		}
-		destination = toCharacter.Name
-	} else {
-		if landed, err = toLocation.AddItem(moved, req.Where, count); err != nil {
-			return nil, err
-		}
-		destination = toLocation.Name
+	landed, err := to.AddItem(moved, req.Where, count)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := source.take(count); err != nil {
 		return nil, err
 	}
-	return &MoveResult{Item: landed, Count: count, From: source.name, To: destination}, nil
+	return &MoveResult{Item: landed, Count: count, From: source.name, To: to.HolderName()}, nil
+}
+
+// checkNoCycle refuses a move that would put a container inside its own
+// contents — the backpack into the coin already inside it. Creation-time
+// references are acyclic by construction, the same argument CreateLocation's
+// doc comment makes for a location's Parent: an id must exist before anything
+// can reference it. But a move can re-parent an existing container into a
+// descendant it already has, which creation order cannot catch, so this walks
+// upward from the destination and refuses if it reaches the item being moved.
+func (w *World) checkNoCycle(movingID string, destination *Item) error {
+	seen := map[string]bool{}
+	current := destination.ID
+	for {
+		if current == movingID {
+			return fmt.Errorf("%s already holds %s — it cannot also be put inside it", destination.Name, movingID)
+		}
+		if seen[current] {
+			return nil // defensive: a cycle already existing elsewhere is not this call's to fix
+		}
+		seen[current] = true
+		holderID, held := w.ItemHolder(current)
+		if !held {
+			return nil
+		}
+		current = holderID
+	}
 }
 
 // itemSource is a resolved holder of one stack: where the move takes from, and
 // how to take it.
 type itemSource struct {
-	item      *Item
-	name      string
-	character *Character
-	location  *Location
+	item   *Item
+	name   string
+	holder Holder
+}
+
+// itemsMapHolder is the package-private half of a Holder: access to the raw
+// map behind it, needed only by take's identity guard below. It stays
+// unexported and off the public Holder interface because nothing outside this
+// file has a reason to reach past AddItem/RemoveItem/FindItem into the map
+// itself.
+type itemsMapHolder interface {
+	itemsMap() map[string]*Item
 }
 
 // take empties the source of what moved. The entry is dropped only if it is still
-// the one this source resolved to: a whole stack moved from one spot in a room to
-// another spot in the same room keeps its id, so the arriving stack is written into
+// the one this source resolved to: a whole stack moved from one spot to another
+// on the very same holder keeps its id, so the arriving stack is written into
 // the very map slot the departing one occupied — which is the right outcome, and
 // exactly why the emptied original must not then delete its own replacement.
 func (s *itemSource) take(count int) error {
-	if s.character != nil {
-		_, _, err := s.character.RemoveItem(s.item.Name, count)
-		return err
+	if count == s.item.Count {
+		if im, ok := s.holder.(itemsMapHolder); ok {
+			m := im.itemsMap()
+			if m[s.item.ID] == s.item {
+				delete(m, s.item.ID)
+			}
+			return nil
+		}
 	}
-	s.item.Count -= count
-	if s.item.Count == 0 && s.location.Items[s.item.ID] == s.item {
-		delete(s.location.Items, s.item.ID)
-	}
-	return nil
+	_, _, err := s.holder.RemoveItem(s.item.Name, s.item.Where, count)
+	return err
 }
 
 // resolveSource finds the stack a move is about. A stated source settles it;
@@ -487,69 +409,44 @@ func (w *World) resolveSource(req MoveRequest) (*itemSource, error) {
 	if strings.TrimSpace(req.Item) == "" {
 		return nil, fmt.Errorf("name the item to move")
 	}
-	switch {
-	case req.FromCharacter != "":
-		ch, err := w.Character(req.FromCharacter)
+	if req.From != "" {
+		holder, err := w.ResolveHolder(req.From)
 		if err != nil {
 			return nil, err
 		}
-		item := ch.carried(req.Item)
-		if item == nil {
-			return nil, fmt.Errorf("%s does not carry any %s", ch.Name, req.Item)
-		}
-		return &itemSource{item: item, name: ch.Name, character: ch}, nil
-	case req.FromLocation != "":
-		loc, err := w.Location(req.FromLocation)
+		item, err := holder.FindItem(req.Item, req.FromWhere)
 		if err != nil {
 			return nil, err
 		}
-		item, err := loc.find(req.Item, req.FromWhere)
-		if err != nil {
-			return nil, err
-		}
-		return &itemSource{item: item, name: loc.Name, location: loc}, nil
+		return &itemSource{item: item, name: holder.HolderName(), holder: holder}, nil
 	}
 
 	sources := w.findItem(req.Item)
 	switch len(sources) {
 	case 0:
-		return nil, fmt.Errorf("nothing called %s is anywhere in the world: nobody carries one and none lies about. Create it with add_item if it is new", req.Item)
+		return nil, fmt.Errorf("nothing called %s is anywhere in the world: nobody holds one and none lies about. Create it with add_item if it is new", req.Item)
 	case 1:
 		return sources[0], nil
 	}
 	held := make([]string, 0, len(sources))
 	for _, s := range sources {
-		if s.character != nil {
-			held = append(held, fmt.Sprintf("%s carries %d", s.character.ID, s.item.Count))
-			continue
-		}
-		held = append(held, fmt.Sprintf("%d lies %s in %s", s.item.Count, s.item.Where, s.location.ID))
+		held = append(held, fmt.Sprintf("%d held by %s", s.item.Count, s.holder.HolderID()))
 	}
 	sort.Strings(held)
-	return nil, fmt.Errorf("more than one %s exists: %s. Name from_character or from_location to say which", req.Item, strings.Join(held, "; "))
+	return nil, fmt.Errorf("more than one %s exists: %s. Name from and the holder's id to say which", req.Item, strings.Join(held, "; "))
 }
 
-// findItem lists every stack of a name anywhere in the world, characters first
-// and then locations, each in a fixed order so an ambiguity error reads the same
-// way twice.
+// findItem lists every stack of a name anywhere in the world — carried,
+// resting at a place, or held inside a container — each in a fixed order so
+// an ambiguity error reads the same way twice.
 func (w *World) findItem(ref string) []*itemSource {
 	// An id is unique across the whole world, so a reference that is one resolves
 	// to exactly one holder and never reaches the ambiguity refusal.
 	var sources []*itemSource
-	for _, id := range w.CharacterIDs() {
-		ch := w.Characters[id]
-		if item := ch.carried(ref); item != nil {
-			sources = append(sources, &itemSource{item: item, name: ch.Name, character: ch})
+	w.walkItems(func(holder Holder, item *Item) {
+		if item.refers(ref) {
+			sources = append(sources, &itemSource{item: item, name: holder.HolderName(), holder: holder})
 		}
-	}
-	for _, id := range w.LocationIDs() {
-		loc := w.Locations[id]
-		for _, item := range loc.SortedItems() {
-			if !item.refers(ref) {
-				continue
-			}
-			sources = append(sources, &itemSource{item: item, name: loc.Name, location: loc})
-		}
-	}
+	})
 	return sources
 }

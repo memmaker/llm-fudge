@@ -508,21 +508,11 @@ func writeTraitsYAML(b *strings.Builder, indent, label string, traits map[string
 }
 
 // sortedInventory orders an inventory by item name so the sheet reads the same
-// way every time it is rewritten. The id breaks a tie, so that every reader of
-// this order — including BestWornArmor, choosing between two equal jerkins — gets
-// a total order rather than whatever the map felt like today.
+// way every time it is rewritten. It is sortedItems (holder.go) under its old
+// name at the two call sites — the character sheet and BestWornArmor — that
+// predate spot mattering on a character and have no reason to know it now.
 func sortedInventory(inv map[string]*Item) []*Item {
-	items := make([]*Item, 0, len(inv))
-	for _, it := range inv {
-		items = append(items, it)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Name != items[j].Name {
-			return items[i].Name < items[j].Name
-		}
-		return items[i].ID < items[j].ID
-	})
-	return items
+	return sortedItems(inv)
 }
 
 func fmtTrait(name string, val int) string {

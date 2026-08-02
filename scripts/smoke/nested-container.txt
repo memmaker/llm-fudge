@@ -1,0 +1,12 @@
+# Smoke test: a container item (not a location, not a character) holds
+# something, and moving the container should carry its contents along.
+medieval-fantasy
+example-adventure
+Automatic - I describe my concept, you decide the traits
+A methodical traveler who keeps everything organized
+Sam
+Fine
+I notice a small strongbox sitting on the end of the bar. I pry it open, drop the sealed parchment inside along with a few coins, and close the lid.
+I pick the strongbox up off the bar and tuck it under my arm.
+/dump-state
+/quit

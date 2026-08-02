@@ -36,11 +36,7 @@ func (c *Character) item(name string) (*Item, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("item name is required")
 	}
-	item := c.carried(name)
-	if item == nil {
-		return nil, fmt.Errorf("%s does not carry %s", c.Name, name)
-	}
-	return item, nil
+	return c.FindItem(name, "")
 }
 
 // BestWornArmor picks the armor that protects the character, which is the
@@ -96,7 +92,7 @@ func (c *Character) Reload(name string) (*Item, int, error) {
 	}
 	// The ammunition comes off the sheet first: a reload the character cannot
 	// supply must leave the magazine as empty as it was.
-	_, left, err := c.RemoveItem(wp.AmmoItem, 1)
+	_, left, err := c.RemoveItem(wp.AmmoItem, "", 1)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%s cannot reload %s: %w", c.Name, item.Name, err)
 	}

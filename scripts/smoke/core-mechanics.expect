@@ -1,0 +1,12 @@
+# A check for the uncertain seal-picking, and an attack for the ambush.
+\[TOOL\].*(unopposed_check|opposed_check)
+\[TOOL\].*(opposed_attack|unopposed_attack)
+
+# The engine's own consistency checks: no entity or move it refused.
+!\[state: .*could not be created
+!\[state: .*was skipped
+!\[state: .*was left alone
+!\[uncorrected:
+
+# No hallucinated species outside this setting's list (human, goblin).
+!species: (dwarf|elf|orc|halfling|dragon)

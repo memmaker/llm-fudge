@@ -728,6 +728,12 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		} else {
 			fmt.Println("Context written to context.txt")
 		}
+	case "/dump-state":
+		if err := os.WriteFile("state-dump.yaml", []byte(entities(s.world, s.narrative)+"\n"), 0644); err != nil {
+			fmt.Printf("Error writing state dump: %v\n", err)
+		} else {
+			fmt.Println("State written to state-dump.yaml")
+		}
 	case "/style":
 		setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
 	case "/image":
@@ -754,6 +760,7 @@ func printMetaCommands() {
 	fmt.Println("  /help - List these commands")
 	fmt.Println("  /quit, /exit - Exit the game")
 	fmt.Println("  /context - Write current message context to context.txt")
+	fmt.Println("  /dump-state - Write the engine's ground-truth world state to state-dump.yaml")
 	fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
 	fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
 }

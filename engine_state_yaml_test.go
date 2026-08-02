@@ -234,8 +234,8 @@ func TestInventoryAndLocationAgree(t *testing.T) {
 		}
 		for _, itemID := range inventory {
 			item := docEntities[itemID.(string)].(map[string]any)
-			if item["location"] != id {
-				t.Errorf("%s carries %s, but %s says it is at %v", id, itemID, itemID, item["location"])
+			if item["container"] != id {
+				t.Errorf("%s carries %s, but %s says it is at %v", id, itemID, itemID, item["container"])
 			}
 		}
 	}

@@ -415,7 +415,7 @@ func (r *SettingInfos) ToString() string {
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("SPECIES:\n")
+	sb.WriteString("SPECIES (closed list — use ONLY these, never a genre default like elf, dwarf or orc unless it is named below):\n")
 	keys := make([]string, 0, len(r.Species))
 	for k := range r.Species {
 		keys = append(keys, k)
