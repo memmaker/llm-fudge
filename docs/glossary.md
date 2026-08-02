@@ -30,10 +30,12 @@ which is where to look when reading old commits.
 - Chat: The live conversation, kept whole for the session rather than collapsed
   between turns. Grows until a Milestone clears it.
 - Milestone: Player-triggered compaction, `/milestone`. The LLM writes a full
-  summary of events, states and changes to `milestones/<adventure>/NN.md` and
-  appends a one-line outcome to the Charsheet's history; the harness archives the
-  raw chat as `NN-raw.md` and clears the Chat block. The new Chat opens with the
-  previous one's last narration, so the DM's voice carries across the seam.
+  summary of events, states and changes to `milestone-NN.md` and appends a
+  one-line outcome to the Charsheet's history; the harness archives the raw chat
+  as `milestone-NN-raw.md` and clears the Chat block. The new Chat opens with the
+  adventure briefing and the previous one's last narration — the first because
+  the adventure exists nowhere else the DM can reach, the second so its voice
+  carries across the seam.
 - Nag: `/inv`, a player-sent reminder that the Charsheet was not updated. The
   only enforcement of Charsheet discipline — a harness-enforced variant was
   specified and rejected, because it costs a round on every turn where nothing

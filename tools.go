@@ -217,8 +217,8 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		raw, _ := args["options"].([]any)
 		options := make([]string, 0, len(raw))
 		for _, o := range raw {
-			if str, ok := o.(string); ok {
-				options = append(options, str)
+			if option, ok := o.(string); ok {
+				options = append(options, option)
 			}
 		}
 		if len(options) == 0 {
@@ -264,7 +264,6 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		if err := os.WriteFile(path, []byte(str("content")), 0644); err != nil {
 			return "", err
 		}
-		s.advName = title
 		s.adventure = str("content")
 		return fmt.Sprintf("Wrote %s.", path), nil
 	}

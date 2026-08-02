@@ -367,7 +367,6 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 			if err != nil {
 				return err
 			}
-			s.advName = choice
 			s.adventure = content
 			return nil
 		}
@@ -493,6 +492,9 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 	switch cmd := parts[0]; cmd {
 	case "/quit", "/exit":
 		fmt.Println("Session ended.")
+		// os.Exit runs no deferred calls, so main's ShowCursor never fires and
+		// the player is left with an invisible cursor in their shell.
+		ui.ShowCursor()
 		os.Exit(0)
 	case "/context":
 		if err := s.dumpContextToFile("context.txt", messages); err != nil {
@@ -578,10 +580,15 @@ Do two things and nothing else — write no prose for the player:
 		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
 	}
 
-	// The chat is cleared down to the ground rules, and reopens on the last
-	// narration so the DM's voice carries across the seam. The charsheet needs no
-	// reinstating: it rides at the tail of every request anyway.
-	*messages = (*messages)[:1]
+	// The chat is cleared down to the ground rules and the adventure, and reopens
+	// on the last narration so the DM's voice carries across the seam. The
+	// charsheet needs no reinstating — it rides at the tail of every request —
+	// but the adventure does: it was only ever in the opening briefing, and that
+	// briefing is part of what is being cleared.
+	*messages = append((*messages)[:1], llm.Message{
+		Role:    llm.RoleUser,
+		Content: s.adventureBriefing(),
+	})
 	if s.lastNarration != "" {
 		*messages = append(*messages, llm.Message{
 			Role:    llm.RoleAssistant,
@@ -767,10 +774,17 @@ func (s *session) openingBriefing() string {
 	b.WriteString("FIRST, make the player character with them, in conversation. Ask what they want to play; offer to pick the traits yourself if they would rather not. Fudge characters have attributes and skills on the ladder, a gift or two, a fault or two, some fudge points and whatever they carry. Keep it short — a few exchanges, not an interrogation.\n\n")
 	b.WriteString("THEN, once the character is settled: call create_session_directory with their name and the adventure's title, read charsheet_template.md to see the shape a sheet takes, and write_file charsheet.md with the finished character in it. The template is an example from another game — follow its structure, not its contents.\n\n")
 	b.WriteString("ONLY THEN write the opening scene. Put the player character in it and stop where they can act.\n\n")
-	b.WriteString("ADVENTURE BRIEFING (the player has not read this):\n\n")
-	b.WriteString(s.adventure)
-	b.WriteString("\n\nThe world state, the NPCs and the facts of this adventure go in charsheet.md as the game establishes them — that file is the only memory you have that survives.")
+	b.WriteString(s.adventureBriefing())
 	return b.String()
+}
+
+// adventureBriefing is the adventure itself, without the instructions that only
+// apply to the first turn. It is re-sent after a milestone: the adventure text
+// exists nowhere the DM can look it up, so clearing the chat that carried it
+// would take the scenario with it.
+func (s *session) adventureBriefing() string {
+	return "ADVENTURE BRIEFING (the player has not read this):\n\n" + s.adventure +
+		"\n\nThe world state, the NPCs and the facts of this adventure go in charsheet.md as the game establishes them — that file is the only memory you have that survives."
 }
 
 // imgBlock is the one thing still cut out of a reply before the player sees it.

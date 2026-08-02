@@ -46,11 +46,15 @@ Decision
    ground rules, chat, charsheet. The charsheet is injected as a single pinned
    block at the tail, re-arranged each turn so exactly one copy is present.
 6. **`/milestone` is the compaction, and the player triggers it.** The LLM
-   writes a full summary of events, states and changes to
-   `milestones/<adventure>/NN.md`, appends a one-line outcome to the
-   charsheet's history section; the harness dumps the raw chat beside it as
-   `NN-raw.md` and clears the chat block. The new chat block opens with the
-   previous block's last narration, so voice carries across the seam.
+   writes a full summary of events, states and changes to `milestone-NN.md` and
+   appends a one-line outcome to the charsheet's history section; the harness
+   dumps the raw chat beside it as `milestone-NN-raw.md` and clears the chat
+   block. The new chat block opens with the adventure briefing and the previous
+   block's last narration — the briefing because the adventure text exists
+   nowhere the DM can look it up, the narration so voice carries across the
+   seam. Milestone files sit flat in the session directory rather than under a
+   `milestones/` subdirectory: decision 4 admits no paths, so a subdirectory
+   would be unreachable by the tool that has to write into it.
 7. **Turn order is check → Edit → narrate**, stated in the ground rules, with
    updating `charsheet.md` as rule #1. Enforcement is a player-triggered nag,
    `/inv`, which sends a reminder as a user message. A harness-enforced variant

@@ -43,7 +43,6 @@ type session struct {
 	settingName string
 	settingDesc string
 	adventure   string
-	advName     string
 
 	turn          int
 	milestones    int
@@ -146,14 +145,15 @@ func (s *session) readFile(name string) (string, error) {
 }
 
 func (s *session) writeFile(name, content string) (string, error) {
-	if !s.writable[name] {
-		return "", fmt.Errorf("%q is not writable — this session may write: %s", name, strings.Join(s.writableNames(), ", "))
-	}
-	path, err := s.resolve(name)
+	path, err := s.checkWritable(name)
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(path); err == nil && !s.read[name] {
+	// Anything but a plain "it isn't there" is treated as "it is there": the
+	// guard exists to stop a hallucinated filename destroying the session's only
+	// state, and a Stat that failed for some other reason has not established
+	// that there is nothing to destroy.
+	if _, err := os.Stat(path); !os.IsNotExist(err) && !s.read[name] {
 		return "", fmt.Errorf("%s already exists and has not been read this session — read it first, or edit it instead of overwriting it", name)
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -164,15 +164,12 @@ func (s *session) writeFile(name, content string) (string, error) {
 }
 
 func (s *session) editFile(name, oldString, newString string, replaceAll bool) (string, error) {
-	if !s.writable[name] {
-		return "", fmt.Errorf("%q is not writable — this session may write: %s", name, strings.Join(s.writableNames(), ", "))
+	path, err := s.checkWritable(name)
+	if err != nil {
+		return "", err
 	}
 	if oldString == newString {
 		return "", fmt.Errorf("old_string and new_string are identical — nothing to change")
-	}
-	path, err := s.resolve(name)
-	if err != nil {
-		return "", err
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -180,14 +177,14 @@ func (s *session) editFile(name, oldString, newString string, replaceAll bool) (
 	}
 	text := string(body)
 
-	switch n := strings.Count(text, oldString); {
-	case n == 0:
+	count := strings.Count(text, oldString)
+	switch {
+	case count == 0:
 		return "", fmt.Errorf("old_string not found in %s — copy the text exactly as it stands, whitespace included", name)
-	case n > 1 && !replaceAll:
-		return "", fmt.Errorf("old_string matches %d times in %s — add surrounding context to single one out, or pass replace_all", n, name)
+	case count > 1 && !replaceAll:
+		return "", fmt.Errorf("old_string matches %d times in %s — add surrounding context to single one out, or pass replace_all", count, name)
 	}
 
-	count := strings.Count(text, oldString)
 	if !replaceAll {
 		count = 1
 	}
@@ -197,6 +194,15 @@ func (s *session) editFile(name, oldString, newString string, replaceAll bool) (
 	}
 	s.read[name] = true
 	return fmt.Sprintf("Edited %s (%d replacement(s)).", name, count), nil
+}
+
+// checkWritable is the whitelist gate both write paths pass through, and it
+// returns the resolved path so neither has to resolve it again.
+func (s *session) checkWritable(name string) (string, error) {
+	if !s.writable[name] {
+		return "", fmt.Errorf("%q is not writable — this session may write: %s", name, strings.Join(s.writableNames(), ", "))
+	}
+	return s.resolve(name)
 }
 
 func (s *session) writableNames() []string {
