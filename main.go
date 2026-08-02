@@ -50,73 +50,25 @@ const (
 // without waiting out a backoff written for a network.
 var requestRetryDelay = 2 * time.Second
 
-// Model context window sizes in tokens
-var contextWindowSizes = map[string]int{
-	"claude-opus-4-1":            200000,
-	"claude-opus-4":              200000,
-	"claude-3-5-sonnet-20241022": 200000,
-	"claude-3-5-sonnet":          200000,
-	"claude-3-opus":              200000,
-	"claude-3-sonnet":            200000,
-	"claude-3-haiku":             200000,
-	"gpt-5.3-chat-latest":        128000,
-	"gpt-4-turbo":                128000,
-	"gpt-4":                      8192,
-	"gpt-3.5-turbo":              4096,
-	"gemini-pro":                 32000,
-	"llama-2-70b":                4096,
-}
-
-type UsageTracker struct {
-	model          string
-	contextWindow  int
-	estimatedUsage int
-}
-
-func newUsageTracker(model string) *UsageTracker {
-	contextSize := contextWindowSizes[model]
-	if contextSize == 0 {
-		contextSize = 200000
-	}
-	return &UsageTracker{
-		model:         model,
-		contextWindow: contextSize,
-	}
-}
-
-func (ut *UsageTracker) addMessage(msg llm.Message) {
-	ut.estimatedUsage += len(msg.Content) / 4
-	for _, call := range msg.ToolCalls {
-		ut.estimatedUsage += len(call.Function.Arguments) / 4
-	}
-}
-
-// record prefers the provider's own token count, which a non-streaming reply
-// carries, and falls back to estimating from the text when one is missing.
-func (ut *UsageTracker) record(messages []llm.Message, response llm.Response) {
+// requestTokens is what a request cost, for the debug line. The provider's own
+// count is preferred; a reply that omits one is estimated from the text at the
+// usual four characters per token, which is close enough for a number nobody
+// bills against.
+func requestTokens(messages []llm.Message, response llm.Response) int {
 	if total := response.Usage.TotalTokens; total > 0 {
-		ut.estimatedUsage = total
-		return
+		return total
 	}
 	if reported := response.Usage.InputTokens + response.Usage.OutputTokens; reported > 0 {
-		ut.estimatedUsage = reported
-		return
+		return reported
 	}
-	for _, msg := range messages {
-		ut.addMessage(msg)
+	estimate := 0
+	for _, msg := range append(messages, response.Message) {
+		estimate += len(msg.Content) / 4
+		for _, call := range msg.ToolCalls {
+			estimate += len(call.Function.Arguments) / 4
+		}
 	}
-	ut.addMessage(response.Message)
-}
-
-func (ut *UsageTracker) getPercentage() int {
-	if ut.contextWindow == 0 {
-		return 0
-	}
-	percent := (ut.estimatedUsage * 100) / ut.contextWindow
-	if percent > 100 {
-		percent = 100
-	}
-	return percent
+	return estimate
 }
 
 func main() {
@@ -149,6 +101,10 @@ func main() {
 	defer ui.ShowCursor()
 
 	s := newSession()
+	if err := s.connect(); err != nil {
+		fmt.Println("LLM error:", err)
+		return
+	}
 
 	rl, err := readline.New("> ")
 	if err != nil {
@@ -291,12 +247,6 @@ func setupSetting(s *session, rl *readline.Instance) error {
 		return err
 	}
 
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		fmt.Println("LLM error:", err)
-		return err
-	}
-
 	// Phase 1: clarification, refined until the player says yes.
 	clarifyPrompt, err := prompts.LoadPrompt("", language, "setting-clarification.md")
 	if err != nil {
@@ -314,7 +264,7 @@ func setupSetting(s *session, rl *readline.Instance) error {
 	var agreedConcept string
 	for {
 		fmt.Println()
-		response, err := chat(client, model, clarifyMessages, nil)
+		response, err := s.chat(clarifyMessages, nil)
 		if err != nil {
 			return err
 		}
@@ -356,7 +306,7 @@ func setupSetting(s *session, rl *readline.Instance) error {
 
 	fmt.Println()
 	for {
-		response, err := chat(client, model, messages, settingCreationTools())
+		response, err := s.chat(messages, settingCreationTools())
 		if err != nil {
 			return err
 		}
@@ -419,10 +369,6 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 	if err != nil {
 		return err
 	}
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		return err
-	}
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: prompt},
@@ -433,7 +379,7 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 	fmt.Println("Improvising an adventure...")
 
 	for attempt := 0; attempt < maxAdventureAttempts && s.adventure == ""; attempt++ {
-		response, err := chatSilent(client, model, messages, adventureCreationTools())
+		response, err := s.chatSilent(messages, adventureCreationTools())
 		if err != nil {
 			return err
 		}
@@ -685,7 +631,7 @@ func (s *session) requestImagePrompt(chat chatRound) error {
 	if prompt == "" {
 		return fmt.Errorf("the model returned no prompt")
 	}
-	return writeImagePrompt(prompt)
+	return os.WriteFile(imagePromptFile, []byte(prompt), 0o644)
 }
 
 // setStyle rewrites the DM's style directive in place. It moves the system
@@ -772,20 +718,12 @@ func runGamePhase(s *session, rl *readline.Instance) {
 		return
 	}
 
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		fmt.Println("LLM error:", err)
-		return
-	}
-
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
 		{Role: llm.RoleUser, Content: briefing},
 	}
 
-	chat := func(msgs []llm.Message, tools []llm.Tool) (llm.Response, error) {
-		return chatSilent(client, model, msgs, tools)
-	}
+	chat := s.chatSilent
 
 	// The opening turn makes the character and then plays the first scene. It
 	// reacts to no player line, so it opens on the briefing alone.
@@ -799,9 +737,6 @@ func runGamePhase(s *session, rl *readline.Instance) {
 				fmt.Println("Error reading input; exiting.")
 			}
 			return
-		}
-		if line == "" {
-			continue
 		}
 
 		if strings.HasPrefix(line, "/") {
@@ -934,13 +869,13 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 			fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
 			fmt.Println()
 			s.lastNarration = prose
-			if err := writeNarration(prose); err != nil {
+			if err := os.WriteFile(narrationFile, []byte(prose), 0o644); err != nil {
 				fmt.Println("\nNarration file error:", err)
 			}
 			// A missing prompt is not worth interrupting play over: the player
 			// has read the scene, and the next turn writes a new one.
 			if img != "" {
-				if err := writeImagePrompt(img); err != nil {
+				if err := os.WriteFile(imagePromptFile, []byte(img), 0o644); err != nil {
 					fmt.Println("\nImage prompt error:", err)
 				}
 			}
@@ -1039,14 +974,14 @@ const llmRequestTimeout = time.Minute
 // chat sends one request and prints the reply's text. It is for the setup
 // phases, where the LLM is talking to the user as itself. Gameplay prints its
 // own prose.
-func chat(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	return chatInternal(client, model, messages, tools, true)
+func (s *session) chat(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	return s.chatInternal(messages, tools, true)
 }
 
 // chatSilent sends one request and prints nothing: the caller decides what, if
 // anything, reaches the player.
-func chatSilent(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	return chatInternal(client, model, messages, tools, false)
+func (s *session) chatSilent(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
+	return s.chatInternal(messages, tools, false)
 }
 
 // startSpinner runs the loading spinner until the returned stop function is
@@ -1066,18 +1001,18 @@ func startSpinner() func() {
 	}
 }
 
-func chatInternal(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool, printOutput bool) (llm.Response, error) {
+func (s *session) chatInternal(messages []llm.Message, tools []llm.Tool, printOutput bool) (llm.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), llmRequestTimeout)
 	defer cancel()
 
 	if debug {
-		fmt.Printf("\n\033[90m[LLM request: model=%s messages=%d tools=%d]\033[0m\n", model, len(messages), len(tools))
+		fmt.Printf("\n\033[90m[LLM request: model=%s messages=%d tools=%d]\033[0m\n", s.model, len(messages), len(tools))
 	}
 
 	stopSpinner := startSpinner()
 
-	response, err := client.Chat(ctx, llm.Request{
-		Model:           model,
+	response, err := s.client.Chat(ctx, llm.Request{
+		Model:           s.model,
 		Messages:        messages,
 		Tools:           tools,
 		ReasoningEffort: llm.ReasoningEffortNone,
@@ -1099,9 +1034,7 @@ func chatInternal(client *llm.Client, model string, messages []llm.Message, tool
 		fmt.Println(ui.WrapText(response.Message.Content, ui.TerminalWidth()))
 	}
 
-	tracker := newUsageTracker(model)
-	tracker.record(messages, response)
-	ui.DisplayContextUsage(tracker.getPercentage(), debug)
+	ui.DisplayContextUsage(requestTokens(messages, response), debug)
 
 	return response, nil
 }

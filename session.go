@@ -27,6 +27,11 @@ const (
 	charsheetTemplate = "charsheet_template.md"
 	// savesRoot holds one directory per played session.
 	savesRoot = "saves"
+	// narrationFile and imagePromptFile are written in the working directory for
+	// whatever wants the current scene without parsing the terminal. Each turn
+	// replaces them; the run's history is the session directory's job.
+	narrationFile   = "narration.txt"
+	imagePromptFile = "img-gen.md"
 )
 
 // session is the harness. It owns the session directory, decides what may be
@@ -41,6 +46,9 @@ type session struct {
 	read map[string]bool
 
 	rng *rand.Rand
+
+	client *llm.Client
+	model  string
 
 	settingName string
 	settingDesc string
@@ -96,6 +104,19 @@ func newSession() *session {
 		read:     map[string]bool{},
 		rng:      rand.New(rand.NewSource(seed)),
 	}
+}
+
+// connect opens the one LLM client the whole run uses. It was opened three
+// separate times before, once per setup phase and once for play. Kept apart
+// from newSession so a test can build a session without reaching for a
+// provider config that is not there.
+func (s *session) connect() error {
+	client, model, _, err := llm.InitClientFromHome()
+	if err != nil {
+		return err
+	}
+	s.client, s.model = client, model
+	return nil
 }
 
 // createDir makes the session directory and is the first tool call of a game.
@@ -220,7 +241,12 @@ func (s *session) editFile(name, oldString, newString string, replaceAll bool) (
 	count := strings.Count(text, oldString)
 	switch {
 	case count == 0:
-		return "", fmt.Errorf("old_string not found in %s — copy the text exactly as it stands, whitespace included", name)
+		// The file comes back with the error. Without it the model guesses at
+		// what it got wrong and the guess is usually an anchor on one line of
+		// the pair, which appends instead of replacing: that is how a sheet ends
+		// up carrying the same rope twice. Observed cause was line order — the
+		// two lines existed, in the other order.
+		return "", fmt.Errorf("old_string not found in %s — copy it exactly from the current contents below, whitespace and line order included, then edit again:\n\n%s", name, text)
 	case count > 1 && !replaceAll:
 		return "", fmt.Errorf("old_string matches %d times in %s — add surrounding context to single one out, or pass replace_all", count, name)
 	}

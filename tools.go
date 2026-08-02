@@ -14,24 +14,25 @@ import (
 	"github.com/memmaker/gollum/llm"
 )
 
-// playerLanguageNote repeats the system prompt's language rule at the one place
-// the model is actually filling a field the player will read. The prompt says it
-// once, in a section; a tool description says it while the argument is being
-// written, which is where English creeps back in. Empty when the player reads
-// English, so the default game's tools stay exactly as they were.
-func playerLanguageNote(what string) string {
+// languageNote appends the language rule to a tool description when the player
+// is not reading English, and returns it untouched when they are.
+func languageNote(description, what string) string {
 	if language == "" || language == prompts.DefaultLanguage {
-		return ""
+		return description
 	}
-	return fmt.Sprintf(" LANGUAGE: %s is read by the player, so write it in %s.", what, language)
+	return description + fmt.Sprintf(" LANGUAGE: %s is read by the player, so write it in %s.", what, language)
 }
 
 // userChoiceTool is the menu, offered wherever the model needs the player to
 // pick between a small number of distinct options.
 func userChoiceTool() llm.Tool {
 	return llm.Tool{Type: "function", Function: llm.ToolFunction{
-		Name:        "user_choice",
-		Description: "Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically." + playerLanguageNote("The options are"),
+		Name: "user_choice",
+		// The language rule is repeated here, at the one place the model fills a
+		// field the player reads. The system prompt says it once, in a section; a
+		// tool description says it while the argument is being written, which is
+		// where English creeps back in.
+		Description: languageNote("Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically.", "The options are"),
 		Parameters: map[string]any{"type": "object", "properties": map[string]any{
 			"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "2-4 mutually exclusive options."},
 		}, "required": []string{"options"}},
@@ -163,20 +164,6 @@ func loadAdventure(s *session, name string) (string, error) {
 	return string(content), nil
 }
 
-// writeImagePrompt persists the image prompt the DM attached to its narration.
-// Each turn replaces the file: it describes the scene on screen right now, and
-// whatever tool picks it up wants the current one.
-func writeImagePrompt(prompt string) error {
-	return os.WriteFile("img-gen.md", []byte(prompt), 0o644)
-}
-
-// writeNarration persists the prose the player was just shown, replacing what
-// was there. This is the text on screen right now; the record of the run is the
-// session directory's job.
-func writeNarration(prose string) error {
-	return os.WriteFile("narration.txt", []byte(prose), 0o644)
-}
-
 // executeAction runs one tool call. Every handler returns text the model reads,
 // so an error is a sentence telling it what to do differently, not a status.
 func (s *session) executeAction(call llm.ToolCall) (string, error) {
@@ -241,6 +228,17 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		choice, err := ui.ShowChoiceMenu(options)
 		if err != nil {
 			return "", err
+		}
+		// The menu's last entry is an opt-out, not an option: it means the player
+		// wants to say something the options do not cover, so ask them here and
+		// send what they typed. Handing the marker itself back once had a DM read
+		// "[Type your answer]" as agreement and move a statue nobody touched.
+		if choice == ui.TypeYourAnswer() {
+			line, err := ui.GetInput(nil, "> ")
+			if err != nil {
+				return "", err
+			}
+			return "The player answered: " + line, nil
 		}
 		return "The player chose: " + choice, nil
 
