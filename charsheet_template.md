@@ -30,6 +30,10 @@
 
 - 2
 
+## Experience Points
+
+- 0 unspent
+
 ## Wounds
 
 - Scratch: [x] [ ] [ ]

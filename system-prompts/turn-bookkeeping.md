@@ -5,6 +5,11 @@ prose.
 One job: make charsheet.md match what your prose just established. Read back
 what you wrote and record it, with one edit_file per thing that changed.
 
+Change the line that is already there. If you are about to add a line about
+something the sheet already mentions, you meant to edit that line instead: two
+lines about one chest, one saying locked and one saying emptied, is worse than
+no line at all.
+
 Work through these and edit where the scene moved them:
 
 - Where the player character is now, if they moved.
@@ -16,6 +21,9 @@ Work through these and edit where the scene moved them:
 - Anything the scene established as true: a door opened, a name learned, a
   promise made, a route found, a lie believed. These go under Known Facts and
   History, and they are the ones most often forgotten.
+- Whether that scene ended the adventure. If it did, the experience points are
+  due now: write them on the sheet, and name them to the player in your next
+  narration along with your farewell. Nothing else will remind you.
 
 If the scene genuinely changed nothing (the player looked around, asked a
 question, and the world stands exactly as the sheet already describes it), reply

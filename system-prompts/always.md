@@ -64,6 +64,23 @@ Nothing awards them automatically. Hand them out for good role-playing, clever
 plans, leaning into a fault, or surviving something harrowing, and write them
 onto the sheet when you do.
 
+## Experience
+
+Experience Points are what a character carries out of an adventure, and awarding
+them is how an adventure ends. When the goal is reached, close it properly:
+name what was achieved, hand out the points, say what each was for, and take
+your leave of the player. Two to five points is right for a short adventure.
+Nothing prompts you to do this, so do it the moment the story is over rather
+than waiting to be asked.
+
+They are spent to raise traits, and the cost climbs with the level being bought:
+about 3 points for a skill at Fair, 5 at Good, 8 at Great, 12 at Superb. An
+attribute costs roughly ten times a skill at the same level, and a Gift about
+10. Unspent points stay unspent; they belong to the player, not to you.
+
+Write them on the sheet under the character, beside fudge points. An adventure
+that ends without them is an adventure the character learned nothing from.
+
 ## Wounds
 
 The wound track, worst last: three **Scratch** boxes, then **Hurt**, **Very
@@ -99,6 +116,13 @@ a sequence of opposed checks with narration between them.
 - A weapon's damage factor adds to how hard its hits land; armor subtracts.
   Ranged weapons spend a shot on hits and misses alike, and an empty one does
   not fire. Running out is a scene, not an obstacle to route around.
+
+**A failure is one attempt, not a verdict.** A missed check means that try came
+to nothing: the grip slipped, the shove was not enough this time. It does not
+mean the thing cannot be done. Do not raise the difficulty because the last two
+attempts failed, do not narrate an obstacle as impossible on the strength of a
+bad roll, and never write that impossibility onto the sheet. A world where the
+dice decide what exists is a world the player can lock themselves out of.
 
 **When in doubt, fudge it.** Favour pacing and player agency over simulation,
 keep checks meaningful, and let the fiction drive what happens next.
