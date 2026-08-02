@@ -7,16 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"fudge/archive"
 	"fudge/prompts"
-	"fudge/rules"
 	"fudge/ui"
 
 	"github.com/chzyer/readline"
@@ -27,9 +25,8 @@ var debug bool
 var imgGen bool
 
 // language is what the player reads: the narration, the choice menus and the
-// setup conversation. Everything the engine records stays English whatever this
-// is set to—ids, slugs and the state block are matched literally against what was
-// written the turn before, and a translated key matches nothing.
+// setup conversation. Filenames and setting folders stay English whatever this
+// is set to.
 var language string
 
 const (
@@ -37,19 +34,11 @@ const (
 	maxAdventureAttempts = 3
 	// maxTurnRequests is every request a single game turn may make of the model,
 	// failed ones included. The last of them is spent demanding the narration, so
-	// a turn has maxTurnRequests-1 rounds to resolve whatever it needs and one to
-	// end on. A turn still unnarrated after that is an error. A refused state
-	// block can buy one round beyond this, and only ever one.
-	maxTurnRequests = 5
+	// a turn has maxTurnRequests-1 rounds to roll, read and edit, and one to end
+	// on. A turn still unnarrated after that is an error.
+	maxTurnRequests = 6
 	// maxRetryDelay is the ceiling on the wait between retried requests.
 	maxRetryDelay = 30 * time.Second
-	// pinnedMessages is the most that may sit above the WORLD STATE block: the
-	// DM prompt, and on the opening turn only, the briefing under it. Both are
-	// built once in runGamePhase and never change, which is what makes them
-	// worth caching; the briefing is dropped once it has been played, and the
-	// ceiling applies to whatever is actually there. Anything added above the
-	// block has to be counted here too, or the block would be pinned above it.
-	pinnedMessages = 2
 )
 
 // requestRetryDelay is the pause before retrying a failed request, multiplied by
@@ -126,11 +115,10 @@ func (ut *UsageTracker) getPercentage() int {
 	return percent
 }
 
-// LLM-guided game setup with adventure loading
 func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
-	flag.StringVar(&language, "lang", prompts.DefaultLanguage, "Language the player reads: narration, menus and setup. A name or an ISO code (\"German\", \"Deutsch\", \"de\"). Engine data stays English.")
+	flag.StringVar(&language, "lang", prompts.DefaultLanguage, "Language the player reads: narration, menus and setup. A name or an ISO code (\"German\", \"Deutsch\", \"de\").")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
 	flag.Parse()
 	language = prompts.NormalizeLanguage(language)
@@ -156,15 +144,8 @@ func main() {
 	ui.HideCursor()
 	defer ui.ShowCursor()
 
-	seed := time.Now().UnixNano()
+	s := newSession()
 
-	w := &rules.World{
-		Characters: make(map[string]*rules.Character),
-		Seed:       seed,
-		Rng:        rand.New(rand.NewSource(seed)),
-	}
-
-	// Setup readline instance with history and line editing
 	rl, err := readline.New("> ")
 	if err != nil {
 		fmt.Println("Error initializing readline:", err)
@@ -172,22 +153,17 @@ func main() {
 	}
 	defer rl.Close()
 
-	// Setup phase: LLM guides through setting, character, and adventure selection
-	err = runSetupPhase(w, rl)
-	if err != nil {
+	// Setup picks the world and the scenario. The character is made in the game
+	// phase, in conversation, because there is no engine left to build one in.
+	if err := runSetupPhase(s, rl); err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	// Game phase: LLM acts as DM
-	runGamePhase(w, rl)
+	runGamePhase(s, rl)
 }
 
-func loadCharacterPrompt(promptFile string, w *rules.World) (string, error) {
-	return prompts.LoadPrompt(w.Setting, language, promptFile)
-}
-
-func loadDMPrompt(w *rules.World) (string, error) {
+func loadDMPrompt(s *session) (string, error) {
 	files := []string{"system-prompts/dm.md"}
 	if imgGen {
 		// image-guidance.md is the shared half: what makes a good image prompt,
@@ -196,7 +172,7 @@ func loadDMPrompt(w *rules.World) (string, error) {
 		// same guidance file without it.
 		files = append(files, "system-prompts/img-style.md", "system-prompts/image-guidance.md")
 	}
-	return prompts.LoadPrompt(w.Setting, language, files...)
+	return prompts.LoadPrompt(s.settingDesc, language, files...)
 }
 
 // debugArgLimit caps the arguments shown for a tool call. Narration prose and
@@ -213,9 +189,7 @@ func truncateForDebug(s string) string {
 }
 
 // debugResponse reports what came back: whether the reply carried a body, which
-// tools it called, and what it cost. The body is worth calling out on its own
-// line: during gameplay it is the turn — the scene the player reads, plus the
-// blocks the engine cuts out of it.
+// tools it called, and what it cost.
 func debugResponse(response llm.Response) {
 	if !debug {
 		return
@@ -251,8 +225,6 @@ func debugResponse(response llm.Response) {
 
 	fmt.Printf("\n\033[90m[LLM response: prose=%s calls=%s%s]\033[0m\n", proseState, calls, tokens)
 	if prose != "" {
-		// Collapsed to a single line: a paragraph break in the reply would
-		// otherwise scatter this across the log.
 		fmt.Printf("  \033[90mProse:\033[0m %s\n", truncateForDebug(strings.Join(strings.Fields(prose), " ")))
 	}
 }
@@ -267,52 +239,32 @@ func debugToolCall(call llm.ToolCall, result string, err error) {
 	}
 	if err != nil {
 		fmt.Printf("  \033[91mError:\033[0m %s\n", err.Error())
-	} else if result != "" {
-		// A state-changing tool answers with its headline and then the whole
-		// character underneath. That block is for the DM; a debug line is meant
-		// to be glanceable, and the sheet it repeats is in charsheet.txt.
-		headline := resultHeadline(result)
-		if headline != result {
-			headline += " \033[90m+state\033[0m"
-		}
-		// For dice-rolling tools, also display roll breakdown
-		switch call.Function.Name {
-		case "unopposed_check", "opposed_check", "opposed_attack", "unopposed_attack":
-			fmt.Printf("  \033[92mDice:\033[0m %s\n", headline)
-		default:
-			fmt.Printf("  \033[92mResult:\033[0m %s\n", headline)
-		}
+		return
 	}
+	if result == "" {
+		return
+	}
+	label := "Result"
+	color := "\033[92m"
+	if call.Function.Name == "check" {
+		label = "Dice"
+	}
+	fmt.Printf("  %s%s:\033[0m %s\n", color, label, truncateForDebug(result))
 }
 
-func runSetupPhase(w *rules.World, rl *readline.Instance) error {
+func runSetupPhase(s *session, rl *readline.Instance) error {
 	fmt.Println("Welcome to Fudge!")
 	fmt.Println()
 
-	// Step 1: Select or create setting
-	err := setupSetting(w, rl)
-	if err != nil {
+	if err := setupSetting(s, rl); err != nil {
 		return err
 	}
 	fmt.Println()
 
-	// Step 2: Select or improvise adventure
-	err = setupAdventure(w, rl)
-	if err != nil {
-		return err
-	}
-	fmt.Println()
-
-	// Step 3: Create character with LLM
-	err = setupCharacter(w, rl)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return setupAdventure(s, rl)
 }
 
-func setupSetting(w *rules.World, rl *readline.Instance) error {
+func setupSetting(s *session, rl *readline.Instance) error {
 	settings, err := listAvailableSettings()
 	if err != nil {
 		return err
@@ -321,22 +273,15 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 	var choice string
 	if len(settings) > 0 {
 		fmt.Println("Select a setting:")
-		var err error
 		choice, err = ui.ShowChoiceMenu(settings)
 		if err != nil {
 			return err
 		}
-
-		// Check if user selected an existing setting
 		if choice != ui.TypeYourAnswer() {
-			if err := loadSetting(w, choice); err != nil {
-				return err
-			}
-			return nil
+			return loadSetting(s, choice)
 		}
 	}
 
-	// User wants custom setting - get description
 	description, err := ui.GetInput(rl, "Setting description: ")
 	if err != nil {
 		return err
@@ -348,99 +293,65 @@ func setupSetting(w *rules.World, rl *readline.Instance) error {
 		return err
 	}
 
-	// Phase 1: Clarification (with loop for refinement)
-	clarifyPrompt, _ := prompts.LoadPrompt(nil, language, "system-prompts/setting-clarification.md")
+	// Phase 1: clarification, refined until the player says yes.
+	clarifyPrompt, _ := prompts.LoadPrompt("", language, "system-prompts/setting-clarification.md")
 	clarifyMessages := []llm.Message{
 		{Role: llm.RoleSystem, Content: clarifyPrompt},
 		{Role: llm.RoleUser, Content: fmt.Sprintf("I'd like to create a setting with this concept: %s", description)},
 	}
 
-	// The agreed-upon proposal, carried into the creation phase
 	var agreedConcept string
-
 	for {
 		fmt.Println()
 		response, err := chat(client, model, clarifyMessages, nil)
 		if err != nil {
 			return err
 		}
-
 		fmt.Println()
 
-		// Get user confirmation - their response may include feedback
 		userResponse, err := ui.GetInput(rl, "Does this sound right? (yes/no): ")
 		if err != nil {
 			return err
 		}
-
 		if userResponse == "yes" || userResponse == "y" {
 			agreedConcept = response.Message.Content
 			break
 		}
 
-		// User said no (possibly with feedback) - keep the real proposal in
-		// history and send their feedback back for refinement
-		clarifyMessages = append(clarifyMessages, response.Message)
-		clarifyMessages = append(clarifyMessages, llm.Message{
+		clarifyMessages = append(clarifyMessages, response.Message, llm.Message{
 			Role:    llm.RoleUser,
 			Content: userResponse,
 		})
 		fmt.Println()
 	}
 
-	// Phase 2: Creation - LLM will call create_setting and write_setting_file tools
-	// The player is still being talked to here, so this phase speaks their
-	// language—while the files it writes stay English, which the directive says
-	// in as many words. Those files are read back as the setting's list of
-	// slugs, and a German skill slug is a skill no tool call can ever name.
-	createPrompt, _ := prompts.LoadPrompt(nil, language, "system-prompts/setting-creation.md")
+	// Phase 2: creation. The player is still being spoken to, so this phase
+	// speaks their language; the folder name it writes stays English.
+	createPrompt, _ := prompts.LoadPrompt("", language, "system-prompts/setting-creation.md")
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
 		{Role: llm.RoleUser, Content: fmt.Sprintf("Create a custom Fudge setting with this concept: %s\n\nThe agreed-upon design:\n%s", description, agreedConcept)},
 	}
 
 	fmt.Println()
-
-	// Agentic loop: continue until LLM stops making tool calls
 	for {
 		response, err := chat(client, model, messages, settingCreationTools())
 		if err != nil {
 			return err
 		}
-
 		fmt.Println()
 
 		if len(response.Message.ToolCalls) == 0 {
 			break
 		}
-
 		messages = append(messages, response.Message)
-
-		// Process each tool call and collect results
-		for _, toolCall := range response.Message.ToolCalls {
-			result, err := executeAction(w, toolCall)
-			debugToolCall(toolCall, result, err)
-			if err != nil {
-				// Feed the error back so the LLM can correct and retry
-				result = "Error: " + err.Error()
-			}
-			fmt.Println(result)
-
-			messages = append(messages, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Function.Name,
-				Content:    result,
-			})
-		}
+		messages = append(messages, s.runToolCalls(response.Message.ToolCalls, true)...)
 	}
-
-	// Return a placeholder name (user should have created it via tool)
 	return nil
 }
 
-func setupAdventure(w *rules.World, rl *readline.Instance) error {
-	adventures, err := listAvailableAdventures(w)
+func setupAdventure(s *session, rl *readline.Instance) error {
+	adventures, err := listAvailableAdventures(s)
 	if err != nil {
 		return err
 	}
@@ -451,18 +362,17 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 		if err != nil {
 			return err
 		}
-
 		if choice != ui.TypeYourAnswer() {
-			adventureContent, err := loadAdventureTool(w, choice)
+			content, err := loadAdventure(s, choice)
 			if err != nil {
 				return err
 			}
-			w.AdventureContent = adventureContent
+			s.advName = choice
+			s.adventure = content
 			return nil
 		}
 	}
 
-	// User wants improvised adventure - use LLM
 	fmt.Println("Describe the adventure scenario you'd like:")
 	scenario, err := ui.GetInput(rl, "Scenario: ")
 	if err != nil {
@@ -472,9 +382,9 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 	}
 
 	// English regardless of what the player reads: this phase says nothing to
-	// them at all—it runs silent and its whole output is a file, which becomes
-	// the DM's briefing. Briefings are the engine's side of the wall.
-	prompt, _ := prompts.LoadPrompt(nil, prompts.DefaultLanguage, "system-prompts/adventure-creation.md")
+	// them at all — it runs silent and its whole output is a file, which becomes
+	// the DM's briefing.
+	prompt, _ := prompts.LoadPrompt("", prompts.DefaultLanguage, "system-prompts/adventure-creation.md")
 	client, model, _, err := llm.InitClientFromHome()
 	if err != nil {
 		return err
@@ -482,15 +392,13 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: prompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", w.Setting.Description, scenario)},
+		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for the %s setting with this scenario: %s", s.settingDesc, scenario)},
 	}
 
 	fmt.Println()
 	fmt.Println("Improvising an adventure...")
 
-	// The adventure arrives through write_adventure, which persists it and sets
-	// w.AdventureContent. Loop so a rejected write can be corrected.
-	for attempt := 0; attempt < maxAdventureAttempts && w.AdventureContent == ""; attempt++ {
+	for attempt := 0; attempt < maxAdventureAttempts && s.adventure == ""; attempt++ {
 		response, err := chatSilent(client, model, messages, adventureCreationTools())
 		if err != nil {
 			return err
@@ -508,164 +416,36 @@ func setupAdventure(w *rules.World, rl *readline.Instance) error {
 		}
 
 		messages = append(messages, response.Message)
-
-		for _, toolCall := range response.Message.ToolCalls {
-			result, err := executeAction(w, toolCall)
-			debugToolCall(toolCall, result, err)
-			if err != nil {
-				result = "Error: " + err.Error()
-			}
-			messages = append(messages, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Function.Name,
-				Content:    result,
-			})
-		}
+		messages = append(messages, s.runToolCalls(response.Message.ToolCalls, false)...)
 	}
 
-	if w.AdventureContent == "" {
+	if s.adventure == "" {
 		return errors.New("no adventure was created")
 	}
 	return nil
 }
 
-func setupCharacter(w *rules.World, rl *readline.Instance) error {
-	fmt.Println("How would you like to create your character?")
-	automaticString := "Automatic - I describe my concept, you decide the traits"
-	choice, err := ui.ShowChoiceMenu([]string{automaticString, "Custom - I want to choose all my traits"})
-	if err != nil {
-		return err
-	}
-	var concept string
-	if choice == automaticString {
-		fmt.Println("Describe your character concept:")
-		var cerr error
-		for concept == "" {
-			concept, cerr = ui.GetInput(rl, "Concept: ")
-			if cerr != nil {
-				return cerr
-			}
-		}
-	}
-
-	setupCharacterFlow(w, rl, concept)
-	return nil
-}
-
-func setupCharacterFlow(w *rules.World, rl *readline.Instance, concept string) {
-	var promptFile string
-	var initialMessage string
-
-	if concept != "" {
-		promptFile = "system-prompts/character-automatic.md"
-		initialMessage = fmt.Sprintf("I want to create a character with this concept: %s", concept)
-	} else {
-		promptFile = "system-prompts/character-custom.md"
-		initialMessage = "I'm ready to create my character. Let's start!"
-	}
-
-	characterPrompt, err := loadCharacterPrompt(promptFile, w)
-	if err != nil {
-		fmt.Println("Error loading character creation prompt:", err)
-		return
-	}
-
-	client, model, _, err := llm.InitClientFromHome()
-	if err != nil {
-		fmt.Println("LLM error:", err)
-		return
-	}
-
-	messages := []llm.Message{
-		{Role: llm.RoleSystem, Content: characterPrompt},
-		{Role: llm.RoleUser, Content: initialMessage},
-	}
-
-	// Creation ends once the character exists and carries something. Their gear
-	// usually lands one response after they do — the id add_item needs only
-	// comes back in the create_character result — so the response that creates
-	// them buys exactly one follow-up turn to outfit them, and creation ends
-	// after that whether or not they took it. Handing the model any turn beyond
-	// that only buys a paragraph of congratulation that the opening scene is
-	// about to narrate over anyway.
-	characterCreated := false
-	creationDone := func() bool {
-		pc, err := w.Character(w.Player)
+// runToolCalls executes each call and returns the tool messages to append. An
+// error becomes the result the model reads, so it can correct itself instead of
+// the loop stalling on a call that will fail the same way twice.
+func (s *session) runToolCalls(calls []llm.ToolCall, echo bool) []llm.Message {
+	out := make([]llm.Message, 0, len(calls))
+	for _, call := range calls {
+		result, err := s.executeAction(call)
+		debugToolCall(call, result, err)
 		if err != nil {
-			return false
+			result = "Error: " + err.Error()
+		} else if echo && result != "" {
+			fmt.Println(result)
 		}
-		if len(pc.Inventory) > 0 || pc.Coins > 0 || characterCreated {
-			fmt.Printf("\n%s is ready.\n", pc.Name)
-			return true
-		}
-		characterCreated = true // spend the one follow-up turn
-		return false
+		out = append(out, llm.Message{
+			Role:       llm.RoleTool,
+			ToolCallID: call.ID,
+			Name:       call.Function.Name,
+			Content:    result,
+		})
 	}
-
-	for {
-		fmt.Println()
-		response, err := chat(client, model, messages, characterCreationTools())
-		if err != nil {
-			fmt.Println("\nLLM error:", err)
-			return
-		}
-
-		messages = append(messages, response.Message)
-
-		// Process tool calls
-		for len(response.Message.ToolCalls) > 0 {
-			for _, toolCall := range response.Message.ToolCalls {
-				result, err := executeAction(w, toolCall)
-				debugToolCall(toolCall, result, err)
-				if err != nil {
-					result = "Error: " + err.Error()
-				}
-				messages = append(messages, llm.Message{
-					Role:       llm.RoleTool,
-					ToolCallID: toolCall.ID,
-					Name:       toolCall.Function.Name,
-					Content:    result,
-				})
-			}
-
-			err := writeCharsheet(w)
-			if err != nil {
-				fmt.Println("Error writing char sheet:", err)
-			}
-
-			if creationDone() {
-				return
-			}
-
-			fmt.Println()
-			response, err = chat(client, model, messages, characterCreationTools())
-			if err != nil {
-				fmt.Println("\nLLM error:", err)
-				return
-			}
-			fmt.Println()
-			messages = append(messages, response.Message)
-		}
-
-		// The model ended its turn on plain text. If that was the follow-up turn
-		// after create_character, the character stands equipped or not and there
-		// is nothing left to ask the player.
-		if creationDone() {
-			return
-		}
-
-		// Get player input
-		fmt.Println()
-		input, err := ui.GetInput(rl, "> ")
-		if err != nil {
-			return
-		}
-
-		if input != "" {
-			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: input})
-		}
-	}
+	return out
 }
 
 func listAvailableSettings() ([]string, error) {
@@ -683,12 +463,11 @@ func listAvailableSettings() ([]string, error) {
 	return settings, nil
 }
 
-func listAvailableAdventures(w *rules.World) ([]string, error) {
-	if w.Setting == nil {
+func listAvailableAdventures(s *session) ([]string, error) {
+	if s.settingName == "" {
 		return nil, fmt.Errorf("no setting loaded")
 	}
-	adventuresPath := filepath.Join(w.Setting.Path, "adventures")
-	entries, err := os.ReadDir(adventuresPath)
+	entries, err := os.ReadDir(filepath.Join("settings", s.settingName, "adventures"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -698,16 +477,11 @@ func listAvailableAdventures(w *rules.World) ([]string, error) {
 	var adventures []string
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			name := strings.TrimSuffix(entry.Name(), ".md")
-			adventures = append(adventures, name)
+			adventures = append(adventures, strings.TrimSuffix(entry.Name(), ".md"))
 		}
 	}
 	sort.Strings(adventures)
 	return adventures, nil
-}
-
-func slugify(s string) string {
-	return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
 }
 
 func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm.Message) {
@@ -716,23 +490,15 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		return
 	}
 
-	cmd := parts[0]
-	switch cmd {
+	switch cmd := parts[0]; cmd {
 	case "/quit", "/exit":
 		fmt.Println("Session ended.")
 		os.Exit(0)
 	case "/context":
-		err := s.dumpContextToFile("context.txt", messages)
-		if err != nil {
+		if err := s.dumpContextToFile("context.txt", messages); err != nil {
 			fmt.Printf("Error writing context: %v\n", err)
 		} else {
 			fmt.Println("Context written to context.txt")
-		}
-	case "/dump-state":
-		if err := os.WriteFile("state-dump.yaml", []byte(entities(s.world, s.narrative)+"\n"), 0644); err != nil {
-			fmt.Printf("Error writing state dump: %v\n", err)
-		} else {
-			fmt.Println("State written to state-dump.yaml")
 		}
 	case "/style":
 		setStyle(messages, strings.TrimSpace(strings.TrimPrefix(line, cmd)))
@@ -742,6 +508,14 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		} else {
 			fmt.Println("Image prompt written to img-gen.md")
 		}
+	case "/inv":
+		// The nag, and the only enforcement the sheet has. It goes in as an
+		// ordinary player line so the DM answers it in the ordinary way.
+		s.processGameTurn(chat, messages, sheetNag)
+	case "/milestone":
+		if err := s.milestone(chat, messages); err != nil {
+			fmt.Printf("Error writing milestone: %v\n", err)
+		}
 	case "/help":
 		printMetaCommands()
 	default:
@@ -750,33 +524,98 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 	}
 }
 
-// printMetaCommands is the one list of what "/" can be followed by. /help
-// prints it because that is what it is for; unknown-command prints the same
-// list because the question a bad command is asking is the same question
-// /help answers, and a second copy of this list is a second place to forget
-// to update when a command is added.
+// sheetNag is what /inv sends. Written as the player speaking, because that is
+// the channel it arrives on and the DM should answer it as one.
+const sheetNag = "(Out of character: you have not been keeping charsheet.md up to date. Bring it current now with edit_file — everything that has changed since you last touched it — and keep updating it every turn, as the rules say. Do not narrate anything for this; a one-line acknowledgement is enough.)"
+
 func printMetaCommands() {
 	fmt.Println("Available commands:")
 	fmt.Println("  /help - List these commands")
 	fmt.Println("  /quit, /exit - Exit the game")
 	fmt.Println("  /context - Write current message context to context.txt")
-	fmt.Println("  /dump-state - Write the engine's ground-truth world state to state-dump.yaml")
 	fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
 	fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
+	fmt.Println("  /inv - Tell the DM to bring charsheet.md up to date")
+	fmt.Println("  /milestone - Archive the session so far and start a fresh chat from a summary")
+}
+
+// milestone is the compaction, and the player decides when it happens. The DM
+// writes the summary, because "events, states and changes" is judgment rather
+// than concatenation; the harness archives the raw chat beside it, because a
+// summary is lossy and the loss would be permanent.
+func (s *session) milestone(chat chatRound, messages *[]llm.Message) error {
+	if s.dir == "" {
+		return fmt.Errorf("no session directory yet — play a turn first")
+	}
+
+	s.milestones++
+	name := fmt.Sprintf("milestone-%02d.md", s.milestones)
+	s.allowWrite(name)
+
+	raw := filepath.Join(s.dir, fmt.Sprintf("milestone-%02d-raw.md", s.milestones))
+	if err := os.WriteFile(raw, []byte(transcript(*messages)), 0644); err != nil {
+		return err
+	}
+
+	demand := fmt.Sprintf(`The player has called a milestone: the conversation so far is about to be archived and you will continue from a clean slate.
+
+Do two things and nothing else — write no prose for the player:
+
+1. write_file %q — a full account of everything that happened in this stretch: what was done, what was found, who was met and how they stand, what changed in the world, and what is unresolved. Write it for yourself to read later. Be complete; nothing else of this conversation survives.
+2. edit_file charsheet.md — append one line to the Known Facts/History section summarising this stretch in a sentence, and make sure the rest of the sheet is current.`, name)
+
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: demand})
+
+	for request := 1; request <= maxTurnRequests; request++ {
+		response, err := chat(s.withCharsheet(*messages), gameTools())
+		if err != nil {
+			return err
+		}
+		*messages = append(*messages, response.Message)
+		if len(response.Message.ToolCalls) == 0 {
+			break
+		}
+		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+	}
+
+	// The chat is cleared down to the ground rules, and reopens on the last
+	// narration so the DM's voice carries across the seam. The charsheet needs no
+	// reinstating: it rides at the tail of every request anyway.
+	*messages = (*messages)[:1]
+	if s.lastNarration != "" {
+		*messages = append(*messages, llm.Message{
+			Role:    llm.RoleAssistant,
+			Content: s.lastNarration,
+		})
+	}
+
+	fmt.Printf("\nMilestone %d archived to %s. The story continues.\n\n", s.milestones, name)
+	return nil
+}
+
+// transcript renders the message list as the archived raw chat.
+func transcript(messages []llm.Message) string {
+	var b strings.Builder
+	for _, msg := range messages {
+		fmt.Fprintf(&b, "--- %s ---\n", msg.Role)
+		if msg.Content != "" {
+			b.WriteString(msg.Content)
+			b.WriteString("\n")
+		}
+		for _, call := range msg.ToolCalls {
+			fmt.Fprintf(&b, "[call %s] %s\n", call.Function.Name, call.Function.Arguments)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // requestImagePrompt is -img-gen for one scene instead of every one: the same
 // guidance, asked for once, on demand, rather than paid on every turn whether
-// anyone wanted a picture or not.
-//
-// It is a request of its own rather than a reply to the ongoing conversation.
-// The turn's own messages carry tool calls and results an image prompt has no
-// business seeing, and the model that writes a good scene is not necessarily
-// worth asking twice for the same thing in two different capacities — this
-// asks the narrow question directly, from the block the DM itself was just
-// reading, and nothing else.
+// anyone wanted a picture or not. It is a request of its own rather than a reply
+// to the ongoing conversation, asked from the last scene and the sheet alone.
 func (s *session) requestImagePrompt(chat chatRound) error {
-	if s.lastBlock == "" {
+	if s.lastNarration == "" {
 		return fmt.Errorf("no scene yet — play a turn first")
 	}
 	guidance, err := os.ReadFile("system-prompts/image-guidance.md")
@@ -787,14 +626,14 @@ func (s *session) requestImagePrompt(chat chatRound) error {
 	var sys strings.Builder
 	sys.WriteString("Write a single image generation prompt for the CURRENT scene described below: the game's state exactly as it stands right now. Your entire reply is that prompt — no preamble, no markdown fencing, nothing before or after it.\n\n")
 	sys.Write(guidance)
-	if s.world.Setting != nil && s.world.Setting.Description != "" {
-		fmt.Fprintf(&sys, "\nSetting: %s\n", s.world.Setting.Description)
+	if s.settingDesc != "" {
+		fmt.Fprintf(&sys, "\nSetting: %s\n", s.settingDesc)
 	}
 
-	response, err := chat([]llm.Message{
+	response, err := chat(s.withCharsheet([]llm.Message{
 		{Role: llm.RoleSystem, Content: sys.String()},
-		{Role: llm.RoleUser, Content: s.lastBlock},
-	}, nil)
+		{Role: llm.RoleUser, Content: s.lastNarration},
+	}), nil)
 	if err != nil {
 		return err
 	}
@@ -826,84 +665,50 @@ func setStyle(messages *[]llm.Message, style string) {
 	fmt.Printf("Style override set: %s\n", style)
 }
 
-// dumpContextToFile writes what the DM is working from. The messages are only
-// part of that now and, between turns, much the smaller part: the block is the
-// DM's entire memory of the session, and the archive is the record of how it
-// came to hold what it holds. A dump of the messages alone would show a session
-// that appears to have just started.
+// dumpContextToFile writes what a request is actually made of: the messages, the
+// charsheet block pinned under them, and the tool schemas that ride alongside —
+// the part of the bill nothing else prints.
 func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
+	var b strings.Builder
 
-	writer := &strings.Builder{}
-
-	writer.WriteString("=== WORLD STATE, as the DM last saw it ===\n\n")
-	if s.lastBlock != "" {
-		writer.WriteString(s.lastBlock)
-	} else {
-		writer.WriteString("(no turn has been played yet)")
-	}
-	// The tools go in the request beside the messages, so they are part of what a
-	// turn costs — and they were the part nobody could see. A dump that showed
-	// only the prose sections had the prompt looking like the whole bill while a
-	// third of it sat in schemas nothing printed.
-	writer.WriteString("\n\n=== TOOLS (sent with every request) ===\n\n")
-	toolTotal := 0
-	for _, tool := range queryTools() {
+	b.WriteString("=== TOOLS (sent with every request) ===\n\n")
+	total := 0
+	for _, tool := range gameTools() {
 		encoded, err := json.Marshal(tool)
 		if err != nil {
 			continue
 		}
-		toolTotal += len(encoded)
-		fmt.Fprintf(writer, "%-20s %6d bytes\n", tool.Function.Name, len(encoded))
+		total += len(encoded)
+		fmt.Fprintf(&b, "%-28s %6d bytes\n", tool.Function.Name, len(encoded))
 	}
-	fmt.Fprintf(writer, "%-20s %6d bytes\n", "TOTAL", toolTotal)
+	fmt.Fprintf(&b, "%-28s %6d bytes\n", "TOTAL", total)
 
-	writer.WriteString("\n\n=== ARCHIVE ===\n\n")
-	writer.WriteString(s.archive.Dump())
-	writer.WriteString("\n\n=== MESSAGE CONTEXT ===\n\n")
-	writer.WriteString(fmt.Sprintf("Total messages: %d\n\n", len(*messages)))
-
-	for i, msg := range *messages {
-		writer.WriteString(fmt.Sprintf("--- Message %d ---\n", i+1))
-		writer.WriteString(fmt.Sprintf("Role: %s\n", msg.Role))
-
+	request := s.withCharsheet(*messages)
+	fmt.Fprintf(&b, "\n\n=== MESSAGES (%d, charsheet block included) ===\n\n", len(request))
+	for i, msg := range request {
+		fmt.Fprintf(&b, "--- Message %d ---\nRole: %s\n", i+1, msg.Role)
 		if msg.Content != "" {
-			writer.WriteString("Content:\n")
-			writer.WriteString(msg.Content)
-			writer.WriteString("\n")
+			b.WriteString("Content:\n")
+			b.WriteString(msg.Content)
+			b.WriteString("\n")
 		}
-
-		if len(msg.ToolCalls) > 0 {
-			writer.WriteString(fmt.Sprintf("Tool Calls (%d):\n", len(msg.ToolCalls)))
-			for _, tc := range msg.ToolCalls {
-				writer.WriteString(fmt.Sprintf("  - %s\n", tc.Function.Name))
-				if tc.Function.Arguments != "" {
-					writer.WriteString(fmt.Sprintf("    Args: %s\n", tc.Function.Arguments))
-				}
+		for _, tc := range msg.ToolCalls {
+			fmt.Fprintf(&b, "  - %s\n", tc.Function.Name)
+			if tc.Function.Arguments != "" {
+				fmt.Fprintf(&b, "    Args: %s\n", tc.Function.Arguments)
 			}
 		}
-
 		if msg.ToolCallID != "" {
-			writer.WriteString(fmt.Sprintf("ToolCallID: %s\n", msg.ToolCallID))
+			fmt.Fprintf(&b, "ToolCallID: %s\n", msg.ToolCallID)
 		}
-
-		if msg.Name != "" {
-			writer.WriteString(fmt.Sprintf("Name: %s\n", msg.Name))
-		}
-
-		writer.WriteString("\n")
+		b.WriteString("\n")
 	}
 
-	_, err = file.WriteString(writer.String())
-	return err
+	return os.WriteFile(filename, []byte(b.String()), 0644)
 }
 
-func runGamePhase(w *rules.World, rl *readline.Instance) {
-	dmPrompt, err := loadDMPrompt(w)
+func runGamePhase(s *session, rl *readline.Instance) {
+	dmPrompt, err := loadDMPrompt(s)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -915,35 +720,21 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 		return
 	}
 
-	// These two are the whole of the history between turns, and they never
-	// change again: everything a turn produces is folded into the session and
-	// dropped. That is what keeps them byte-identical, and cached, all session.
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
-		{Role: llm.RoleUser, Content: openingBriefing(w)},
+		{Role: llm.RoleUser, Content: s.openingBriefing()},
 	}
-
-	s := newSession(w)
 
 	chat := func(msgs []llm.Message, tools []llm.Tool) (llm.Response, error) {
 		return chatSilent(client, model, msgs, tools)
 	}
 
-	// Setup is done and the character exists—open the scene right away instead
-	// of making the player prod us for it. There is no player line to react to,
-	// so the turn opens on the briefing alone.
+	// The opening turn makes the character and then plays the first scene. It
+	// reacts to no player line, so it opens on the briefing alone.
 	fmt.Println()
 	s.processGameTurn(chat, &messages, "")
 
-	// The briefing has been played and it never applies again: it is an
-	// instruction to open a scene, and the scene is open. What it established is
-	// in the block now, in the DM's own words, so leaving it here would carry a
-	// second and steadily staler account of the world in every later request.
-	// Dropping it costs one cache miss and saves its length on every turn after.
-	messages = messages[:1]
-
 	for {
-		// Get player input
 		line, err := ui.GetInput(rl, "> ")
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -951,12 +742,10 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 			}
 			return
 		}
-
 		if line == "" {
 			continue
 		}
 
-		// Handle meta commands
 		if strings.HasPrefix(line, "/") {
 			s.handleMetaCommand(chat, line, &messages)
 			continue
@@ -967,27 +756,38 @@ func runGamePhase(w *rules.World, rl *readline.Instance) {
 	}
 }
 
-// openingBriefing gives the DM the adventure it must open with. Setup is over
-// and gameplay starts here, so the instruction leads and closes the message:
-// everything between the two is reference material, not something to reply
-// about.
-//
-// The player character is not in it. This message is written once and then
-// never again, which is exactly wrong for a character who is about to start
-// spending coins and taking wounds — a snapshot here would be contradicting the
-// roster by the second turn. The roster states them instead, rebuilt every turn,
-// and it is in front of the DM before this briefing is ever read.
-func openingBriefing(w *rules.World) string {
+// openingBriefing hands the DM the adventure and the two jobs that come before
+// the first scene: make the character with the player, then put the game on
+// disk. The briefing stays in the history — unlike the old engine-held design,
+// there is no block that would otherwise re-state it, and the adventure is the
+// one thing the DM cannot look up again.
+func (s *session) openingBriefing() string {
 	var b strings.Builder
-	b.WriteString("Character creation is finished and play begins now. This is turn one: there is no player input to react to, you open the game.\n\n")
-	b.WriteString("Your entire reply is the first scene. Write it as ordinary prose—that prose is what the player reads—and close with the turn's <state> block. Put the player character in it and stop where they can act. Do not acknowledge, summarize, or comment on the briefing below—play it.\n\n")
-
+	b.WriteString("Play begins now. Before the first scene there are two things to do, in this order.\n\n")
+	b.WriteString("FIRST, make the player character with them, in conversation. Ask what they want to play; offer to pick the traits yourself if they would rather not. Fudge characters have attributes and skills on the ladder, a gift or two, a fault or two, some fudge points and whatever they carry. Keep it short — a few exchanges, not an interrogation.\n\n")
+	b.WriteString("THEN, once the character is settled: call create_session_directory with their name and the adventure's title, read charsheet_template.md to see the shape a sheet takes, and write_file charsheet.md with the finished character in it. The template is an example from another game — follow its structure, not its contents.\n\n")
+	b.WriteString("ONLY THEN write the opening scene. Put the player character in it and stop where they can act.\n\n")
 	b.WriteString("ADVENTURE BRIEFING (the player has not read this):\n\n")
-	b.WriteString(w.AdventureContent)
-	b.WriteString("\n\n")
-
-	b.WriteString("Nothing needs resolving to open a scene, so this turn is a single response and needs no calls at all. The <state> block under your prose creates the place the scene opens in, puts the player character there, and records everything else the prose establishes—nothing exists yet, so this one block is the full baseline. The player character is in WORLD STATE above, with everything they carry: put them in the scene as the engine holds them. Narrate the opening scene now.")
+	b.WriteString(s.adventure)
+	b.WriteString("\n\nThe world state, the NPCs and the facts of this adventure go in charsheet.md as the game establishes them — that file is the only memory you have that survives.")
 	return b.String()
+}
+
+// imgBlock is the one thing still cut out of a reply before the player sees it.
+// Everything else the DM used to append — the state block, the event tags — is
+// gone; an image prompt stays inline because -img-gen wants one per scene and a
+// second request per turn to ask for it separately is the cost that design was
+// avoiding.
+var imgBlock = regexp.MustCompile(`(?s)<img>(.*?)</img>`)
+
+// splitImagePrompt separates the prose the player reads from the image prompt
+// riding under it.
+func splitImagePrompt(reply string) (prose, img string) {
+	match := imgBlock.FindStringSubmatch(reply)
+	if match == nil {
+		return strings.TrimSpace(reply), ""
+	}
+	return strings.TrimSpace(imgBlock.ReplaceAllString(reply, "")), strings.TrimSpace(match[1])
 }
 
 // chatRound is one request to the model. The turn loop takes it as an argument
@@ -997,75 +797,34 @@ func openingBriefing(w *rules.World) string {
 type chatRound func(messages []llm.Message, tools []llm.Tool) (llm.Response, error)
 
 // processGameTurn drives the DM until it hands back a scene for the player, or
-// until the turn has spent the maxTurnRequests calls it is allowed — a turn ends
-// narrated or it ends in an error, and either way it ends inside this function.
+// until the turn has spent the maxTurnRequests calls it is allowed.
 //
-// A turn is resolution rounds followed by one reply that is the whole of the
-// turn's output. The rounds hold queryTools: the dice, the tables, the lookups —
-// everything whose answer the DM needs before it can know what happened, and
-// nothing that merely writes something down. The reply that ends the turn is
-// ordinary prose with the state it left behind written underneath it.
-//
-// The bookkeeping is not a second request any more. What justified one was that
-// "what changed?", asked before the prose existed, is a prediction of text the
-// model has not written; asked after, it is a reading of text that is there.
-// State written under the prose in the same generation satisfies that better
-// than a second round trip did — the prose is not quoted back from an earlier
-// message, it is the tokens immediately above.
+// A turn is rounds of rolling and note-keeping followed by prose. Unlike the
+// engine-held design this replaces, nothing is folded away at the end: the whole
+// exchange stays in the history until the player calls a milestone.
 func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playerInput string) {
 	s.turn++
-
-	// Built once, here, and held for the rest of the turn. A turn takes two
-	// requests more often than one, and a block rebuilt per request would move
-	// the cached prefix every time — while telling the DM nothing it is not
-	// about to be told anyway, since a call that moves a character answers with
-	// that character's state in the same round.
-	block := s.engineState()
-	s.lastBlock = block
 
 	turnStart := len(*messages)
 	if playerInput != "" {
 		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
-	// What the turn leaves behind. None of it stays in the history: the engine's
-	// headlines and the prose go to the archive, the reported facts go to the
-	// narrative store, and the messages themselves are dropped where they stand.
-	var log turnLog
-
-	// Refusals gather across the whole turn rather than being answered where
-	// they arose. A turn can narrate more than once — a choice menu makes it —
-	// and it can send a block on a round that resolved something instead of
-	// narrating; answering each of those in place would spend a round the turn
-	// has not got, and dropping them would leave the engine quietly behind a
-	// scene the player has read. They are put to the DM once, at the end.
-	var refused []string
-
-	// A turn gets maxTurnRequests calls to the model and no more. Every one counts,
-	// a call that came back an error included: the budget is there to bound what a
-	// single line of player input can cost, and a request that failed cost the
-	// same round trip as one that worked.
-	//
-	// The last call is not a resolution round. The engine comes off the table so
-	// that there is nothing left to resolve with, because the turn has to end and
-	// this is the last chance it has to end properly.
 	var failures int
-
 	for request := 1; request <= maxTurnRequests; request++ {
-		tools := queryTools()
+		tools := gameTools()
 		if request == maxTurnRequests {
+			// The tools come off the table so there is nothing left to resolve
+			// with, and the demand says so — tools that quietly vanish read as a
+			// malfunction from the inside, and a malfunction gets retried.
 			tools = nil
-			// Said in words as well as by withdrawing the tools: a request whose
-			// tools quietly vanish reads as a malfunction from the inside, and a
-			// malfunction is answered by trying the call again.
 			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: narrationDemand})
 		}
 
-		response, err := chat(withEngineState(block, *messages), tools)
+		response, err := chat(s.withCharsheet(*messages), tools)
 		if err != nil {
 			// The call is spent either way. What is left of the budget decides
-			// whether there is any point waiting: a hiccup with rounds to spare is
-			// worth retrying, and the last call is not.
+			// whether there is any point waiting.
 			failures++
 			fmt.Printf("\nLLM error: %v\n", err)
 			if request == maxTurnRequests {
@@ -1079,321 +838,60 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 
 		*messages = append(*messages, response.Message)
 
-		// The queries run first, whatever order they arrived in and whether or
-		// not this reply also carries the scene: their results are what the prose
-		// was written from, and a menu is the one thing that runs after it.
-		results := make(map[string]string, len(response.Message.ToolCalls))
-		for _, toolCall := range response.Message.ToolCalls {
-			var result string
-			switch toolCall.Function.Name {
-			case "user_choice":
-				continue
-			case "recall":
-				result = s.recall(toolCall)
-				debugToolCall(toolCall, result, nil)
-			default:
-				result, err = executeAction(s.world, toolCall)
-				debugToolCall(toolCall, result, err)
-				if err != nil {
-					result = "Error: " + err.Error()
-				}
-				// The headline is the engine's own account of what happened, and
-				// the archive keeps it so that events survive whether or not the
-				// DM thought them worth reporting. The character state under it
-				// does not: the roster states that, currently, every turn.
-				log.events = append(log.events, archive.Event{
-					Tool:     toolCall.Function.Name,
-					Entities: toolEntities(toolCall),
-					Headline: resultHeadline(result),
-				})
-			}
-			results[toolCall.ID] = result
-		}
-
-		reply := parseResponse(response.Message.Content)
-
-		if reply.Prose != "" {
-			// The scene reaches the player before a line of the state block is
-			// read. It is valid however the bookkeeping under it turns out, and
-			// nobody should wait on bookkeeping to find out what happened.
-			if debug {
-				// Debug wants the reply exactly as the model wrote it: the <state>
-				// block and the event tags are what a bad turn is diagnosed from,
-				// and both are cut from what a player sees. Unwrapped, because
-				// wrapping YAML at the terminal width breaks the indentation that
-				// makes it readable.
-				fmt.Println(strings.TrimSpace(response.Message.Content))
-			} else {
-				fmt.Println(ui.WrapText(reply.Prose, ui.TerminalWidth()))
-			}
+		prose, img := splitImagePrompt(response.Message.Content)
+		// A menu blocks on the player, so the question above it has to be on
+		// screen before the options are.
+		if prose != "" {
+			fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
 			fmt.Println()
-			log.shown = append(log.shown, reply.Prose)
-			// The player has read the scene already, so a failed write is worth
-			// reporting but not worth stopping the turn for.
-			if err := writeNarration(reply.Prose); err != nil {
+			s.lastNarration = prose
+			if err := writeNarration(prose); err != nil {
 				fmt.Println("\nNarration file error:", err)
 			}
 			// A missing prompt is not worth interrupting play over: the player
-			// has already read the scene, and the next turn writes a new one.
-			if reply.Img != "" {
-				if err := writeImagePrompt(reply.Img); err != nil {
+			// has read the scene, and the next turn writes a new one.
+			if img != "" {
+				if err := writeImagePrompt(img); err != nil {
 					fmt.Println("\nImage prompt error:", err)
 				}
 			}
 		}
 
-		// Applied whether or not this round narrated. A block that arrived on a
-		// round that only resolved something is still the DM saying what is true,
-		// and dropping it would lose the fact and leave the DM believing it was
-		// recorded — the one failure the engine exists to make impossible.
-		//
-		// Events before state: they are marked inside the prose and the block is
-		// written under it, so this is the order the DM wrote them in, and a
-		// wound has to land before the block that mentions the wounded.
-		eventEvents, eventNotes := s.applyEvents(reply.Events)
-		stateEvents, stateNotes := s.applyState(reply.State)
-		log.events = append(log.events, eventEvents...)
-		log.events = append(log.events, stateEvents...)
-		refused = append(refused, eventNotes...)
-		refused = append(refused, stateNotes...)
-		if debug {
-			for _, note := range append(eventNotes, stateNotes...) {
-				fmt.Printf("\033[90m[%s]\033[0m\n", note)
-			}
-		}
-
-		if err := writeCharsheet(s.world); err != nil {
-			fmt.Println("\nOutput error:", err)
-		}
-
-		// A choice menu blocks on the player, so it runs under the prose that
-		// poses the question rather than ahead of it.
 		var answeredChoice bool
-		for _, toolCall := range response.Message.ToolCalls {
-			if toolCall.Function.Name != "user_choice" {
-				continue
-			}
-			result, choiceErr := executeAction(s.world, toolCall)
-			debugToolCall(toolCall, result, choiceErr)
-			if choiceErr != nil {
-				result = "Error: " + choiceErr.Error()
-			} else {
+		for _, call := range response.Message.ToolCalls {
+			if call.Function.Name == "user_choice" {
 				answeredChoice = true
-				// What they picked is player input like any other, so it joins
-				// the line that opened the turn rather than becoming a turn of
-				// its own — the turn is still the same one.
-				log.choices = append(log.choices, result)
 			}
-			results[toolCall.ID] = result
 		}
 
-		for _, toolCall := range response.Message.ToolCalls {
-			*messages = append(*messages, llm.Message{
-				Role:       llm.RoleTool,
-				ToolCallID: toolCall.ID,
-				Name:       toolCall.Function.Name,
-				Content:    results[toolCall.ID],
-			})
-		}
-
-		if reply.Prose == "" {
-			// Queries: their results above give the DM what it needs to narrate
-			// next round. This is the round the turn is allowed a finite number of.
-			if len(response.Message.ToolCalls) > 0 {
+		if len(response.Message.ToolCalls) > 0 {
+			*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+			// Rolls and edits are not the turn's output; the prose that follows
+			// them is. A menu is the exception — the player has answered, and the
+			// DM has to be given the answer.
+			if prose == "" || answeredChoice {
 				continue
 			}
+		}
+
+		if prose == "" {
 			// A reply with neither calls nor prose says nothing at all.
 			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: emptyReplyDemand})
 			continue
 		}
 
-		// The player just picked an option, so the turn is not over: handing
-		// back to the prompt now would leave their answer unanswered, and the
-		// collapse below would drop it from history unread.
-		if answeredChoice {
-			continue
-		}
-
-		if len(refused) > 0 {
-			s.correctState(chat, messages, refused, &log)
-		}
-
-		// And now the turn is over — and it leaves nothing behind. Every part of
-		// it now has exactly one home: what the engine computes is in the roster,
-		// what only the prose knew is in the narrative store, what happened is in the
-		// archive. The messages are the fourth copy, and the one that used to
-		// grow without bound, so they go.
-		s.recordTurn(playerInput, log)
-		*messages = (*messages)[:turnStart]
 		if debug {
-			fmt.Printf("\033[90m[turn %d folded into the block; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
+			fmt.Printf("\033[90m[turn %d done; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
 		}
 		return
 	}
 
 	// The budget is gone and the last call, the one that had nothing to offer but
-	// the narration, did not produce it. The turn is over and it failed: say so
-	// plainly rather than leaving the player waiting on a scene that is not coming.
-	//
-	// Everything the turn added is dropped. It is half a turn — calls whose
-	// outcome nobody ever read — and carrying it would put the DM in every later
-	// request beside a scene the player was never shown.
-	//
-	// The archive still takes it, marked for what it was. A gap in the record is
-	// worth being able to explain, and the timeline leaves unnarrated turns out
-	// anyway, so nothing the player never saw reaches the DM through it.
-	s.recordTurn(playerInput, log)
+	// the narration, did not produce it. Everything the turn added is dropped: it
+	// is half a turn, and carrying it would leave the DM answering later requests
+	// beside a scene the player was never shown.
 	*messages = (*messages)[:turnStart]
 	fmt.Printf("\nError: the DM did not narrate this turn within %d calls. Try rephrasing your action.\n", maxTurnRequests)
-}
-
-// correctState is the one extra round a turn can cost, and it is only ever spent
-// on a block the engine refused part of. The scene is already on the player's
-// screen, so nothing here is at risk except how much of it the engine ends up
-// holding: a refusal that goes uncorrected leaves the engine a little behind the
-// fiction, and the next turn's block is what puts it right.
-//
-// Only the state block is read back. Health arrives as tags inside prose, and
-// prose is what this round is explicitly not asking for — a wound whose tag was
-// refused is lost rather than risked being applied twice, which is the safer of
-// the two ways to be wrong about a wound.
-func (s *session) correctState(chat chatRound, messages *[]llm.Message, notes []string, log *turnLog) {
-	// Announced up front in debug, because what follows otherwise reads exactly
-	// like an ordinary turn's request and response — same generic labels — and
-	// is not: the player has already been shown the scene, this round is asked
-	// to write no prose at all, and an empty reply from it means the refusal was
-	// right rather than that the model produced nothing.
-	if debug {
-		fmt.Println("\033[90m[correcting the state block the engine refused; nothing here reaches the player]\033[0m")
-	}
-
-	// Rebuilt rather than reused: the turn's own block has moved things since
-	// the one above it was rendered, and a correction written against a stale
-	// roster is how a retry lands an item on somebody who has just walked out.
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: correctionDemand(notes)})
-
-	response, err := chat(withEngineState(s.engineState(), *messages), nil)
-	if err != nil {
-		fmt.Printf("\nLLM error while correcting the turn's state: %v\n", err)
-		return
-	}
-	*messages = append(*messages, response.Message)
-
-	reply := parseResponse(response.Message.Content)
-	events, remaining := s.applyState(reply.State)
-	log.events = append(log.events, events...)
-	if debug && reply.State == "" {
-		fmt.Println("\033[90m[correction: empty block — the refusal stands, nothing needed fixing]\033[0m")
-	}
-	for _, note := range remaining {
-		if debug {
-			fmt.Printf("\033[90m[uncorrected: %s]\033[0m\n", note)
-		}
-	}
-}
-
-// correctionDemand asks for the refused lines back and nothing else. Saying that
-// the scene is closed is the load-bearing part: without it the DM answers a
-// question about bookkeeping by narrating again, into a channel that is no
-// longer open.
-func correctionDemand(notes []string) string {
-	var b strings.Builder
-	b.WriteString("The player has read this turn and the scene is closed. Nothing you write now reaches them, so do not narrate, do not retell the scene, and write no prose at all.\n\nThe engine took the rest of your <state> block and refused these lines:\n\n")
-	for _, note := range notes {
-		b.WriteString("- ")
-		b.WriteString(note)
-		b.WriteString("\n")
-	}
-	b.WriteString("\nWORLD STATE above is current as of this moment — everything that was accepted is already in it. Send one <state> block containing only what was refused, corrected. If a refusal was right and there is nothing to record, send an empty block.")
-	return b.String()
-}
-
-// recordTurn files the turn that just ended. A turn counts as narrated if the
-// player was shown anything at all: a turn that posed a choice, took an answer
-// and then ran out of budget did reach them, and calling that unnarrated would
-// drop prose they have already read.
-func (s *session) recordTurn(playerInput string, log turnLog) {
-	input := playerInput
-	if input == "" {
-		input = "(the scene opens)"
-	}
-	for _, choice := range log.choices {
-		input += " → " + choice
-	}
-	s.archive.Record(archive.Turn{
-		Number:      s.turn,
-		PlayerInput: input,
-		Events:      log.events,
-		Prose:       strings.Join(log.shown, "\n\n"),
-		Unnarrated:  len(log.shown) == 0,
-	})
-}
-
-// turnLog is what a turn gathers as it runs, and the only thing that outlives
-// it. The three move together from the moment they are filled to the moment the
-// archive takes them, which is why they travel as one thing: a turn can narrate
-// more than once, and each part accumulates across rounds rather than being
-// settled by any single one of them.
-type turnLog struct {
-	events  []archive.Event
-	choices []string
-	shown   []string
-}
-
-// withEngineState returns the messages a request is actually made of. The two
-// that never change lead, so they stay byte-identical and cached for the whole
-// session; the block follows them, rebuilt each turn; and everything this turn
-// has said comes after. Nothing here is stored — the block is assembled for the
-// request and thrown away, which is what keeps it from ever going stale.
-func withEngineState(block string, msgs []llm.Message) []llm.Message {
-	pinned := pinnedMessages
-	if len(msgs) < pinned {
-		pinned = len(msgs)
-	}
-	request := make([]llm.Message, 0, len(msgs)+1)
-	request = append(request, msgs[:pinned]...)
-	request = append(request, llm.Message{Role: llm.RoleSystem, Content: block})
-	return append(request, msgs[pinned:]...)
-}
-
-// resultHeadline is the first line of a tool result: the engine's own account of
-// what the call did. What follows it is the character's state, which the roster
-// now states in full every turn and which would only be a second copy here.
-func resultHeadline(result string) string {
-	if i := strings.IndexByte(result, '\n'); i >= 0 {
-		return result[:i]
-	}
-	return result
-}
-
-// recall answers the DM's lookup into the archive. It is handled here rather
-// than among the actions because it changes nothing in the world: it reads the
-// record, and the answer lives exactly as long as the turn that asked for it.
-func (s *session) recall(call llm.ToolCall) string {
-	var args struct {
-		Entity       string `json:"entity"`
-		Query        string `json:"query"`
-		Turn         int    `json:"turn"`
-		To           int    `json:"to"`
-		IncludeProse bool   `json:"include_prose"`
-		Limit        int    `json:"limit"`
-	}
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		return fmt.Sprintf("Error: could not read your recall (%v). Ask again with an entity, a query or a turn.", err)
-	}
-	if args.Entity == "" && args.Query == "" && args.Turn == 0 {
-		return "Error: recall needs an entity id, a query or a turn number."
-	}
-	// An entity id is matched literally against what the engine minted, so it is
-	// normalised the same way every other id in the archive was.
-	return s.archive.Lookup(archive.Query{
-		Entity:       strings.ToLower(strings.TrimSpace(args.Entity)),
-		Keyword:      args.Query,
-		From:         args.Turn,
-		To:           args.To,
-		IncludeProse: args.IncludeProse,
-		Limit:        args.Limit,
-	})
 }
 
 // retryDelay is how long to wait before trying a failed request again: longer
@@ -1410,18 +908,18 @@ func retryDelay(failures int) time.Duration {
 // narrationDemand rides on the last call a turn is allowed. The tools are gone by
 // the time the DM reads it, so the message says why rather than leaving it to
 // discover that its next call does not exist.
-const narrationDemand = "Stop resolving and narrate. This is the last call of the turn: the checks, the dice and the rest of the engine are no longer available to you, and the player has been shown nothing since their last line. Narrate the turn now from what you already know—the results above are what happened, and anything still unsettled is yours to settle in the fiction. Write the scene as ordinary prose, mark any wounds in it with the event tags, and close with the <state> block for what the prose left true. If this response does not carry the narration, the player loses the turn."
+const narrationDemand = "Stop resolving and narrate. This is the last call of the turn: the dice and the file tools are no longer available to you, and the player has been shown nothing since their last line. Narrate the turn now from what you already know — the results above are what happened, and anything still unsettled is yours to settle in the fiction. Anything the sheet still owes can be written next turn; the player cannot be given this turn back."
 
 // emptyReplyDemand answers a reply that said nothing at all. It costs a call of
 // the turn's budget either way, so it says what was missing rather than resending
 // an identical context and hoping for a different answer.
-const emptyReplyDemand = "That reply was empty: no prose, no calls, nothing the player can read. The turn is not over until you narrate it. Write the scene now as ordinary prose—that text is what the player reads—and close with the <state> block for anything it left true."
+const emptyReplyDemand = "That reply was empty: no prose, no calls, nothing the player can read. The turn is not over until you narrate it. Write the scene now as ordinary prose — that text is what the player reads."
 
 const llmRequestTimeout = time.Minute
 
 // chat sends one request and prints the reply's text. It is for the setup
 // phases, where the LLM is talking to the user as itself. Gameplay prints its
-// own prose, after the state block riding under it has been cut away.
+// own prose.
 func chat(client *llm.Client, model string, messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	return chatInternal(client, model, messages, tools, true)
 }

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"fudge/rules"
 )
 
 // DefaultLanguage is what the player reads unless they ask for another one. It
@@ -88,7 +86,7 @@ func LanguageSection(language string) (string, error) {
 // The language directive goes last because it is the one rule that has to
 // survive everything above it: the files it overrides are themselves written in
 // English, and the setting between them is a list of English slugs.
-func LoadPrompt(setting *rules.SettingInfos, language string, filenames ...string) (string, error) {
+func LoadPrompt(setting string, language string, filenames ...string) (string, error) {
 	always, err := os.ReadFile("system-prompts/always.md")
 	if err != nil {
 		return "", fmt.Errorf("failed to load always.md: %w", err)
@@ -106,10 +104,11 @@ func LoadPrompt(setting *rules.SettingInfos, language string, filenames ...strin
 		b.Write(content)
 	}
 
-	// Append context if provided
-	if setting != nil {
+	// Append the setting's own prose if there is any. It is a description now,
+	// not a table of slugs: nothing validates what the DM invents inside it.
+	if setting != "" {
 		b.WriteString("\n## Setting Information:\n\n")
-		b.WriteString(setting.ToString())
+		b.WriteString(setting)
 	}
 
 	languageSection, err := LanguageSection(language)

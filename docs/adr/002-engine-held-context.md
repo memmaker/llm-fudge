@@ -1,5 +1,5 @@
 ADR 002: Engine-held context — state ledger, roster and archive
-Status: Accepted
+Status: Superseded by ADR 006
 
 Context
 - Everything the DM remembers currently lives in the message array and grows with the session. Two things accumulate.

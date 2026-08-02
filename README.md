@@ -1,14 +1,19 @@
 # Fudge
 
-A terminal RPG where an LLM is the Dungeon Master and a Go engine holds the
-rules. The model never rolls dice, never does arithmetic, and never remembers
-anything on its own: it narrates, and calls into the engine for everything a
-result depends on. Between turns, the whole of what it knows is rebuilt from
-the engine's own record — not carried forward as conversation history — so the
-game stays consistent no matter how long it runs.
+A terminal RPG where an LLM is the Dungeon Master. The model narrates, plays
+every NPC, applies the rules, and keeps the books — all of them, in one markdown
+file it writes itself. The Go harness rolls the dice, holds the file, and builds
+the context. It holds no world of its own.
 
-The ruleset is [Fudge](https://fudgerpg.com/): a light, generic system built
-on a seven-level trait scale (Terrible to Superb) rather than numeric stats.
+The ruleset is [Fudge](https://fudgerpg.com/): a light, generic system built on
+a seven-level trait scale (Terrible to Superb) rather than numeric stats.
+
+This is the far end of an experiment about where the line between model and
+harness belongs. Earlier versions of this repo put the world in Go — an entity
+model, item conservation, a validated state diff — and
+[ADR 006](docs/adr/006-stateless-engine-llm-owned-charsheet.md) deletes all of
+it on purpose. If you are looking for that design, it is in ADRs 001-005 and in
+the git history.
 
 ## Quick start
 
@@ -17,16 +22,10 @@ go build -o fudge .
 ./fudge
 ```
 
-You'll be walked through picking or describing a setting, an adventure, and a
-character, then play begins. Type actions in plain English; the DM narrates.
+You'll pick a setting and an adventure, then the DM makes your character with
+you in conversation and opens the first scene. Type actions in plain English.
 
 An API key is required — see [Configuration](#configuration) below.
-
-Each turn also overwrites a few plain files in the working directory, for
-whatever wants to read the current state without parsing terminal output:
-`charsheet.txt` (the player character's sheet), `narration.txt` (the last
-scene's prose), and — with `-img-gen`, or on demand via `/image` — `img-gen.md`
-(an image prompt for the current scene).
 
 ## CLI usage
 
@@ -36,10 +35,10 @@ scene's prose), and — with `-img-gen`, or on demand via `/image` — `img-gen.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `-debug` | off | Show tool calls, their arguments and results, and the raw reply — `<state>` block and event tags included — instead of the cleaned-up prose a player sees. |
-| `-img-gen` | off | Ask the DM for an image prompt each turn (written to `img-gen.md`) alongside the narration. |
-| `-lang` | English | Language the player reads: narration, menus, setup. A name or ISO code (`German`, `Deutsch`, `de`). Engine data (ids, setting files) stays English regardless. |
-| `-script` | — | Play non-interactively from a file of answers, one per line, instead of a live terminal. See [Scripted play](#scripted-play). |
+| `-debug` | off | Show tool calls, their arguments and results, and what each reply cost. |
+| `-img-gen` | off | Ask the DM for an image prompt each turn, written to `img-gen.md`. |
+| `-lang` | English | Language the player reads: narration, menus, setup. A name or ISO code (`German`, `Deutsch`, `de`). Filenames and the character sheet stay English. |
+| `-script` | — | Play non-interactively from a file of answers, one per line. See [Scripted play](#scripted-play). |
 
 ### In-game commands
 
@@ -49,10 +48,11 @@ Typed at the `>` prompt during play, anything starting with `/`:
 | --- | --- |
 | `/help` | List these commands. |
 | `/quit`, `/exit` | End the session. |
-| `/context` | Dump the DM's current context — world state, timeline, archive, tool schemas, and the raw message list — to `context.txt`. The tool for inspecting what a turn actually costs and what the model actually sees. |
-| `/dump-state` | Write the engine's ground-truth world state (characters, locations, items) to `state-dump.yaml`, unmediated by what the DM believes. Used by the smoke tests under `scripts/smoke/`. |
-| `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session (e.g. `/style Write shorter scenes.`). Bare `/style` clears it. |
-| `/image` | Write an image prompt for the current scene to `img-gen.md` — a one-off request, using the same guidance as `-img-gen`, without turning it on for the rest of the session. Costs one extra LLM call, only when asked for. |
+| `/context` | Dump what a request is actually made of — messages, the pinned character sheet, and the tool schemas — to `context.txt`. |
+| `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session. Bare `/style` clears it. |
+| `/image` | Write an image prompt for the current scene to `img-gen.md`. One extra LLM call, only when asked for. |
+| `/inv` | Tell the DM its character sheet has fallen behind and to bring it current. |
+| `/milestone` | Archive the session so far and continue from a summary. See below. |
 
 ### Scripted play
 
@@ -63,14 +63,85 @@ every prompt the game would otherwise ask interactively:
 ./fudge -script scripts/dryfall.txt
 ```
 
-One answer per line; `#` comments and blank lines are skipped. A menu (choosing
-a setting, an adventure, a creation method) is answered by naming the option
-text exactly; anything else is typed as-is. `-script -` reads the script from
-stdin. Output goes to stdout exactly as a live session would print it, with
-terminal control codes (cursor moves, screen clears, the spinner) suppressed
-since there's no terminal to move a cursor on. The session ends cleanly when
-the script runs out of lines. See [scripts/dryfall.txt](scripts/dryfall.txt)
-for a worked example.
+One answer per line; `#` comments and blank lines are skipped. A menu is
+answered by naming the option text exactly; anything else is typed as-is.
+`-script -` reads from stdin. The session ends cleanly when the script runs out.
+See [scripts/dryfall.txt](scripts/dryfall.txt) for a worked example.
+
+## How a turn works
+
+Each player line becomes a turn. The DM gets up to six requests to finish it:
+
+1. **Roll**, if anything is uncertain — one `check` call, and no prose in that
+   response. The result comes back on the next one.
+2. **Write it down.** Whatever the outcome made true goes into `charsheet.md`
+   through `edit_file`, one edit per thing that changed.
+3. **Narrate.** Ordinary prose, exactly what the player reads.
+
+The last request has every tool withdrawn and exists purely to force a narration
+if the earlier ones didn't produce one — a turn always ends with the player
+having read something.
+
+## What the DM sees
+
+Three blocks, and nothing else:
+
+- **Ground rules** — the system prompt: the Fudge reference, the DM's job, the
+  setting's prose, the language directive.
+- **The chat** — the whole conversation, kept for the session. Unlike earlier
+  versions of this project, nothing is folded away between turns.
+- **The character sheet** — `charsheet.md`, pinned last, re-read from disk for
+  every request so exactly one copy is present and it is never stale.
+
+`charsheet.md` is the entire world: the character, where they are, who is with
+them, and every fact the game has established. Nothing parses it. It is also the
+save file — the session directory is the save.
+
+### Milestones
+
+The chat grows. `/milestone` is how it stops: the DM writes a full account of
+the stretch just played to `milestone-NN.md`, appends a line to the sheet's
+history, and the harness archives the raw chat beside it and clears the
+conversation. Play resumes from the last narration, so the DM's voice carries
+across the seam.
+
+Compaction is the player's call, not a threshold the harness trips.
+
+## The engine
+
+What remains of the Go rules is one call:
+
+```go
+rules.Check(level, vs, modifier, rng)
+```
+
+`level` is a ladder position from the sheet. `vs` is either a difficulty
+(`Average`, `Very hard`) for an unopposed action, or an opponent's level
+(`Good`) for an opposed one — in Fudge both sit on the same scale, so opposed
+and unopposed are the same call, and which one was meant is told by which
+vocabulary was used. It returns a relative degree.
+
+The RNG is seeded, so a roll is fair and testable. A *session* does not replay:
+the world is prose written by a model, and the same inputs will not reproduce
+it. That was true of ADR 001's design and is not true of this one.
+
+## Files a game writes
+
+```
+saves/0007-garret-dryfall/
+  charsheet.md              the world, written by the DM
+  milestone-01.md           the DM's account of a stretch of play
+  milestone-01-raw.md       the raw chat behind it, written by the harness
+```
+
+The DM reaches these by bare filename and cannot address anything outside the
+directory. Writes are limited to a list the harness controls; reads are open
+within it, plus `charsheet_template.md` at the repo root, which is read once at
+the start to shape the first sheet.
+
+Alongside those, the working directory gets `narration.txt` (the last scene) and
+— with `-img-gen` or `/image` — `img-gen.md`, for whatever wants to read the
+current scene without parsing terminal output.
 
 ## Configuration
 
@@ -80,95 +151,34 @@ configured independently of this project:
 - An API key, via `OPENAI_API_KEY` in the environment or a `.apikey` file in
   the working directory.
 - Which model and provider to use, via `llm_model.rec` in the working
-  directory (falls back to `~/.config/gollum/config.rec`). See that file in
-  this repo for the format.
-
-## How a turn works
-
-Each player line becomes a turn. The DM gets up to five requests to finish it:
-
-1. **Resolve.** If anything is uncertain — a check, an attack, a table roll —
-   the DM calls into the engine and writes no prose yet. Results come back on
-   the next request.
-2. **Narrate.** Ordinary prose, exactly what the player reads, with wounds and
-   deaths marked inline as tags (`<damage target="..." severity="hurt"/>`).
-3. **Close with `<state>`**: a YAML block declaring what the prose left true —
-   an item that changed hands, a mood that shifted, a door now barred. The
-   engine reads it as a diff against what it already knows, not as commands.
-
-The fifth request has every tool withdrawn and exists purely to force a
-narration if the first four didn't produce one — a turn always ends with the
-player having read something.
-
-Between turns, nothing is carried in message history. What the DM knows next
-turn is rebuilt from three things the engine actually holds:
-
-- **World state** — every character, item and location, current, under a
-  permanent id.
-- **Timeline** — the last several turns: what was typed, what the engine
-  resolved (dice, tables, attacks). Not what the state block changed — that's
-  already current above.
-- **Recent prose** — the last scene, verbatim, so the DM's own voice carries
-  forward.
-
-Anything older lives in the archive and is one `recall` call away, indexed by
-which entities took part in each turn.
-
-The full design rationale — why state is declarative rather than a command
-grammar, why health is the one exception (an event tag, not a state field),
-why ids are flat rather than nested — is in
-[docs/adr/](docs/adr/) as a sequence of decision records, each superseding
-parts of the ones before it as the design evolved. Start with
-[001](docs/adr/001-deterministic-llm-rpg-engine.md) for the shape of the whole
-thing, or [docs/glossary.md](docs/glossary.md) for terminology.
+  directory (falls back to `~/.config/gollum/config.rec`).
 
 ## Project layout
 
 ```
-main.go                    CLI entry point, setup flow, the turn loop
-engine_state.go            Renders the WORLD STATE / TIMELINE / RECENT PROSE
-                            block the DM reads every turn
-worldstate.go               Applies the DM's <state> block back into the world
-response.go                 Splits a reply into prose, state block, event tags
+main.go                     CLI entry point, setup flow, the turn loop,
+                             /milestone and the other meta commands
+session.go                  The session directory, the file tools and their
+                             confinement, and the pinned charsheet block
 tools.go                    Every tool the DM can call, and their handlers
-tools_combat_test.go, ...   Tests, one file per area (combat, inventory,
-                            locations, phases, state) alongside the code
 
-rules/                      The deterministic engine: no LLM, no I/O.
-  rules.go, state.go          Character, Wounds, checks and rolls
-  combat.go                   Opposed/unopposed attacks, damage, armor
-  location.go                 Locations, containment, movement
-  equipment.go                 Weapons, armor, ammunition
-  setting.go                   Loading a setting's species/attributes/etc.
-  tables.go, tables_data.go    Random tables (npc-reaction, weather, ...)
-  yaml.go                      The block's YAML dialect
+rules/check.go              The whole engine: the ladder, 4dF, one check
 
-archive/                    The turn-by-turn record: what was played,
-                            searchable by entity or keyword, source for recall
-narrative/                 The `narrative` property store — the DM's own
-                            facts (mood, goals, rumors) keyed by entity id
+prompts/                    Assembles a system prompt from always.md + the
+                             setting + the language directive
+system-prompts/             The prompt text: always.md (the Fudge reference),
+                             dm.md (the DM's job), and the setup prompts
 
-prompts/                   Assembles a system prompt from always.md + the
-                            setting + the language directive
-system-prompts/            The actual prompt text: always.md (rules
-                            reference, output constraints), dm.md (the DM's
-                            job), character-*.md (creation flows), etc.
-
-settings/<name>/            One folder per playable setting: description.md,
-  adventures/                 species/attributes/skills/gifts/faults as
-                               .rec files, and pre-written adventures under
-                               adventures/. Ship with deadlands,
-                               medieval-fantasy, neon-grid, starlight-empires,
-                               everyday-modern.
+settings/<name>/            One folder per playable setting: description.md
+  adventures/                and pre-written adventures. Ships with deadlands,
+                             medieval-fantasy, neon-grid, starlight-empires,
+                             everyday-modern.
 
 ui/                         Terminal I/O: readline input, choice menus,
-                            spinner, text wrapping — and where scripted
-                            (-script) input is threaded in instead
+                             spinner, text wrapping, scripted input
 
-docs/                       ADRs (docs/adr/), a glossary, and longer specs
+docs/                       ADRs (docs/adr/), the glossary, the Fudge rules
 scripts/                    Example -script files for non-interactive runs
-recfile/                    The .rec (GNU recutils-style) file reader used
-                            for settings and species/attribute data
 ```
 
 ## Testing
@@ -177,29 +187,6 @@ recfile/                    The .rec (GNU recutils-style) file reader used
 go test ./...
 ```
 
-Tests sit next to the code they cover, one file per concern rather than one
-per source file — `tools_combat_test.go`, `tools_inventory_test.go`, and so on
-for `tools.go`. For an end-to-end check of an actual session, run a scripted
-game and inspect `/context`'s output rather than reading assertions:
-
-```bash
-./fudge -script scripts/dryfall.txt
-```
-
-### Smoke tests
-
-`scripts/smoke/` runs scripted sessions against a real model and checks the
-engine-verifiable facts: no crash, the expected engine calls fired, and none
-of the engine's own `<state>` consistency checks (dangling references, ids
-reused, species outside the setting) tripped. It does not assert on prose,
-which the model is free to vary.
-
-```bash
-scripts/smoke/run.sh              # every fixture in the directory
-scripts/smoke/run.sh core-mechanics
-```
-
-Each `<name>.txt` is a `-script` fixture ending in `/dump-state` (writes the
-engine's ground truth to `state-dump.yaml`) and `/quit`. Each `<name>.expect`
-lists `grep -E` patterns checked against the debug log plus the state dump —
-a `!`-prefixed pattern must be absent, everything else must be present.
+The tests cover the two things with logic in them: the check, and the file
+tools' confinement. Everything else is a conversation with a model, and is
+checked by playing it.

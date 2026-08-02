@@ -1,9 +1,0 @@
-# A container entity got created for the pack, and something landed in it.
-type: container
-
-# The engine's own consistency checks: no entity or move it refused.
-!\[state: .*could not be created
-!\[state: .*was skipped
-!\[state: .*was left alone
-!\[state: .*cannot hold anything
-!\[uncorrected:

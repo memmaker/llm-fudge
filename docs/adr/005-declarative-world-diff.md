@@ -1,5 +1,5 @@
 ADR 005: Declarative world diff, prose as the response body, and one call per turn
-Status: Accepted
+Status: Superseded by ADR 006
 Supersedes: ADR 004 §4 (the two mutation lanes and the typed-tool half of the split), §5 (the `world_update` JSON operations grammar), §6 (structural containment of the DM's writes to the `narrative` map, and the `engineOwned` denylist that backed it), and the engine-assigned half of §1 (IDs are now model-minted and engine-validated). Leaves ADR 004 §1's flat entity map, §2 (item IDs), §3 (the kernel and the shared keyspace), §7 (the retired ledger), §8 and §9 (entity-indexed archive and recall) intact, and all of ADR 003 unchanged.
 
 Context
