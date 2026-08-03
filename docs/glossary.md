@@ -19,6 +19,10 @@ which is where to look when reading old commits.
   Emitted whole by the LLM in every World update block and written by the
   harness. Nothing parses it beyond the character's name on the first one. It is
   at once the character sheet, the world state, and the save file.
+- Request log: `log/NNNN.md` in the Session directory, one file per call to the
+  model, written only under `-debug`: everything sent, every tool schema sent
+  with it, and everything that came back. Calls made before the Session
+  directory exists are held and written the moment it does.
 - Charsheet log: `charsheet-log.md`, every accepted World update block in order.
   The Charsheet only ever shows the state that survived, so a line that quietly
   stopped being restated would leave no trace anywhere else. It is the one
@@ -53,6 +57,11 @@ which is where to look when reading old commits.
 - Turn: One player line and the DM's answer to it. Two phases: resolve, where
   checks are called, and narrate, which carries both the scene and the World
   update block. A turn ends when the player has read prose.
+- Scene: Everything the DM wrote for the player in one Turn, in the order it was
+  written — beside a roll, above a menu, and again once the results are in. The
+  harness discards none of it: prose arriving in a response it was not expected
+  in is still prose written for the player. Only the World update block is cut,
+  because that one is addressed to the harness.
 - World update block: The whole Charsheet, emitted inside a tag in the same
   response as the narration, and written to disk by the harness. It replaces the
   Record phase: the sheet is restated in full every turn rather than edited, so

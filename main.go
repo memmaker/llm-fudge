@@ -858,21 +858,24 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
+	s.spoken = nil
 	told, narrated := s.resolvePhase(chat, messages)
 	if !narrated {
-		told, narrated = s.narrate(chat, messages)
+		told, _ = s.narrate(chat, messages)
 	}
-	if !narrated {
-		// Everything the turn added is dropped: it is half a turn, and carrying
-		// it would leave the DM answering later requests beside a scene the
-		// player was never shown.
+	s.showScene(told.prose, told.img)
+
+	// A turn that reached the player is a turn, whichever phase the words came
+	// out of. Only one that said nothing at all is half a turn, and carrying it
+	// would leave the DM answering later requests beside a scene the player was
+	// never shown.
+	if len(s.spoken) == 0 {
 		*messages = (*messages)[:turnStart]
 		fmt.Println("\nError: the DM did not narrate this turn. Try rephrasing your action.")
 		return
 	}
 	s.carried = ""
 
-	s.showScene(told.prose, told.img)
 	s.recordSheet(told)
 
 	if debug {
@@ -945,19 +948,13 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 			return told, told.prose != ""
 		}
 
-		// Prose written in the same response as a tool call was written before
-		// the call came back, whatever it claims happened, and so was any block
-		// beside it. dm.md asks for the roll on its own, and this is where that
-		// is made true rather than trusted: both are dropped and phase two
-		// writes the scene from what actually came up. Observed in play — the DM
-		// narrated a successful sneak and then rolled for it.
-		//
-		// A menu is the one exception. user_choice blocks on the player, and the
-		// question that belongs above the options is the prose beside the call,
-		// so it has to be on screen before they are.
-		if told.prose != "" && hasCall(response.Message.ToolCalls, "user_choice") {
-			s.showScene(told.prose, told.img)
-		}
+		// Prose beside a tool call reaches the player like any other. It is
+		// written before the call comes back, so it can claim an outcome the
+		// dice then contradict — dm.md asks for the roll on its own for exactly
+		// that reason — but a paragraph the model wrote for the player is not
+		// the harness's to throw away, and a menu's question is only ever
+		// written here, beside the call it belongs above.
+		s.showScene(told.prose, told.img)
 		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
 	}
 
@@ -1008,26 +1005,23 @@ func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene 
 	return told
 }
 
-// hasCall reports whether the response reached for a particular tool.
-func hasCall(calls []llm.ToolCall, name string) bool {
-	for _, call := range calls {
-		if call.Function.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
 // showScene puts the prose in front of the player and leaves it where the image
 // generator can find it.
+//
+// Everything the DM says in one turn accumulates here, in the order it was
+// said: a turn can speak more than once — beside a roll, above a menu, and
+// again once the results are in — and the scene is all of it, not the last
+// paragraph of it. Nothing the model wrote for the player is dropped for
+// arriving in a response the harness did not expect it in.
 func (s *session) showScene(prose, img string) {
 	if prose == "" {
 		return
 	}
 	fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
 	fmt.Println()
-	s.lastNarration = prose
-	if err := os.WriteFile(narrationFile, []byte(prose), 0o644); err != nil {
+	s.spoken = append(s.spoken, prose)
+	s.lastNarration = strings.Join(s.spoken, "\n\n")
+	if err := os.WriteFile(narrationFile, []byte(s.lastNarration), 0o644); err != nil {
 		fmt.Println("\nNarration file error:", err)
 	}
 	// A missing prompt is not worth interrupting play over: the player has read
@@ -1102,6 +1096,9 @@ func (s *session) chatInternal(messages []llm.Message, tools []llm.Tool, printOu
 		ReasoningEffort: llm.ReasoningEffortNone,
 	})
 	stopSpinner()
+	// Every request goes through here, so this is the one place that sees both
+	// halves of an exchange and can write them down together.
+	s.logRequest(messages, tools, response, err)
 	if err != nil {
 		return llm.Response{}, err
 	}

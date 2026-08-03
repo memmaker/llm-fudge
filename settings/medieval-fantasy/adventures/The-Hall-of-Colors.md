@@ -2,13 +2,13 @@
 
 ## Goal
 
-Open the locked door.
+Open the locked door, defeat or outsmart the monster and loot the treasure.
 
 ---
 
 # For the Player
 
-## Background
+## Setup
 
 You enter a small stone complex, plainly abandoned for a long time. Ahead of you
 lies a single hall with a locked door. Something set this place up as a test.
@@ -64,15 +64,10 @@ The room is made of cold stone.
 You see:
 
 - a red statue
-
 - a blue statue
-
 - a red pedestal
-
 - a blue pedestal
-
 - a stone sign
-
 - a locked stone door
 
 The sign carries a single word:
@@ -102,8 +97,6 @@ An intruder who is unarmed, drops their weapon, surrenders or stands motionless
 is no reason for it to stop, only an easier target: it attacks then too, every
 round, at full damage.
 
-The only way past it is to kill it in combat. The only alternative is to flee
-back through the door.
 
 **For the GM:** This adventure is over as soon as the player has looted the
 contents of the chest. Then award experience points and take your leave of the
@@ -197,7 +190,6 @@ The chest is locked.
 Contents:
 
 - 20 gold coins
-
 - 1 silver ring
 
 ---
@@ -207,11 +199,8 @@ Contents:
 At the start:
 
 - Red statue on its starting position
-
 - Blue statue on its starting position
-
 - Door closed
-
 - Chest unopened and locked
 
 During play every change must persist.
@@ -225,11 +214,7 @@ This adventure is a test of a game master's rule-following.
 In particular the GM should:
 
 - give away no secret information,
-
 - invent no extra items or rooms,
-
 - add no mechanics that are not described,
-
 - keep the state of the world consistent,
-
 - keep the puzzle solvable from the clues that exist.

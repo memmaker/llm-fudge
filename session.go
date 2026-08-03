@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -29,6 +30,9 @@ const (
 	// directory. It is inlined into the DM prompt to shape the first sheet, and
 	// after that the sheet is its own template.
 	charsheetTemplate = "charsheet_template.md"
+	// requestLogDir holds one file per request made to the model, written only
+	// under -debug.
+	requestLogDir = "log"
 	// savesRoot holds one directory per played session.
 	savesRoot = "saves"
 	// narrationFile and imagePromptFile are written in the working directory for
@@ -57,6 +61,15 @@ type session struct {
 	turn          int
 	milestones    int
 	lastNarration string
+	// spoken is everything the player has read this turn, in the order they
+	// read it. A turn can speak more than once, and the scene is all of it.
+	spoken []string
+	// requests numbers every call made to the model, for the debug log.
+	requests int
+	// pendingLogs holds debug transcripts made before the session directory
+	// existed — the setup phases and character creation, which are exactly the
+	// requests worth reading when the opening of a game goes wrong.
+	pendingLogs []pendingLog
 	// carried is the harness's only way of correcting the DM, and it never
 	// spends a request to do it: whatever it has to say rides in on the next
 	// player line. The player never sees it.
@@ -139,6 +152,86 @@ func (s *session) deriveDir(sheet string) error {
 	return err
 }
 
+// pendingLog is one debug transcript waiting for a directory to be written to.
+type pendingLog struct {
+	name string
+	body string
+}
+
+// logRequest writes one complete exchange with the model — everything sent,
+// everything that came back — to its own file under the session directory. It
+// is the whole request, not a summary of it: the debug lines on the terminal
+// say what a reply cost and what it called, and every question that outlives
+// them is about the text nobody printed.
+//
+// Debug only. A game not being debugged has no reason to keep a copy of every
+// token it has ever sent.
+func (s *session) logRequest(messages []llm.Message, tools []llm.Tool, response llm.Response, callErr error) {
+	if !debug {
+		return
+	}
+	s.requests++
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "# request %04d, turn %d\n\nmodel: %s\nmessages: %d\ntools: %d\n\n",
+		s.requests, s.turn, s.model, len(messages), len(tools))
+
+	if len(tools) > 0 {
+		b.WriteString("## Tools sent\n\n")
+		for _, tool := range tools {
+			encoded, err := json.Marshal(tool)
+			if err != nil {
+				continue
+			}
+			b.Write(encoded)
+			b.WriteString("\n\n")
+		}
+	}
+
+	b.WriteString("## Messages sent\n\n")
+	b.WriteString(transcript(messages))
+
+	b.WriteString("## Response\n\n")
+	switch {
+	case callErr != nil:
+		fmt.Fprintf(&b, "error: %v\n", callErr)
+	default:
+		b.WriteString(transcript([]llm.Message{response.Message}))
+		u := response.Usage
+		fmt.Fprintf(&b, "usage: in=%d out=%d total=%d\n", u.InputTokens, u.OutputTokens, u.TotalTokens)
+	}
+
+	s.writeLog(fmt.Sprintf("%04d.md", s.requests), b.String())
+}
+
+// writeLog queues one transcript and writes everything queued, which is the
+// same thing except before the session directory exists.
+func (s *session) writeLog(name, body string) {
+	s.pendingLogs = append(s.pendingLogs, pendingLog{name: name, body: body})
+	s.flushLogs()
+}
+
+// flushLogs empties the queue onto disk. It is called again the moment the
+// session directory is created, because the requests made before that — the
+// setup phases and character creation — are exactly the ones worth reading when
+// a game fails to start, and nothing else would ever come back for them.
+func (s *session) flushLogs() {
+	if s.dir == "" || len(s.pendingLogs) == 0 {
+		return
+	}
+	dir := filepath.Join(s.dir, requestLogDir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Println("\nRequest log error:", err)
+		return
+	}
+	for _, held := range s.pendingLogs {
+		if err := os.WriteFile(filepath.Join(dir, held.name), []byte(held.body), 0644); err != nil {
+			fmt.Println("\nRequest log error:", err)
+		}
+	}
+	s.pendingLogs = nil
+}
+
 // writeCharsheet is the sheet's only writer. Every accepted block is also
 // appended to a log beside it: the sheet shows the latest state and nothing
 // else, so a line that quietly stopped being restated would otherwise vanish
@@ -172,6 +265,7 @@ func (s *session) createDir(root, character, adventure string) (string, error) {
 		return "", err
 	}
 	s.dir = dir
+	s.flushLogs()
 	return dir, nil
 }
 

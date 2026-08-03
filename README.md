@@ -42,7 +42,7 @@ An API key is required — see [Configuration](#configuration) below.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `-debug` | off | Show tool calls, their arguments and results, and what each reply cost. |
+| `-debug` | off | Show tool calls, their arguments and results, and what each reply cost — and write every request and response in full to `log/` in the session directory. |
 | `-img-gen` | off | Ask the DM for an image prompt each turn, written to `img-gen.md`. |
 | `-script` | — | Play non-interactively from a file of answers, one per line. See [Scripted play](#scripted-play). |
 
@@ -77,13 +77,19 @@ See [scripts/dryfall.txt](scripts/dryfall.txt) for a worked example.
 
 Each player line becomes a turn, and a turn has two phases:
 
-1. **Resolve.** If anything is uncertain, one `check` call and no prose in that
-   response. The result comes back on the next one. Prose written beside a roll
-   was written before the dice were known, so the harness drops it and the
-   player never sees it.
+1. **Resolve.** If anything is uncertain, one `check` call. The result comes
+   back on the next response. The DM is asked to roll without prose beside it,
+   because prose written beside a roll was written before the dice were known —
+   but if it writes some anyway, the player reads it.
 2. **Narrate.** Ordinary prose, and under it the whole character sheet inside a
    `<world-update>` tag. The harness cuts the block out, writes it to
    `charsheet.md`, and shows the player only what lay outside it.
+
+The scene is everything the DM said across the turn, in the order it said it —
+beside a roll, above a menu, and again once the results are in. Nothing written
+for the player is dropped for having arrived in a response the harness was not
+expecting it in. The world update block is the one exception, and only because
+it is addressed to the harness rather than to them.
 
 That block is the design. The harness used to have no way of telling a scene
 from a status report — its only test was whether a reply called a tool — so any
@@ -146,6 +152,7 @@ saves/0007-garret-dryfall/
   charsheet-log.md          every block in order, so one sheet can be diffed
                              against the next
   milestone-01-raw.md       the chat up to a milestone, archived whole
+  log/0001.md               one file per request, under -debug only
 ```
 
 The DM has no file tools at all. Every one of them lost its consumer when the
@@ -153,7 +160,14 @@ block took over the sheet: the template is inlined into the prompt, the session
 directory is derived from the first block's character name, and a milestone
 writes no summary. A turn offers `check` and `user_choice`, and nothing else.
 
-Alongside those, the working directory gets `narration.txt` (the last scene) and
+`log/NNNN.md` is one complete exchange per file: the model, every message sent,
+every tool schema sent with them, and everything that came back — prose, every
+call with its arguments, and the token usage. The terminal's debug lines say
+what a reply cost and what it called; every question that outlives them is about
+the text nobody printed.
+
+Alongside those, the working directory gets `narration.txt` (the whole of the
+last turn's prose) and
 — with `-img-gen` or `/image` — `img-gen.md`, for whatever wants to read the
 current scene without parsing terminal output.
 

@@ -341,14 +341,15 @@ func TestTheFirstBlockCreatesTheSessionDirectory(t *testing.T) {
 	}
 }
 
-// Anything the DM writes beside a tool call predates the result, and so does any
-// block beside it: both were written before the dice came back.
-func TestProseAndBlockBesideAToolCallAreDiscarded(t *testing.T) {
+// Prose the DM wrote beside a tool call is still prose it wrote for the player,
+// so it reaches them and joins the scene. The block beside it does not reach the
+// sheet: that one is a claim about the world, made before the dice came back.
+func TestProseBesideAToolCallIsKeptAndItsBlockIsNot(t *testing.T) {
 	s, messages := played(t)
 
 	s.processGameTurn(replies(
 		llm.Message{
-			Content: "You slip past the guard unseen." + block("- Location: past the guard"),
+			Content: "You crouch and wait for the guard to pass." + block("- Location: past the guard"),
 			ToolCalls: []llm.ToolCall{{
 				ID:       "1",
 				Function: llm.ToolCallFunction{Name: "check", Arguments: `{"level":"Fair","vs":"Average","what":"sneaking"}`},
@@ -357,8 +358,9 @@ func TestProseAndBlockBesideAToolCallAreDiscarded(t *testing.T) {
 		llm.Message{Content: "The guard turns. You freeze." + block("- Location: the hall, seen")},
 	), &messages, "sneak past")
 
-	if s.lastNarration != "The guard turns. You freeze." {
-		t.Fatalf("the player was shown prose written before the roll: %q", s.lastNarration)
+	want := "You crouch and wait for the guard to pass.\n\nThe guard turns. You freeze."
+	if s.lastNarration != want {
+		t.Fatalf("the turn lost prose:\n got %q\nwant %q", s.lastNarration, want)
 	}
 	sheet, err := os.ReadFile(s.charsheetPath())
 	if err != nil {
@@ -366,6 +368,32 @@ func TestProseAndBlockBesideAToolCallAreDiscarded(t *testing.T) {
 	}
 	if strings.Contains(string(sheet), "past the guard") {
 		t.Fatalf("a block written before the roll reached the sheet: %q", sheet)
+	}
+	if !strings.Contains(string(sheet), "the hall, seen") {
+		t.Fatalf("the scene's own block did not reach the sheet: %q", sheet)
+	}
+}
+
+// A turn that says something and then fails to finish still said it. What the
+// player has read cannot be taken back, so it is kept rather than rolled back
+// into an error message.
+func TestProseFromAFailedTurnIsStillTheScene(t *testing.T) {
+	s, messages := played(t)
+
+	// The DM speaks beside a roll and then goes silent for the rest of the turn.
+	s.processGameTurn(replies(llm.Message{
+		Content: "You put your shoulder to the door.",
+		ToolCalls: []llm.ToolCall{{
+			ID:       "1",
+			Function: llm.ToolCallFunction{Name: "check", Arguments: `{"level":"Fair","vs":"Hard","what":"shoving"}`},
+		}},
+	}), &messages, "shove the door")
+
+	if s.lastNarration != "You put your shoulder to the door." {
+		t.Fatalf("prose the player had already read was thrown away: %q", s.lastNarration)
+	}
+	if len(messages) == 1 {
+		t.Fatal("a turn the player read was rolled back")
 	}
 }
 
@@ -421,8 +449,66 @@ func TestMenuQuestionReachesThePlayerBeforeTheOptions(t *testing.T) {
 		llm.Message{Content: "You take the left door."},
 	), &messages, "look at the doors")
 
-	if s.lastNarration != "You take the left door." {
+	if s.lastNarration != "Two doors. Which?\n\nYou take the left door." {
 		t.Fatalf("lastNarration = %q", s.lastNarration)
+	}
+}
+
+// Under -debug every exchange is written down whole, including the ones made
+// before there was a directory to write them to — a game that fails to start
+// fails in exactly those requests.
+func TestDebugLogsEveryRequestWholeOnceThereIsADirectory(t *testing.T) {
+	debug = true
+	t.Cleanup(func() { debug = false })
+
+	s, _ := playSession(t)
+	s.adventureName = "Dryfall Bridge"
+	s.model = "test-model"
+	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
+
+	// The harness only sees a request through chatInternal, which needs a
+	// client. The log is fed the same way the real path feeds it.
+	s.logRequest(
+		[]llm.Message{{Role: llm.RoleUser, Content: "what do you want to play?"}},
+		gameTools(),
+		llm.Response{Message: llm.Message{
+			Role:    llm.RoleAssistant,
+			Content: "A cautious mercenary, then.",
+			ToolCalls: []llm.ToolCall{{
+				Function: llm.ToolCallFunction{Name: "check", Arguments: `{"level":"Fair"}`},
+			}},
+		}},
+		nil,
+	)
+	if _, err := os.Stat(filepath.Join("saves", requestLogDir)); err == nil {
+		t.Fatal("a log directory was made before the session directory existed")
+	}
+
+	s.processGameTurn(replies(
+		llm.Message{Content: "The hall is cold." + block("- Name: Mira")},
+	), &messages, "let's play")
+
+	entries, err := os.ReadDir(filepath.Join(s.dir, requestLogDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the log holds %d files, want the held request", len(entries))
+	}
+	body, err := os.ReadFile(filepath.Join(s.dir, requestLogDir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"test-model",                    // which model answered
+		"what do you want to play?",     // everything sent
+		`"name":"check"`,                // every tool schema sent with it
+		"A cautious mercenary, then.",   // the prose that came back
+		`[call check] {"level":"Fair"}`, // every call, with its arguments
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the log is missing %q:\n%s", want, body)
+		}
 	}
 }
 
