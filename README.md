@@ -2,8 +2,9 @@
 
 A terminal RPG where an LLM is the Dungeon Master. The model narrates, plays
 every NPC, applies the rules, and keeps the books — all of them, in one markdown
-file it writes itself. The Go harness rolls the dice, holds the file, and builds
-the context. It holds no world of its own.
+file it restates at the end of every scene. The Go harness rolls the dice, cuts
+that file out of the reply, writes it, and builds the context. It holds no world
+of its own.
 
 The ruleset is [Fudge](https://fudgerpg.com/): a light, generic system built on
 a seven-level trait scale (Terrible to Superb) rather than numeric stats.
@@ -14,6 +15,8 @@ model, item conservation, a validated state diff — and
 [ADR 006](docs/adr/006-stateless-engine-llm-owned-charsheet.md) deletes all of
 it on purpose. If you are looking for that design, it is in ADRs 001-005 and in
 the git history.
+[ADR 007](docs/adr/007-two-phase-turn-and-in-band-charsheet.md) is the current
+shape: the sheet arrives in band, and the prompt set is monolingual.
 
 ## Quick start
 
@@ -24,6 +27,10 @@ go build -o fudge .
 
 You'll pick a setting and an adventure, then the DM makes your character with
 you in conversation and opens the first scene. Type actions in plain English.
+
+The game is played in the language `system-prompts/` is written in, which is
+English. Playing in another language means translating that directory, not
+passing a flag — see [ADR 007](docs/adr/007-two-phase-turn-and-in-band-charsheet.md).
 
 An API key is required — see [Configuration](#configuration) below.
 
@@ -37,7 +44,6 @@ An API key is required — see [Configuration](#configuration) below.
 | --- | --- | --- |
 | `-debug` | off | Show tool calls, their arguments and results, and what each reply cost. |
 | `-img-gen` | off | Ask the DM for an image prompt each turn, written to `img-gen.md`. |
-| `-lang` | English | Language the player reads: narration, menus, setup. A name or ISO code (`German`, `Deutsch`, `de`). Filenames and the character sheet stay English. |
 | `-script` | — | Play non-interactively from a file of answers, one per line. See [Scripted play](#scripted-play). |
 
 ### In-game commands
@@ -51,8 +57,7 @@ Typed at the `>` prompt during play, anything starting with `/`:
 | `/context` | Dump what a request is actually made of — messages, the pinned character sheet, and the tool schemas — to `context.txt`. |
 | `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session. Bare `/style` clears it. |
 | `/image` | Write an image prompt for the current scene to `img-gen.md`. One extra LLM call, only when asked for. |
-| `/inv` | Tell the DM its character sheet has fallen behind and to bring it current. |
-| `/milestone` | Archive the session so far and continue from a summary. See below. |
+| `/milestone` | Archive the chat so far and clear it. Costs no model call. See below. |
 
 ### Scripted play
 
@@ -70,45 +75,48 @@ See [scripts/dryfall.txt](scripts/dryfall.txt) for a worked example.
 
 ## How a turn works
 
-Each player line becomes a turn, and a turn has three phases:
+Each player line becomes a turn, and a turn has two phases:
 
 1. **Resolve.** If anything is uncertain, one `check` call and no prose in that
    response. The result comes back on the next one. Prose written beside a roll
    was written before the dice were known, so the harness drops it and the
    player never sees it.
-2. **Narrate.** Ordinary prose, exactly what the player reads. This is the
-   turn's output and the last request has every tool withdrawn to force it, so a
-   turn always ends with the player having read something.
-3. **Record.** One more request with the scene closed and only the file tools
-   left, asking the DM to make `charsheet.md` match what its prose established.
+2. **Narrate.** Ordinary prose, and under it the whole character sheet inside a
+   `<world-update>` tag. The harness cuts the block out, writes it to
+   `charsheet.md`, and shows the player only what lay outside it.
 
-Phase three is a separate request on purpose. Asked before the prose exists,
-"what changed?" is a prediction; asked after, it is a reading. It is skipped
-when the turn already wrote to the sheet, so a well-behaved turn costs nothing
-extra.
+That block is the design. The harness used to have no way of telling a scene
+from a status report — its only test was whether a reply called a tool — so any
+tool-free reply became the turn's narration, bookkeeping included. Now the scene
+is defined structurally: it is what lies outside the tag.
+
+The sheet is restated in full every turn rather than edited, so there is no
+per-turn judgement about whether anything changed. A block that never arrives
+costs nothing: the sheet stands, and a note rides in under the next player line
+asking for it, because the next block restates everything anyway.
 
 ## What the DM sees
 
 Three blocks, and nothing else:
 
 - **Ground rules** — the system prompt: the Fudge reference, the DM's job, the
-  setting's prose, the language directive.
+  shape of the sheet, the setting's prose.
 - **The chat** — the whole conversation, kept for the session. Unlike earlier
   versions of this project, nothing is folded away between turns.
 - **The character sheet** — `charsheet.md`, pinned last, re-read from disk for
   every request so exactly one copy is present and it is never stale.
 
 `charsheet.md` is the entire world: the character, where they are, who is with
-them, and every fact the game has established. Nothing parses it. It is also the
-save file — the session directory is the save.
+them, and every fact the game has established. Nothing parses it except for the
+character's name, which is what the save directory is named after. It is also
+the save file — the session directory is the save.
 
 ### Milestones
 
-The chat grows. `/milestone` is how it stops: the DM writes a full account of
-the stretch just played to `milestone-NN.md`, appends a line to the sheet's
-history, and the harness archives the raw chat beside it and clears the
-conversation. Play resumes from the last narration, so the DM's voice carries
-across the seam.
+The chat grows. `/milestone` is how it stops: the harness archives the raw chat
+and clears the conversation, then reopens it with the adventure briefing and the
+last scene, so the DM's voice carries across the seam. It costs no model call —
+the state is already whole in the sheet, and what the archive keeps is texture.
 
 Compaction is the player's call, not a threshold the harness trips.
 
@@ -134,15 +142,16 @@ it. That was true of ADR 001's design and is not true of this one.
 
 ```
 saves/0007-garret-dryfall/
-  charsheet.md              the world, written by the DM
-  milestone-01.md           the DM's account of a stretch of play
-  milestone-01-raw.md       the raw chat behind it, written by the harness
+  charsheet.md              the world, as the last world update block left it
+  charsheet-log.md          every block in order, so one sheet can be diffed
+                             against the next
+  milestone-01-raw.md       the chat up to a milestone, archived whole
 ```
 
-The DM reaches these by bare filename and cannot address anything outside the
-directory. Writes are limited to a list the harness controls; reads are open
-within it, plus `charsheet_template.md` at the repo root, which is read once at
-the start to shape the first sheet.
+The DM has no file tools at all. Every one of them lost its consumer when the
+block took over the sheet: the template is inlined into the prompt, the session
+directory is derived from the first block's character name, and a milestone
+writes no summary. A turn offers `check` and `user_choice`, and nothing else.
 
 Alongside those, the working directory gets `narration.txt` (the last scene) and
 — with `-img-gen` or `/image` — `img-gen.md`, for whatever wants to read the
@@ -163,20 +172,19 @@ configured independently of this project:
 ```
 main.go                     CLI entry point, setup flow, the turn loop,
                              /milestone and the other meta commands
-session.go                  The session directory, the file tools and their
-                             confinement, and the pinned charsheet block
+session.go                  The session directory, the charsheet writer and
+                             its raw log, and the pinned charsheet block
 tools.go                    Every tool the DM can call, and their handlers
 
 rules/check.go              The whole engine: the ladder, 4dF, one check
 
 prompts/                    Assembles a system prompt from always.md + the
-                             setting + the language directive, and fills
-                             {{PLACEHOLDER}}s in the rest
+                             setting, and fills {{PLACEHOLDER}}s
 system-prompts/             Every word sent to the model that is not a tool
-                             description: always.md (the Fudge reference),
-                             dm.md (the DM's job), the setup prompts, and the
-                             turn loop's own text — the narration demand, the
-                             milestone instructions, the /inv nag, the header
+                             description, in one language: always.md (the Fudge
+                             reference), dm.md (the DM's job), the setup
+                             prompts, and the turn loop's own text — the
+                             narration demand, the carried notes, the header
                              above the character sheet
 
 settings/<name>/            One folder per playable setting: description.md
@@ -197,6 +205,8 @@ scripts/                    Example -script files for non-interactive runs
 go test ./...
 ```
 
-The tests cover the two things with logic in them: the check, and the file
-tools' confinement. Everything else is a conversation with a model, and is
-checked by playing it.
+The tests cover the three things with logic in them: the check, the split
+between the scene and the world update block, and the turn loop around it —
+driven with scripted responses, asserting on what the player read and what
+landed on disk. Everything else is a conversation with a model, and is checked
+by playing it: see [consistency-check.md](consistency-check.md).

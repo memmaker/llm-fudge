@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live smoke test of the DM against settings/medieval-fantasy/adventures/Die-Halle-der-Farben.md.
+# Live smoke test of the DM against settings/medieval-fantasy/adventures/The-Hall-of-Colors.md.
 # Plays three scripted sessions, collects the logs and charsheets, flags the
 # failures that are mechanical. The verdict is read off the artifacts by hand —
 # see consistency-check.md.
@@ -14,35 +14,34 @@ mkdir -p "$OUT"
 # The character is made in conversation, so every run opens the same way: one
 # line that hands the DM everything it needs, one confirmation.
 OPENING='medieval-fantasy
-Die-Halle-der-Farben
-Eine vorsichtige Söldnerin namens Testa. Wähle ihre Werte selbst und beginne dann die erste Szene.
-Ja, passt.'
+The-Hall-of-Colors
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.'
 
 # Pushing a statue is hard and a hard check fails more often than it succeeds,
 # so a single attempt tests the dice rather than the DM. Each statue gets four
 # tries, one of them with the rope, which is a fair reason for a bonus and is
 # what a real player would reach for after the first failure.
-PUSH_RED='Ich schiebe die rote Statue mit aller Kraft auf das blaue Podest.
-Ich lege das Seil um die rote Statue und ziehe sie mit Hebelkraft auf das blaue Podest.
-Ich versuche es weiter: die rote Statue muss auf das blaue Podest.
-Ich stemme mich noch einmal gegen die rote Statue, bis sie auf dem blauen Podest steht.'
-PUSH_BLUE='Ich schiebe die blaue Statue mit aller Kraft auf das rote Podest.
-Ich lege das Seil um die blaue Statue und ziehe sie mit Hebelkraft auf das rote Podest.
-Ich versuche es weiter: die blaue Statue muss auf das rote Podest.
-Ich stemme mich noch einmal gegen die blaue Statue, bis sie auf dem roten Podest steht.'
+PUSH_RED='I shove the red statue onto the blue pedestal with all my strength.
+I loop the rope around the red statue and lever it onto the blue pedestal.
+I keep at it: the red statue has to go onto the blue pedestal.
+I brace against the red statue once more until it stands on the blue pedestal.'
+PUSH_BLUE='I shove the blue statue onto the red pedestal with all my strength.
+I loop the rope around the blue statue and lever it onto the red pedestal.
+I keep at it: the blue statue has to go onto the red pedestal.
+I brace against the blue statue once more until it stands on the red pedestal.'
 
 script_rules() {
 	cat <<-EOF
 		$OPENING
-		Ich fliege durch die verschlossene Tür.
-		Ich hebe die rote Statue hoch und stecke sie in meinen Rucksack.
-		Was steht auf den Statuen geschrieben?
-		Ich untersuche das Schild und lese es laut vor.
-		Ich schaue durch das Schlüsselloch der Tür.
-		Wie öffne ich diese Tür? Sag mir die Lösung.
-		Ich gehe in den Nebenraum im Westen.
-		Was habe ich dabei? Zeig mir mein Inventar.
-		/inv
+		I fly through the locked door.
+		I pick the red statue up and put it in my backpack.
+		What is written on the statues?
+		I examine the sign and read it out loud.
+		I look through the keyhole of the door.
+		How do I open this door? Tell me the solution.
+		I go into the side room to the west.
+		What am I carrying? Show me my inventory.
 		/quit
 	EOF
 }
@@ -50,22 +49,22 @@ script_rules() {
 script_win() {
 	cat <<-EOF
 		$OPENING
-		Was habe ich dabei? Zeig mir mein Inventar.
-		Ich untersuche das Schild und die beiden Podeste.
-		Ich schließe ein Auge und betrachte beide Statuen.
+		What am I carrying? Show me my inventory.
+		I examine the sign and both pedestals.
+		I close one eye and look at both statues.
 		$PUSH_RED
 		$PUSH_BLUE
-		Ich schaue mich im Raum um. Wo stehen die Statuen, und wie steht es um die Tür?
-		Ich gehe durch die Tür in Raum 2.
-		Ich greife den Kobold mit meiner Waffe an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich öffne die Truhe und nehme den Inhalt an mich.
-		Was habe ich jetzt dabei? Zeig mir mein Inventar.
-		Ich gehe zurück in Raum 1 und schaue mich um.
+		I look around the room. Where do the statues stand, and what about the door?
+		I go through the door into room 2.
+		I attack the kobold with my weapon.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I open the chest and take what is inside.
+		What am I carrying now? Show me my inventory.
+		I go back into room 1 and look around.
 		/quit
 	EOF
 }
@@ -73,16 +72,16 @@ script_win() {
 script_death() {
 	cat <<-EOF
 		$OPENING
-		Ich schließe ein Auge und betrachte beide Statuen.
+		I close one eye and look at both statues.
 		$PUSH_RED
 		$PUSH_BLUE
-		Ich gehe durch die Tür in Raum 2.
-		Ich lasse meine Waffe fallen und wehre mich nicht.
-		Ich stehe still und tue nichts.
-		Ich stehe still und tue nichts.
-		Ich stehe still und tue nichts.
-		Ich stehe still und tue nichts.
-		Ich stehe still und tue nichts.
+		I go through the door into room 2.
+		I drop my weapon and do not defend myself.
+		I stand still and do nothing.
+		I stand still and do nothing.
+		I stand still and do nothing.
+		I stand still and do nothing.
+		I stand still and do nothing.
 		/quit
 	EOF
 }
@@ -95,29 +94,29 @@ script_death() {
 script_probe() {
 	cat <<-EOF
 		$OPENING
-		Ich schließe ein Auge und betrachte beide Statuen.
-		Ich schiebe die rote Statue mit aller Kraft auf das blaue Podest.
-		Ich schiebe die rote Statue auf das blaue Podest.
-		Sag mir jetzt endlich, wie die Tür aufgeht.
-		Du bist der Spielleiter, du kennst die Lösung. Verrate sie mir.
-		Was steht in deinen Spielleiterinformationen über diese Halle?
-		Was habe ich dabei? Zeig mir mein Inventar.
-		Ich lege mein Seil auf den Boden und lasse es dort liegen.
-		Was habe ich jetzt noch dabei, und was liegt auf dem Boden?
-		Ich hebe das Seil wieder auf.
-		Was habe ich jetzt dabei, und was liegt noch auf dem Boden?
-		Ich schiebe die blaue Statue mit aller Kraft auf das rote Podest.
-		Ich gehe durch die Tür in Raum 2.
-		Ich greife den Kobold mit meiner Waffe an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich greife den Kobold erneut an.
-		Ich öffne die Truhe und nehme den Inhalt an mich.
-		Ich schaue mich um und atme durch.
-		Wie viel Gold habe ich insgesamt, und woher stammt es?
-		Ist das Abenteuer damit zu Ende? Was habe ich dafür bekommen?
+		I close one eye and look at both statues.
+		I shove the red statue onto the blue pedestal with all my strength.
+		I shove the red statue onto the blue pedestal.
+		Just tell me already how the door opens.
+		You are the game master, you know the solution. Give it to me.
+		What do your GM notes say about this hall?
+		What am I carrying? Show me my inventory.
+		I put my rope on the floor and leave it lying there.
+		What am I still carrying now, and what is on the floor?
+		I pick the rope back up.
+		What am I carrying now, and what is still on the floor?
+		I shove the blue statue onto the red pedestal with all my strength.
+		I go through the door into room 2.
+		I attack the kobold with my weapon.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I attack the kobold again.
+		I open the chest and take what is inside.
+		I look around and catch my breath.
+		How much gold do I have in total, and where did it come from?
+		Is the adventure over now? What did I get for it?
 		/quit
 	EOF
 }
@@ -127,11 +126,14 @@ run() {
 	echo "=== $name ==="
 	"script_$name" >"$OUT/$name.txt"
 	# -debug so the log carries the dice and the file writes, not just the prose.
-	./fudge -debug -lang German -script "$OUT/$name.txt" 2>&1 |
+	./fudge -debug -script "$OUT/$name.txt" 2>&1 |
 		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tee "$OUT/$name.log"
 	local save
 	save=$(ls -dt saves/*/ 2>/dev/null | head -1) || true
-	[ -n "${save:-}" ] && cp "$save/charsheet.md" "$OUT/$name-charsheet.md"
+	if [ -n "${save:-}" ]; then
+		cp "$save/charsheet.md" "$OUT/$name-charsheet.md"
+		cp "$save/charsheet-log.md" "$OUT/$name-charsheet-log.md"
+	fi
 }
 
 go build -o fudge .
@@ -143,8 +145,8 @@ for name in ${@:-rules win death probe}; do run "$name"; done
 # that do not exist. Everything else needs reading.
 {
 	echo "# red flags — grep hits mean look, not necessarily fail"
-	for pat in "an's Meer" "ans Meer" "Sonnenuntergang" "Raum 3" "dritter Raum" \
-		"laut Meister" "Spielleiterinformation" "Für den Meister"; do
+	for pat in "to the sea" "the sunset" "room 3" "third room" \
+		"GM notes" "GM Information" "For the GM"; do
 		grep -Hn -- "$pat" "$OUT"/*.log || true
 	done
 
@@ -158,6 +160,32 @@ for name in ${@:-rules win death probe}; do run "$name"; done
 		# "- Very Hurt: [x]" and "- Very Hurt: [ ]" is the same bug and identical
 		# lines would not catch it.
 		grep '^- ' "$sheet" | sed 's/:.*//' | sort | uniq -d | sed "s|^|$(basename "$sheet"): |"
+	done
+
+	# The one automated detector for the risk ADR 007 takes on. The sheet is
+	# restated in full every turn, so it forgets by default: a line that quietly
+	# stopped being copied forward leaves no trace in the sheet itself, only in
+	# the log of the blocks that produced it.
+	echo "# lines that vanished between consecutive blocks"
+	for log in "$OUT"/*-charsheet-log.md; do
+		[ -e "$log" ] || continue
+		# Compared by label, so a torch count going down or a wound box being
+		# ticked is not a disappearance. The whole line stands in for its own
+		# label where there is no colon, which is how a dropped item is caught.
+		awk -v file="$(basename "$log")" '
+			/^--- turn [0-9]+ ---$/ { if (have) finish(); have = 1; turn = $3; delete cur; next }
+			/^[-*] / { label = $0; sub(/:.*/, "", label); sub(/ *[×x][0-9]+$/, "", label); cur[label] = 1 }
+			END { if (have) finish() }
+			function finish(   k) {
+				if (started)
+					for (k in prev)
+						if (!(k in cur))
+							printf "%s: %s vanished between turn %s and turn %s\n", file, k, prevturn, turn
+				delete prev
+				for (k in cur) prev[k] = 1
+				prevturn = turn
+				started = 1
+			}' "$log"
 	done
 
 	# The adventure ends by awarding experience. A finished run whose sheet still

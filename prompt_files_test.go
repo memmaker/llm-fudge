@@ -20,13 +20,13 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		{"turn-narration-demand.md", nil},
 		{"turn-empty-reply.md", nil},
 		{"charsheet-header.md", nil},
-		{"sheet-nag.md", nil},
+		{"note-missing-block.md", nil},
+		{"note-block-form.md", nil},
 		{"style-override.md", nil},
 		{"image-request.md", nil},
 		{"adventure-retry.md", nil},
 		{"adventure-briefing.md", map[string]string{"ADVENTURE": "x"}},
 		{"opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": "x"}},
-		{"milestone-demand.md", map[string]string{"MILESTONE_FILE": "milestone-01.md"}},
 		{"setting-concept-request.md", map[string]string{"CONCEPT": "x"}},
 		{"setting-creation-request.md", map[string]string{"CONCEPT": "x", "DESIGN": "y"}},
 		{"adventure-request.md", map[string]string{"SETTING": "x", "SCENARIO": "y"}},
@@ -92,8 +92,8 @@ func TestNoOrphanedPromptFiles(t *testing.T) {
 		if e.IsDir() || !strings.HasSuffix(name, ".md") {
 			continue
 		}
-		// always.md and language.md are wrapped in by LoadPrompt itself.
-		if name == "always.md" || name == "language.md" {
+		// always.md is wrapped in by LoadPrompt itself.
+		if name == "always.md" {
 			continue
 		}
 		if !strings.Contains(code.String(), name) {

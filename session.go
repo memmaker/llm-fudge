@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,12 +17,17 @@ import (
 
 const (
 	// charsheetFile is the whole of the world: the character, the place they
-	// stand in, and everything established as true. The DM writes it; nothing
-	// parses it. See docs/adr/006.
+	// stand in, and everything established as true. The DM emits it inside the
+	// world update block and the harness writes it; nothing parses it beyond the
+	// character's name. See docs/adr/006 and docs/adr/007.
 	charsheetFile = "charsheet.md"
+	// charsheetLog is every accepted block, appended in order. The sheet itself
+	// only ever shows the latest state, so a fact that quietly stopped being
+	// restated would leave no trace anywhere else.
+	charsheetLog = "charsheet-log.md"
 	// charsheetTemplate lives at the repo root rather than in the session
-	// directory. It is read once per game to shape the first charsheet, and
-	// after that the charsheet is its own template.
+	// directory. It is inlined into the DM prompt to shape the first sheet, and
+	// after that the sheet is its own template.
 	charsheetTemplate = "charsheet_template.md"
 	// savesRoot holds one directory per played session.
 	savesRoot = "saves"
@@ -34,29 +38,29 @@ const (
 	imagePromptFile = "img-gen.md"
 )
 
-// session is the harness. It owns the session directory, decides what may be
-// written into it, and assembles the charsheet block that rides at the tail of
-// every request. It holds no world state — that is the charsheet's job.
+// session is the harness. It owns the session directory, writes the charsheet
+// the DM hands it, and assembles the block that rides at the tail of every
+// request. It holds no world state — that is the charsheet's job.
 type session struct {
-	dir      string
-	writable map[string]bool
-	// read tracks which files have been looked at this session. Write refuses to
-	// overwrite a file nobody here has seen, which is the only guard against a
-	// hallucinated filename destroying the session's only state.
-	read map[string]bool
+	dir string
 
 	rng *rand.Rand
 
 	client *llm.Client
 	model  string
 
-	settingName string
-	settingDesc string
-	adventure   string
+	settingName   string
+	settingDesc   string
+	adventure     string
+	adventureName string
 
 	turn          int
 	milestones    int
 	lastNarration string
+	// carried is the harness's only way of correcting the DM, and it never
+	// spends a request to do it: whatever it has to say rides in on the next
+	// player line. The player never sees it.
+	carried string
 
 	prompts gamePrompts
 }
@@ -70,9 +74,9 @@ type gamePrompts struct {
 	narrationDemand string
 	emptyReply      string
 	charsheetHeader string
-	sheetNag        string
 	styleMarker     string
-	bookkeeping     string
+	noteMissing     string
+	noteForm        string
 }
 
 func loadGamePrompts() (gamePrompts, error) {
@@ -84,9 +88,9 @@ func loadGamePrompts() (gamePrompts, error) {
 		{&p.narrationDemand, "turn-narration-demand.md"},
 		{&p.emptyReply, "turn-empty-reply.md"},
 		{&p.charsheetHeader, "charsheet-header.md"},
-		{&p.sheetNag, "sheet-nag.md"},
 		{&p.styleMarker, "style-override.md"},
-		{&p.bookkeeping, "turn-bookkeeping.md"},
+		{&p.noteMissing, "note-missing-block.md"},
+		{&p.noteForm, "note-block-form.md"},
 	} {
 		text, err := prompts.Fill(load.file, nil)
 		if err != nil {
@@ -99,11 +103,7 @@ func loadGamePrompts() (gamePrompts, error) {
 
 func newSession() *session {
 	seed := time.Now().UnixNano()
-	return &session{
-		writable: map[string]bool{charsheetFile: true},
-		read:     map[string]bool{},
-		rng:      rand.New(rand.NewSource(seed)),
-	}
+	return &session{rng: rand.New(rand.NewSource(seed))}
 }
 
 // connect opens the one LLM client the whole run uses. It was opened three
@@ -119,9 +119,46 @@ func (s *session) connect() error {
 	return nil
 }
 
-// createDir makes the session directory and is the first tool call of a game.
-// It runs after character creation, because the character's name is half the
-// directory's name.
+// characterName is the one thing the harness reads out of the sheet, and only
+// on the first one: the session directory is named after the character, so
+// `saves/` is browsable. Everything else in the file is prose for the DM.
+var characterName = regexp.MustCompile(`(?im)^\s*[-*]?\s*(?:\*\*)?Name(?:\*\*)?\s*:\s*(.+?)\s*$`)
+
+// deriveDir opens the session directory from the first accepted block. Doing it
+// here rather than in a tool call is what lets the opening turn look like every
+// other turn: prose plus block, in one response, with no order to get wrong.
+func (s *session) deriveDir(sheet string) error {
+	// A sheet with no name line still gets a directory. The block is the only
+	// copy of the world at this point, and losing it over a missing heading
+	// would be the expensive half of a cheap mistake.
+	character := "unnamed"
+	if m := characterName.FindStringSubmatch(sheet); m != nil {
+		character = m[1]
+	}
+	_, err := s.createDir(savesRoot, character, s.adventureName)
+	return err
+}
+
+// writeCharsheet is the sheet's only writer. Every accepted block is also
+// appended to a log beside it: the sheet shows the latest state and nothing
+// else, so a line that quietly stopped being restated would otherwise vanish
+// without trace.
+func (s *session) writeCharsheet(sheet string) error {
+	if err := os.WriteFile(s.charsheetPath(), []byte(sheet+"\n"), 0644); err != nil {
+		return err
+	}
+	log, err := os.OpenFile(filepath.Join(s.dir, charsheetLog), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+	_, err = fmt.Fprintf(log, "--- turn %d ---\n\n%s\n\n", s.turn, sheet)
+	return err
+}
+
+// createDir makes the session directory. It runs on the first block, because
+// the character's name is half the directory's name and the block is where the
+// character first exists.
 func (s *session) createDir(root, character, adventure string) (string, error) {
 	if strings.TrimSpace(character) == "" {
 		return "", fmt.Errorf("the character has no name")
@@ -162,122 +199,6 @@ func slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
-}
-
-// allowWrite adds a filename to what the DM may write. The harness calls it for
-// the milestone file it has just named; nothing the model says can extend the
-// list.
-func (s *session) allowWrite(name string) { s.writable[name] = true }
-
-// resolve turns a bare filename into a path inside the session directory, and
-// refuses everything else. Paths are not accepted at all — not because "../"
-// is the only way out, but because a filename that is only ever a filename has
-// no way out to check for.
-func (s *session) resolve(name string) (string, error) {
-	if name == charsheetTemplate {
-		return charsheetTemplate, nil
-	}
-	if s.dir == "" {
-		return "", fmt.Errorf("no session directory yet — call create_session_directory first")
-	}
-	if name == "" {
-		return "", fmt.Errorf("no filename given")
-	}
-	if name != filepath.Base(name) || strings.ContainsRune(name, filepath.Separator) {
-		return "", fmt.Errorf("%q is a path — pass a bare filename, files live in the session directory", name)
-	}
-	if name == "." || name == ".." {
-		return "", fmt.Errorf("%q is not a filename", name)
-	}
-	return filepath.Join(s.dir, name), nil
-}
-
-func (s *session) readFile(name string) (string, error) {
-	path, err := s.resolve(name)
-	if err != nil {
-		return "", err
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	s.read[name] = true
-	return string(body), nil
-}
-
-func (s *session) writeFile(name, content string) (string, error) {
-	path, err := s.checkWritable(name)
-	if err != nil {
-		return "", err
-	}
-	// Anything but a plain "it isn't there" is treated as "it is there": the
-	// guard exists to stop a hallucinated filename destroying the session's only
-	// state, and a Stat that failed for some other reason has not established
-	// that there is nothing to destroy.
-	if _, err := os.Stat(path); !os.IsNotExist(err) && !s.read[name] {
-		return "", fmt.Errorf("%s already exists and has not been read this session — read it first, or edit it instead of overwriting it", name)
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return "", err
-	}
-	s.read[name] = true
-	return fmt.Sprintf("Wrote %s (%d bytes).", name, len(content)), nil
-}
-
-func (s *session) editFile(name, oldString, newString string, replaceAll bool) (string, error) {
-	path, err := s.checkWritable(name)
-	if err != nil {
-		return "", err
-	}
-	if oldString == newString {
-		return "", fmt.Errorf("old_string and new_string are identical — nothing to change")
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	text := string(body)
-
-	count := strings.Count(text, oldString)
-	switch {
-	case count == 0:
-		// The file comes back with the error. Without it the model guesses at
-		// what it got wrong and the guess is usually an anchor on one line of
-		// the pair, which appends instead of replacing: that is how a sheet ends
-		// up carrying the same rope twice. Observed cause was line order — the
-		// two lines existed, in the other order.
-		return "", fmt.Errorf("old_string not found in %s — copy it exactly from the current contents below, whitespace and line order included, then edit again:\n\n%s", name, text)
-	case count > 1 && !replaceAll:
-		return "", fmt.Errorf("old_string matches %d times in %s — add surrounding context to single one out, or pass replace_all", count, name)
-	}
-
-	if !replaceAll {
-		count = 1
-	}
-	updated := strings.Replace(text, oldString, newString, count)
-	if err := os.WriteFile(path, []byte(updated), 0644); err != nil {
-		return "", err
-	}
-	s.read[name] = true
-	return fmt.Sprintf("Edited %s (%d replacement(s)).", name, count), nil
-}
-
-// checkWritable is the whitelist gate both write paths pass through, and it
-// returns the resolved path so neither has to resolve it again.
-func (s *session) checkWritable(name string) (string, error) {
-	if !s.writable[name] {
-		return "", fmt.Errorf("%q is not writable — this session may write: %s", name, strings.Join(s.writableNames(), ", "))
-	}
-	return s.resolve(name)
-}
-
-func (s *session) writableNames() []string {
-	out := make([]string, 0, len(s.writable))
-	for name := range s.writable {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // charsheetPath is where the sheet lives, or "" before the session directory

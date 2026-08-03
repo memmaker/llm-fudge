@@ -74,14 +74,14 @@ Current penalty: none
 
 ### Quest Items
 
-- Stone sign reading "UMKEHREN"
+- Brass key from the gatehouse
 
 
 ---
 
 # Current Status
 
-- Location: Hall of Colors, Room 2
+- Location: Millstone Keep, the flooded undercroft
 - Effects: None
 
 
@@ -89,22 +89,18 @@ Current penalty: none
 
 # World State
 
-- Door: Open (permanently)
-- Chest: Closed, locked
-- Red statue: On blue pedestal
-- Blue statue: On red pedestal
-- Kobold: In Room 2, aggressive, Hurt
+- Sluice gate: Open
+- Water level: Knee-deep and falling
+- Strongbox: Closed, locked
+- Warden Elsa: In the undercroft, wary, unhurt
 
 
 ---
 
 # Known Facts/History
 
-- The cavity behind the stone sign is empty.
-- The stone door has no visible lock or mechanism.
-- Force cannot open the door.
-- Placing a coin into the seam has no effect.
-- Closing one eye reveals inscriptions on the statues.
-- Red statue: "Ich will ans Meer."
-- Blue statue: "Bringt mich zum Sonnenuntergang."
-- Swapping the statues (red→blue pedestal, blue→red pedestal) opened the door permanently.
+- The undercroft floods when the sluice gate is shut.
+- Warden Elsa was bribed last night and remembers it.
+- The gatehouse key opens the outer door only.
+- The strongbox belongs to the miller, not to the keep.
+- Garret promised Elsa a share of whatever is inside.

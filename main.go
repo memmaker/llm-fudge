@@ -24,23 +24,17 @@ import (
 var debug bool
 var imgGen bool
 
-// language is what the player reads: the narration, the choice menus and the
-// setup conversation. Filenames and setting folders stay English whatever this
-// is set to.
-var language string
-
 const (
 	// maxAdventureAttempts caps the retries when the LLM won't save the adventure.
 	maxAdventureAttempts = 3
-	// maxTurnRequests is every request a single game turn may make of the model,
-	// failed ones included. The last of them is spent demanding the narration, so
-	// a turn has maxTurnRequests-1 rounds to roll, read and edit, and one to end
-	// on. A turn still unnarrated after that is an error.
-	maxTurnRequests = 6
-	// maxBookkeepingRequests bounds the round after the narration. One response
-	// is the normal case, since a reply can carry every edit at once; the second
-	// exists for a DM that reads the sheet before writing to it.
-	maxBookkeepingRequests = 2
+	// maxCheckRequests bounds the resolve phase: the rounds in which the DM may
+	// roll before the scene exists. It ends when a response comes back without
+	// tool calls; this is the ceiling for one that never does.
+	maxCheckRequests = 5
+	// maxProseRequests bounds the narration phase, the toolless request that
+	// turns resolved results into the scene. One is the normal case; the second
+	// is for a reply that comes back empty.
+	maxProseRequests = 2
 	// maxRetryDelay is the ceiling on the wait between retried requests.
 	maxRetryDelay = 30 * time.Second
 )
@@ -74,10 +68,8 @@ func requestTokens(messages []llm.Message, response llm.Response) int {
 func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
-	flag.StringVar(&language, "lang", prompts.DefaultLanguage, "Language the player reads: narration, menus and setup. A name or an ISO code (\"German\", \"Deutsch\", \"de\").")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
 	flag.Parse()
-	language = prompts.NormalizeLanguage(language)
 
 	if *scriptFile != "" {
 		in := io.Reader(os.Stdin)
@@ -132,7 +124,14 @@ func loadDMPrompt(s *session) (string, error) {
 		// same guidance file without it.
 		files = append(files, "img-style.md", "image-guidance.md")
 	}
-	return prompts.LoadPrompt(s.settingDesc, language, files...)
+	// The template is inlined rather than pointed at: an ordinary turn has no
+	// read tool left to follow a pointer with, and the shape of the sheet is
+	// what the world update block is measured against every turn.
+	template, err := os.ReadFile(charsheetTemplate)
+	if err != nil {
+		return "", err
+	}
+	return prompts.LoadPrompt(s.settingDesc, map[string]string{"CHARSHEET_TEMPLATE": string(template)}, files...)
 }
 
 // debugArgLimit caps the arguments shown for a tool call. Narration prose and
@@ -248,7 +247,7 @@ func setupSetting(s *session, rl *readline.Instance) error {
 	}
 
 	// Phase 1: clarification, refined until the player says yes.
-	clarifyPrompt, err := prompts.LoadPrompt("", language, "setting-clarification.md")
+	clarifyPrompt, err := prompts.LoadPrompt("", nil, "setting-clarification.md")
 	if err != nil {
 		return err
 	}
@@ -286,9 +285,8 @@ func setupSetting(s *session, rl *readline.Instance) error {
 		fmt.Println()
 	}
 
-	// Phase 2: creation. The player is still being spoken to, so this phase
-	// speaks their language; the folder name it writes stays English.
-	createPrompt, err := prompts.LoadPrompt("", language, "setting-creation.md")
+	// Phase 2: creation.
+	createPrompt, err := prompts.LoadPrompt("", nil, "setting-creation.md")
 	if err != nil {
 		return err
 	}
@@ -339,6 +337,9 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 				return err
 			}
 			s.adventure = content
+			// Kept for the session directory's name, which the harness builds
+			// out of this and the character's name from the first block.
+			s.adventureName = choice
 			return nil
 		}
 	}
@@ -351,10 +352,9 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 		return errors.New("no scenario specified")
 	}
 
-	// English regardless of what the player reads: this phase says nothing to
-	// them at all — it runs silent and its whole output is a file, which becomes
-	// the DM's briefing.
-	prompt, err := prompts.LoadPrompt("", prompts.DefaultLanguage, "adventure-creation.md")
+	// This phase says nothing to the player at all: it runs silent and its whole
+	// output is a file, which becomes the DM's briefing.
+	prompt, err := prompts.LoadPrompt("", nil, "adventure-creation.md")
 	if err != nil {
 		return err
 	}
@@ -491,12 +491,8 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		} else {
 			fmt.Println("Image prompt written to img-gen.md")
 		}
-	case "/inv":
-		// The nag, and the only enforcement the sheet has. It goes in as an
-		// ordinary player line so the DM answers it in the ordinary way.
-		s.processGameTurn(chat, messages, s.prompts.sheetNag)
 	case "/milestone":
-		if err := s.milestone(chat, messages); err != nil {
+		if err := s.milestone(messages); err != nil {
 			fmt.Printf("Error writing milestone: %v\n", err)
 		}
 	case "/help":
@@ -514,45 +510,23 @@ func printMetaCommands() {
 	fmt.Println("  /context - Write current message context to context.txt")
 	fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
 	fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
-	fmt.Println("  /inv - Tell the DM to bring charsheet.md up to date")
-	fmt.Println("  /milestone - Archive the session so far and start a fresh chat from a summary")
+	fmt.Println("  /milestone - Archive the chat so far and continue from the character sheet")
 }
 
-// milestone is the compaction, and the player decides when it happens. The DM
-// writes the summary, because "events, states and changes" is judgment rather
-// than concatenation; the harness archives the raw chat beside it, because a
-// summary is lossy and the loss would be permanent.
-func (s *session) milestone(chat chatRound, messages *[]llm.Message) error {
+// milestone is the compaction, and the player decides when it happens. It costs
+// no request: the state is already whole in the charsheet, which every turn
+// rewrites, so there is nothing left for a summary to carry. What the raw
+// archive keeps is texture, and a model asked to summarise its own session
+// would have lost that anyway.
+func (s *session) milestone(messages *[]llm.Message) error {
 	if s.dir == "" {
 		return fmt.Errorf("no session directory yet — play a turn first")
 	}
 
 	s.milestones++
-	name := fmt.Sprintf("milestone-%02d.md", s.milestones)
-	s.allowWrite(name)
-
 	raw := filepath.Join(s.dir, fmt.Sprintf("milestone-%02d-raw.md", s.milestones))
 	if err := os.WriteFile(raw, []byte(transcript(*messages)), 0644); err != nil {
 		return err
-	}
-
-	demand, err := prompts.Fill("milestone-demand.md", map[string]string{"MILESTONE_FILE": name})
-	if err != nil {
-		return err
-	}
-
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: demand})
-
-	for request := 1; request <= maxTurnRequests; request++ {
-		response, err := chat(s.withCharsheet(*messages), gameTools())
-		if err != nil {
-			return err
-		}
-		*messages = append(*messages, response.Message)
-		if len(response.Message.ToolCalls) == 0 {
-			break
-		}
-		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
 	}
 
 	// The chat is cleared down to the ground rules and the adventure, and reopens
@@ -572,7 +546,7 @@ func (s *session) milestone(chat chatRound, messages *[]llm.Message) error {
 		})
 	}
 
-	fmt.Printf("\nMilestone %d archived to %s. The story continues.\n\n", s.milestones, name)
+	fmt.Printf("\nMilestone %d archived to %s. The story continues.\n\n", s.milestones, filepath.Base(raw))
 	return nil
 }
 
@@ -744,6 +718,12 @@ func runGamePhase(s *session, rl *readline.Instance) {
 			continue
 		}
 
+		// A stray Enter costs nothing. An empty line sent as a turn is a request
+		// for the DM to invent one, which is the one thing it must not do.
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
 		ui.ScrollLastLineToTop()
 		s.processGameTurn(chat, &messages, line)
 	}
@@ -770,21 +750,67 @@ func (s *session) adventureBriefing() (string, error) {
 	return prompts.Fill("adventure-briefing.md", map[string]string{"ADVENTURE": s.adventure})
 }
 
-// imgBlock is the one thing still cut out of a reply before the player sees it.
-// Everything else the DM used to append — the state block, the event tags — is
-// gone; an image prompt stays inline because -img-gen wants one per scene and a
-// second request per turn to ask for it separately is the cost that design was
-// avoiding.
+// imgBlock is the image prompt riding under the scene. It stays inline because
+// -img-gen wants one per scene and a second request per turn to ask for it
+// separately is the cost that design was avoiding.
 var imgBlock = regexp.MustCompile(`(?s)<img>(.*?)</img>`)
 
-// splitImagePrompt separates the prose the player reads from the image prompt
-// riding under it.
-func splitImagePrompt(reply string) (prose, img string) {
-	match := imgBlock.FindStringSubmatch(reply)
-	if match == nil {
-		return strings.TrimSpace(reply), ""
+// openTag is how generously the block's opening tag is recognised: any case,
+// and a hyphen, underscore or space in the middle. A sheet the harness refused
+// to recognise is a turn of the world lost over punctuation. The one spelling
+// that passes without a carried note is the canonical one below.
+const openTag = `<[ \t]*world[-_ ]?update[ \t]*>`
+
+// worldUpdate is the whole charsheet, carried in the same response as the
+// narration and cut out before anyone reads it. It is the harness's one
+// positive test for what the player may see: the scene is what lies outside the
+// tag. See docs/adr/007.
+//
+// Recognition is generous, including a code fence around the block. Acceptance
+// is strict: both tags and a body, or nothing is written, because a truncated
+// block would write a truncated sheet and the sheet is the only world there is.
+var worldUpdate = regexp.MustCompile("(?is)(?:```[a-z]*[ \t]*\r?\n)?" + openTag + `(.*?)<[ \t]*/[ \t]*world[-_ ]?update[ \t]*>` + "(?:[ \t]*\r?\n?[ \t]*```)?")
+
+// worldUpdateOpen is the loosest thing that could have been meant as the block.
+// It catches the opening tag of a reply that was cut off mid-sheet, so the
+// fragment can be dropped rather than printed as the scene.
+var worldUpdateOpen = regexp.MustCompile(`(?i)` + openTag)
+
+// fenceLine is a code fence on a line of its own. The sheet is markdown and
+// never contains one, so removing them all is how a block written inside a
+// fence comes out clean.
+var fenceLine = regexp.MustCompile("(?m)^[ \t]*```[a-zA-Z]*[ \t]*$")
+
+// splitReply separates the three things a narration response can carry: the
+// prose the player reads, the image prompt under it, and the world update
+// block.
+func splitReply(reply string) scene {
+	var told scene
+	// Every block, not just the first. A DM that restates or corrects itself
+	// emits two, and the last is the one it meant — while any block left behind
+	// would be printed to the player as a raw charsheet, which is the one
+	// failure this whole design exists to make impossible.
+	if matches := worldUpdate.FindAllStringSubmatchIndex(reply, -1); matches != nil {
+		last := matches[len(matches)-1]
+		told.sheet = strings.TrimSpace(fenceLine.ReplaceAllString(reply[last[2]:last[3]], ""))
+		whole := reply[last[0]:last[1]]
+		told.tolerated = !strings.HasPrefix(whole, "<world-update>") || !strings.HasSuffix(whole, "</world-update>")
+		reply = worldUpdate.ReplaceAllString(reply, "")
 	}
-	return strings.TrimSpace(imgBlock.ReplaceAllString(reply, "")), strings.TrimSpace(match[1])
+	// Either there was no block at all, or the one that was there was cut off
+	// before its closing tag. A partial sheet is not written and not shown.
+	if told.sheet == "" {
+		if open := worldUpdateOpen.FindStringIndex(reply); open != nil {
+			reply = reply[:open[0]]
+		}
+	}
+
+	if match := imgBlock.FindStringSubmatch(reply); match != nil {
+		told.img = strings.TrimSpace(match[1])
+		reply = imgBlock.ReplaceAllString(reply, "")
+	}
+	told.prose = strings.TrimSpace(reply)
+	return told
 }
 
 // chatRound is one request to the model. The turn loop takes it as an argument
@@ -793,165 +819,223 @@ func splitImagePrompt(reply string) (prose, img string) {
 // asked to prove it.
 type chatRound func(messages []llm.Message, tools []llm.Tool) (llm.Response, error)
 
-// processGameTurn drives the DM until it hands back a scene for the player, or
-// until the turn has spent the maxTurnRequests calls it is allowed.
+// scene is a narration response with the harness's cut already made: the prose
+// the player reads, the image prompt under it, and the world update block that
+// never reaches either the player or the chat.
+type scene struct {
+	prose string
+	img   string
+	sheet string
+	// tolerated says the block arrived in a form it should not have been written
+	// in. It was still accepted — refusing a whole turn of the world over
+	// punctuation is the more expensive mistake — and the note rides in on the
+	// next player line.
+	tolerated bool
+}
+
+// processGameTurn drives the DM through the two phases of a turn: resolve,
+// where checks are called, and narrate, which carries both the scene and the
+// world update block. Only the second is compulsory; a turn that needs no dice
+// skips the first.
 //
-// A turn is rounds of rolling and note-keeping followed by prose. Unlike the
-// engine-held design this replaces, nothing is folded away at the end: the whole
-// exchange stays in the history until the player calls a milestone.
+// Unlike the engine-held design this replaces, nothing is folded away at the
+// end: the whole exchange stays in the history until the player calls a
+// milestone.
 func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playerInput string) {
 	s.turn++
+
+	// The carried note is the harness correcting the DM without spending a
+	// request on it. It goes in under the player's line and the player never
+	// sees it. It stays on the session until the turn carrying it survives:
+	// the rollback below takes the player's line with it, and a correction
+	// dropped there would never be made again.
+	if s.carried != "" {
+		playerInput = strings.TrimSpace(playerInput + "\n\n" + s.carried)
+	}
 
 	turnStart := len(*messages)
 	if playerInput != "" {
 		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
-	// wrote records whether the DM has already put this turn's changes on the
-	// sheet. If it has, the bookkeeping round below is not worth a request.
-	var wrote bool
+	told, narrated := s.resolvePhase(chat, messages)
+	if !narrated {
+		told, narrated = s.narrate(chat, messages)
+	}
+	if !narrated {
+		// Everything the turn added is dropped: it is half a turn, and carrying
+		// it would leave the DM answering later requests beside a scene the
+		// player was never shown.
+		*messages = (*messages)[:turnStart]
+		fmt.Println("\nError: the DM did not narrate this turn. Try rephrasing your action.")
+		return
+	}
+	s.carried = ""
 
-	var failures int
-	for request := 1; request <= maxTurnRequests; request++ {
-		tools := gameTools()
-		if request == maxTurnRequests {
-			// The tools come off the table so there is nothing left to resolve
-			// with, and the demand says so — tools that quietly vanish read as a
-			// malfunction from the inside, and a malfunction gets retried.
-			tools = nil
-			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.narrationDemand})
+	s.showScene(told.prose, told.img)
+	s.recordSheet(told)
+
+	if debug {
+		fmt.Printf("\033[90m[turn %d done; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
+	}
+}
+
+// recordSheet puts the turn's block on disk, and opens the session directory if
+// this was the first one. A block that never came is not worth a request to ask
+// for: the next one restates everything, including whatever happened while it
+// was missing, so the whole correction is a note on the next player line.
+func (s *session) recordSheet(told scene) {
+	if told.sheet == "" {
+		// Before the first block there is no lapse to correct: character
+		// creation is a conversation, and a note asking for a sheet that does
+		// not exist yet would only produce a half-made one.
+		if s.dir != "" {
+			s.carried = s.prompts.noteMissing
 		}
+		if debug {
+			fmt.Println("\033[90m[no world update block; the sheet stands and a note is carried]\033[0m")
+		}
+		return
+	}
+	if told.tolerated {
+		s.carried = s.prompts.noteForm
+	}
+	if s.dir == "" {
+		if err := s.deriveDir(told.sheet); err != nil {
+			fmt.Println("\nSession directory error:", err)
+			return
+		}
+		fmt.Printf("\033[90m[saving to %s]\033[0m\n\n", s.dir)
+	}
+	if err := s.writeCharsheet(told.sheet); err != nil {
+		fmt.Println("\nCharsheet error:", err)
+	}
+}
 
-		response, err := chat(s.withCharsheet(*messages), tools)
+// resolvePhase is phase one: the rounds in which the DM rolls before there is a
+// scene. It runs with the tools on the table and ends the moment a response
+// comes back without tool calls.
+//
+// If that response carries prose, the turn needed no separate narration request
+// and it is returned as the scene (done). Otherwise the caller moves to phase
+// two, where the tools are gone and prose is the only thing left to produce.
+func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, bool) {
+	var failures int
+	for request := 1; request <= maxCheckRequests; request++ {
+		response, err := chat(s.withCharsheet(*messages), gameTools())
 		if err != nil {
 			// The call is spent either way. What is left of the budget decides
 			// whether there is any point waiting.
 			failures++
 			fmt.Printf("\nLLM error: %v\n", err)
-			if request == maxTurnRequests {
-				break
+			if request == maxCheckRequests {
+				return scene{}, false
 			}
-			fmt.Printf("Retrying in %s (%d of %d calls left).\n", retryDelay(failures), maxTurnRequests-request, maxTurnRequests)
+			fmt.Printf("Retrying in %s (%d of %d calls left).\n", retryDelay(failures), maxCheckRequests-request, maxCheckRequests)
 			time.Sleep(retryDelay(failures))
 			continue
 		}
 		failures = 0
 
-		*messages = append(*messages, response.Message)
+		told := s.appendReply(messages, response.Message)
 
-		prose, img := splitImagePrompt(response.Message.Content)
-
-		var answeredChoice, rolled bool
-		for _, call := range response.Message.ToolCalls {
-			switch call.Function.Name {
-			case "user_choice":
-				answeredChoice = true
-			case "check":
-				rolled = true
-			case "edit_file", "write_file":
-				wrote = true
-			}
+		if len(response.Message.ToolCalls) == 0 {
+			// Nothing left to resolve. Prose here was written with every result
+			// already in hand, so it is the scene and phase two is not needed.
+			return told, told.prose != ""
 		}
 
-		// Prose written in the same response as a roll was written before the
-		// dice were known, whatever it claims happened. dm.md asks for the roll
-		// on its own, and this is where that is made true rather than trusted:
-		// the prose is held back, the result goes in, and the next round writes
-		// the scene from what actually came up. Observed in play — the DM
+		// Prose written in the same response as a tool call was written before
+		// the call came back, whatever it claims happened, and so was any block
+		// beside it. dm.md asks for the roll on its own, and this is where that
+		// is made true rather than trusted: both are dropped and phase two
+		// writes the scene from what actually came up. Observed in play — the DM
 		// narrated a successful sneak and then rolled for it.
-		if rolled {
-			prose = ""
+		//
+		// A menu is the one exception. user_choice blocks on the player, and the
+		// question that belongs above the options is the prose beside the call,
+		// so it has to be on screen before they are.
+		if told.prose != "" && hasCall(response.Message.ToolCalls, "user_choice") {
+			s.showScene(told.prose, told.img)
 		}
+		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+	}
 
-		// A menu blocks on the player, so the question above it has to be on
-		// screen before the options are.
-		if prose != "" {
-			fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
-			fmt.Println()
-			s.lastNarration = prose
-			if err := os.WriteFile(narrationFile, []byte(prose), 0o644); err != nil {
-				fmt.Println("\nNarration file error:", err)
-			}
-			// A missing prompt is not worth interrupting play over: the player
-			// has read the scene, and the next turn writes a new one.
-			if img != "" {
-				if err := os.WriteFile(imagePromptFile, []byte(img), 0o644); err != nil {
-					fmt.Println("\nImage prompt error:", err)
-				}
-			}
-		}
+	if debug {
+		fmt.Printf("\033[90m[resolve phase hit its %d-request ceiling; demanding the scene]\033[0m\n", maxCheckRequests)
+	}
+	return scene{}, false
+}
 
-		if len(response.Message.ToolCalls) > 0 {
-			*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
-			// Rolls and edits are not the turn's output; the prose that follows
-			// them is. A menu is the exception — the player has answered, and the
-			// DM has to be given the answer.
-			if prose == "" || answeredChoice {
-				continue
-			}
-		}
+// narrate is phase two: one request with no tools at all, whose only possible
+// output is the scene. The tools come off the table rather than being left
+// unused, so that resolving further is not merely discouraged but unavailable.
+func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool) {
+	// The demand says the tools are gone, because tools that quietly vanish read
+	// as a malfunction from the inside, and a malfunction gets retried.
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.narrationDemand})
 
-		if prose == "" {
-			// A reply with neither calls nor prose says nothing at all.
-			*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.emptyReply})
+	for request := 1; request <= maxProseRequests; request++ {
+		response, err := chat(s.withCharsheet(*messages), nil)
+		if err != nil {
+			fmt.Printf("\nLLM error: %v\n", err)
+			if request == maxProseRequests {
+				return scene{}, false
+			}
+			fmt.Printf("Retrying in %s (%d of %d calls left).\n", retryDelay(request), maxProseRequests-request, maxProseRequests)
+			time.Sleep(retryDelay(request))
 			continue
 		}
 
-		// Phase three. The scene is on the player's screen and cannot be taken
-		// back, so nothing here risks the turn — only how much of what just
-		// happened ends up on the sheet. It is a separate request because asking
-		// "what changed?" before the prose exists is asking for a prediction,
-		// while asking after it is asking for a reading.
-		// Not before the session directory exists: during character creation
-		// there is no sheet to reconcile against, and the round would spend a
-		// request asking for edits to a file that cannot be written yet.
-		if !wrote && s.dir != "" {
-			s.recordChanges(chat, messages)
+		told := s.appendReply(messages, response.Message)
+		if told.prose != "" {
+			return told, true
 		}
-
-		if debug {
-			fmt.Printf("\033[90m[turn %d done; history holds %d messages]\033[0m\n\n", s.turn, len(*messages))
-		}
-		return
+		// A reply with no tools available and no prose says nothing at all.
+		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.emptyReply})
 	}
-
-	// The budget is gone and the last call, the one that had nothing to offer but
-	// the narration, did not produce it. Everything the turn added is dropped: it
-	// is half a turn, and carrying it would leave the DM answering later requests
-	// beside a scene the player was never shown.
-	*messages = (*messages)[:turnStart]
-	fmt.Printf("\nError: the DM did not narrate this turn within %d calls. Try rephrasing your action.\n", maxTurnRequests)
+	return scene{}, false
 }
 
-// recordChanges is the turn's last phase: the DM reads back the scene it just
-// wrote and puts what it established on the sheet. It runs only when the turn
-// did not already write, so an ordinary turn costs one request more and a turn
-// that kept its own books costs nothing extra.
-//
-// Failure here is reported and dropped. The player has read the scene; a sheet
-// that missed one turn is a smaller problem than a turn that appears to have
-// gone wrong after it plainly did not.
-func (s *session) recordChanges(chat chatRound, messages *[]llm.Message) {
-	if debug {
-		fmt.Println("\033[90m[bookkeeping round; nothing here reaches the player]\033[0m")
+// appendReply makes the cut and puts what is left in the history. The block
+// goes into the chat nowhere, ever: it is the whole charsheet, and the sheet is
+// pinned to the tail of every request already. One copy, always current — the
+// invariant from ADR 006 that this design had to survive.
+func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene {
+	told := splitReply(reply.Content)
+	reply.Content = told.prose
+	*messages = append(*messages, reply)
+	return told
+}
+
+// hasCall reports whether the response reached for a particular tool.
+func hasCall(calls []llm.ToolCall, name string) bool {
+	for _, call := range calls {
+		if call.Function.Name == name {
+			return true
+		}
 	}
+	return false
+}
 
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.bookkeeping})
-
-	for request := 1; request <= maxBookkeepingRequests; request++ {
-		response, err := chat(s.withCharsheet(*messages), bookkeepingTools())
-		if err != nil {
-			fmt.Printf("\nLLM error while recording the turn: %v\n", err)
-			return
+// showScene puts the prose in front of the player and leaves it where the image
+// generator can find it.
+func (s *session) showScene(prose, img string) {
+	if prose == "" {
+		return
+	}
+	fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
+	fmt.Println()
+	s.lastNarration = prose
+	if err := os.WriteFile(narrationFile, []byte(prose), 0o644); err != nil {
+		fmt.Println("\nNarration file error:", err)
+	}
+	// A missing prompt is not worth interrupting play over: the player has read
+	// the scene, and the next turn writes a new one.
+	if img != "" {
+		if err := os.WriteFile(imagePromptFile, []byte(img), 0o644); err != nil {
+			fmt.Println("\nImage prompt error:", err)
 		}
-		*messages = append(*messages, response.Message)
-		if len(response.Message.ToolCalls) == 0 {
-			if debug && strings.Contains(strings.ToUpper(response.Message.Content), "NOTHING") {
-				fmt.Println("\033[90m[bookkeeping: the DM reports the scene changed nothing]\033[0m")
-			}
-			return
-		}
-		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
 	}
 }
 

@@ -7,32 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"fudge/prompts"
 	"fudge/rules"
 	"fudge/ui"
 
 	"github.com/memmaker/gollum/llm"
 )
 
-// languageNote appends the language rule to a tool description when the player
-// is not reading English, and returns it untouched when they are.
-func languageNote(description, what string) string {
-	if language == "" || language == prompts.DefaultLanguage {
-		return description
-	}
-	return description + fmt.Sprintf(" LANGUAGE: %s is read by the player, so write it in %s.", what, language)
-}
-
 // userChoiceTool is the menu, offered wherever the model needs the player to
 // pick between a small number of distinct options.
 func userChoiceTool() llm.Tool {
 	return llm.Tool{Type: "function", Function: llm.ToolFunction{
-		Name: "user_choice",
-		// The language rule is repeated here, at the one place the model fills a
-		// field the player reads. The system prompt says it once, in a section; a
-		// tool description says it while the argument is being written, which is
-		// where English creeps back in.
-		Description: languageNote("Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically.", "The options are"),
+		Name:        "user_choice",
+		Description: "Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically.",
 		Parameters: map[string]any{"type": "object", "properties": map[string]any{
 			"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "2-4 mutually exclusive options."},
 		}, "required": []string{"options"}},
@@ -72,9 +58,11 @@ func adventureCreationTools() []llm.Tool {
 	}
 }
 
-// gameTools is everything the DM can do during play: roll a check, and read and
-// write its own notes. There is nothing else — no engine to move an item in, no
-// state to declare. See docs/adr/006.
+// gameTools is everything the DM can do during a turn: roll a check and ask the
+// player a question. The sheet is written by the world update block instead of
+// by a tool, the session directory is derived rather than created, and a
+// milestone costs no request — so nothing else has a consumer left. A tool the
+// DM is never shown is one it cannot reach for by mistake. See docs/adr/007.
 func gameTools() []llm.Tool {
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{
@@ -87,55 +75,8 @@ func gameTools() []llm.Tool {
 				"what":     map[string]any{"type": "string", "description": "One short phrase naming the attempt, e.g. 'Garret picks the cellar lock'."},
 			}, "required": []string{"level", "vs", "what"}},
 		}},
-		{Type: "function", Function: llm.ToolFunction{
-			Name:        "create_session_directory",
-			Description: "Create this game's directory. Call it once, as the first thing you do after the character is finished and before you write the character sheet.",
-			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"character": map[string]any{"type": "string", "description": "The player character's name."},
-				"adventure": map[string]any{"type": "string", "description": "The adventure's title."},
-			}, "required": []string{"character", "adventure"}},
-		}},
-		{Type: "function", Function: llm.ToolFunction{
-			Name:        "read_file",
-			Description: "Read a file from this game's directory. Pass a bare filename—there are no paths. 'charsheet_template.md' is also readable, and is what you shape the first character sheet from.",
-			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"filename": map[string]any{"type": "string", "description": "A bare filename, e.g. 'charsheet.md'."},
-			}, "required": []string{"filename"}},
-		}},
-		{Type: "function", Function: llm.ToolFunction{
-			Name:        "write_file",
-			Description: "Create or overwrite a file in this game's directory with full contents. Use it to create charsheet.md, and to write a milestone summary. To change something in a file that already exists, use edit_file instead—overwriting the whole sheet to alter one line is how facts get silently dropped.",
-			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"filename": map[string]any{"type": "string", "description": "A bare filename."},
-				"content":  map[string]any{"type": "string", "description": "The complete file contents."},
-			}, "required": []string{"filename", "content"}},
-		}},
-		{Type: "function", Function: llm.ToolFunction{
-			Name:        "edit_file",
-			Description: "Replace an exact piece of text in a file. This is how the character sheet is kept current: one edit per thing that changed. Fails if old_string is absent, or if it matches more than once and replace_all was not set—copy enough surrounding text to be unambiguous, whitespace included.",
-			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"filename":    map[string]any{"type": "string", "description": "A bare filename, usually 'charsheet.md'."},
-				"old_string":  map[string]any{"type": "string", "description": "The exact text to find, copied verbatim from the file."},
-				"new_string":  map[string]any{"type": "string", "description": "What it becomes. Must differ from old_string."},
-				"replace_all": map[string]any{"type": "boolean", "description": "Replace every occurrence instead of requiring a unique match."},
-			}, "required": []string{"filename", "old_string", "new_string"}},
-		}},
 		userChoiceTool(),
 	}
-}
-
-// bookkeepingTools is what the DM has in the round after its prose: the files,
-// and nothing else. A check rolled now would be a roll for something already
-// narrated, and there is no one left to offer a menu to.
-func bookkeepingTools() []llm.Tool {
-	var out []llm.Tool
-	for _, tool := range gameTools() {
-		switch tool.Function.Name {
-		case "read_file", "write_file", "edit_file":
-			out = append(out, tool)
-		}
-	}
-	return out
 }
 
 func loadSetting(s *session, name string) error {
@@ -193,26 +134,6 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 			what = "the attempt"
 		}
 		return what + ": " + result.Describe(), nil
-
-	case "create_session_directory":
-		if s.dir != "" {
-			return fmt.Sprintf("The session directory already exists: %s", filepath.Base(s.dir)), nil
-		}
-		dir, err := s.createDir(savesRoot, str("character"), str("adventure"))
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Created %s. Files you write go here; %s is what you may write.", dir, charsheetFile), nil
-
-	case "read_file":
-		return s.readFile(str("filename"))
-
-	case "write_file":
-		return s.writeFile(str("filename"), str("content"))
-
-	case "edit_file":
-		replaceAll, _ := args["replace_all"].(bool)
-		return s.editFile(str("filename"), str("old_string"), str("new_string"), replaceAll)
 
 	case "user_choice":
 		raw, _ := args["options"].([]any)
@@ -277,6 +198,9 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 			return "", err
 		}
 		s.adventure = str("content")
+		// Kept for the session directory's name, which the harness builds out of
+		// this and the character's name from the first world update block.
+		s.adventureName = title
 		return fmt.Sprintf("Wrote %s.", path), nil
 	}
 

@@ -1,6 +1,6 @@
 Glossary
 
-Reflects ADR 006. Terms belonging to the engine-held world model — Entity,
+Reflects ADR 007. Terms belonging to the engine-held world model — Entity,
 Kernel, State block, Event tag, Under-determination test, Derived field,
 Narrative properties, Conservation, Retirement, Query tool — are retired along
 with the code that gave them meaning. They are still defined in ADRs 002-005,
@@ -10,38 +10,55 @@ which is where to look when reading old commits.
   single conversation, and is not resumed by replaying anything — the Charsheet
   is what carries over.
 - Session directory: The scratchpad the game writes into,
-  `saves/NNNN-<character>-<adventure>/`. Created by the LLM's first tool call,
-  made after character creation. Every file tool resolves a bare filename inside
-  it and can reach nowhere else; the directory is a trust boundary, not a
-  convention.
+  `saves/NNNN-<character>-<adventure>/`. Created by the harness from the first
+  World update block, whose sheet carries the character's name — so the opening
+  turn looks like every other turn and cannot get the order wrong. Nothing but
+  the harness writes into it.
 - Charsheet: `charsheet.md`, the single file holding everything the game knows —
   the character, the world around them, and what has been established as true.
-  Written and maintained by the LLM through Edit. Nothing parses it. It is at
-  once the character sheet, the world state, and the save file.
-- Charsheet template: `charsheet_template.md` at the repo root, read once per
-  game to shape the initial Charsheet and never again — thereafter the Charsheet
-  is its own template.
+  Emitted whole by the LLM in every World update block and written by the
+  harness. Nothing parses it beyond the character's name on the first one. It is
+  at once the character sheet, the world state, and the save file.
+- Charsheet log: `charsheet-log.md`, every accepted World update block in order.
+  The Charsheet only ever shows the state that survived, so a line that quietly
+  stopped being restated would leave no trace anywhere else. It is the one
+  automated detector for the risk full restatement takes on.
+- Charsheet template: `charsheet_template.md` at the repo root, inlined into the
+  Ground Rules to shape the sheet. Inlined rather than pointed at because an
+  ordinary Turn has no read tool to follow a pointer with.
 - Context: What the DM sees, in three blocks and no more: Ground Rules, Chat,
   Charsheet. The Charsheet is pinned last and re-arranged each turn so exactly
   one copy of it is ever present.
 - Ground Rules: The assembled system prompt — the Fudge reference, the DM's job,
-  the setting prose, the language directive. Carries the rules text that used to
-  be Go code.
+  the setting prose. Carries the rules text that used to be Go code.
+- Prompt set: Every model-facing word, in one language. A game is monolingual:
+  the language the player reads is the language the prompt set is written in,
+  and there is no directive asking for it. Playing in another language means
+  translating the set, not instructing the model — an instruction can be
+  disobeyed, and today's drift was always meta text escaping into the player's
+  channel. There is no engine channel any more, so there are no two channels.
 - Chat: The live conversation, kept whole for the session rather than collapsed
   between turns. Grows until a Milestone clears it.
-- Milestone: Player-triggered compaction, `/milestone`. The LLM writes a full
-  summary of events, states and changes to `milestone-NN.md` and appends a
-  one-line outcome to the Charsheet's history; the harness archives the raw chat
-  as `milestone-NN-raw.md` and clears the Chat block. The new Chat opens with the
-  adventure briefing and the previous one's last narration — the first because
-  the adventure exists nowhere else the DM can reach, the second so its voice
-  carries across the seam.
-- Nag: `/inv`, a player-sent reminder that the Charsheet was not updated. The
-  only enforcement of Charsheet discipline — a harness-enforced variant was
-  specified and rejected, because it costs a round on every turn where nothing
-  changed.
-- Turn: One player line and the DM's answer to it. Ordered check, then Edit,
-  then narration; a turn ends when the player has read prose.
+- Milestone: Player-triggered compaction, `/milestone`. The harness archives the
+  raw chat as `milestone-NN-raw.md` and clears the Chat block. No model call and
+  no summary: the state is already whole in the Charsheet, and what the archive
+  keeps is texture. The new Chat opens with the adventure briefing and the
+  previous one's last narration — the first because the adventure exists nowhere
+  else the DM can reach, the second so its voice carries across the seam.
+- Carried note: The harness's only way of correcting the DM. It never spends a
+  request of its own: whatever it has to say — a World update block that was
+  missing, or one whose tag it had to accept in a form it should not have been
+  written in — is appended to the next player line and rides in with the next
+  ordinary turn. The player never sees it.
+- Turn: One player line and the DM's answer to it. Two phases: resolve, where
+  checks are called, and narrate, which carries both the scene and the World
+  update block. A turn ends when the player has read prose.
+- World update block: The whole Charsheet, emitted inside a tag in the same
+  response as the narration, and written to disk by the harness. It replaces the
+  Record phase: the sheet is restated in full every turn rather than edited, so
+  there is no per-turn judgement about whether anything changed. It is also the
+  harness's only positive test for what the player may read — the scene is what
+  lies outside the tag.
 - Check: The one thing the engine still does. `check(level, vs, modifier)`, where
   `vs` is a difficulty or an opponent's level, since in Fudge both are Ladder
   positions. Returns the relative degree of success. Opposed and unopposed are
@@ -61,14 +78,16 @@ which is where to look when reading old commits.
   paragraphs the LLM reads, not a vocabulary it is checked against.
 - Adventure: A pre-written scenario within a Setting, and half of a Session
   directory's name.
-- DM: The LLM. Narrates, decides consequences, keeps the Charsheet, and rolls
-  nothing.
+- DM: The LLM. Narrates, decides consequences, restates the Charsheet at the end
+  of every scene, and rolls nothing.
 - Engine: What is left of `rules/` — the Ladder, 4dF, and Check. Holds no state.
   Seeded, so a roll is fair and testable in Go, but a Session as a whole no
   longer replays.
-- File tools: `Read`, `Edit` (exact string replacement; errors on no match and on
-  ambiguous match), `Write` (full overwrite). The entire write surface. Writes go
-  only to a whitelist the harness controls — the Charsheet always, plus a
-  Milestone file when one is due.
+- Tools: What a Turn offers the DM, which is Check and the menu. Every other
+  game tool lost its consumer when the World update block became the Charsheet's
+  only writer — the template is inlined, the Session directory is derived, and a
+  Milestone writes nothing. A tool the DM is never shown is one it cannot reach
+  for by mistake. The file tools of ADR 006, and the confinement around them,
+  are gone with them.
 - NPC: A character the DM runs. A few lines in the Charsheet's world state, with
   no sheet of its own.

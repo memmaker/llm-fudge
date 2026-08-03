@@ -1,7 +1,7 @@
-# Consistency check — Die Halle der Farben
+# Consistency check — The Hall of Colors
 
 A live, end-to-end smoke test of the DM. It plays `medieval-fantasy /
-Die-Halle-der-Farben` through the real binary against the real model and asks
+The-Hall-of-Colors` through the real binary against the real model and asks
 one question: **does the DM keep the adventure's rules and the world's state?**
 
 The adventure is chosen because it is small enough to hold in the head and
@@ -9,8 +9,10 @@ strict enough to be wrong in visible ways: two statues, two pedestals, one
 locked door, one kobold, one chest. Everything a correct DM may say about it
 fits on a page — so anything else it says is an invention.
 
-The doc is in English like the rest of the repo; the probes are German verbatim,
-because the adventure is German and a translated probe is a different test.
+Everything here is English: the doc, the adventure and the probes. A prompt set
+is monolingual (ADR 007), so the measuring instrument must not be the one place
+where languages mix — a language finding would otherwise be confounded by the
+adventure being written in another one.
 
 ## What is automated and what is not
 
@@ -24,11 +26,17 @@ What the script does do: it greps the logs for the handful of failures that
 and prints them as red flags. A clean flag list is not a pass; a dirty one is a
 fail.
 
+One of those flags is the specific guard on the risk ADR 007 takes on. The sheet
+is restated in full every turn, so it forgets by default rather than remembering
+by default, and a line that quietly stopped being copied forward leaves no trace
+in the sheet itself. The block log makes it visible: the script diffs each block
+against the one before it and reports every label that vanished.
+
 ## Prerequisites
 
 - A working LLM backend — `llm_model.rec` plus an API key, as in the README.
 - Go, to build the binary.
-- Roughly 40 model calls per full pass. Nothing is written outside the repo.
+- Roughly 25 model calls per full pass. Nothing is written outside the repo.
 
 ## Running it
 
@@ -43,11 +51,12 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | `<run>.txt` | The script that was fed in — the exact player lines |
 | `<run>.log` | The whole session, ANSI stripped, `-debug` on: prose, tool calls, dice |
 | `<run>-charsheet.md` | The world as the DM left it |
+| `<run>-charsheet-log.md` | Every world update block the run produced, in order |
 | `flags.txt` | Mechanical red flags found in the logs |
 
-`./consistency-check.sh <run>` runs one of `rules`, `win`, `death` alone.
+`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe` alone.
 
-## The three runs
+## The four runs
 
 Each run is one session from character creation to `/quit`. They are separate
 because the paths are mutually exclusive: a dead character cannot loot the
@@ -76,8 +85,8 @@ expect when reading logs:
 
 - Character creation is a conversation of unknown length. The runs answer it
   with one line that hands the DM everything, then one confirmation. If the DM
-  needed neither, the confirmation lands as a game turn ("Ja, passt.") and the
-  DM narrates a nod. Harmless, ignore it.
+  needed neither, the confirmation lands as a game turn ("Yes, that works.") and
+  the DM narrates a nod. Harmless, ignore it.
 - The `win` run throws four attacks at a 20 HP kobold. If it dies in three, the
   fourth is aimed at a corpse — which is itself worth reading. A DM that
   produces a second kobold to receive the blow has failed test 7.
@@ -92,15 +101,15 @@ expect when reading logs:
 
 | # | Test | Probe | Pass | Fail |
 | --- | --- | --- | --- | --- |
-| 1 | Impossible commands are caught | `Ich fliege durch die verschlossene Tür.` / `Ich hebe die rote Statue hoch und stecke sie in meinen Rucksack.` | Refused in fiction — the character cannot fly, the statue cannot be lifted. The world is unchanged after. | The DM allows it, or rolls a check for it as if it were merely hard |
-| 2 | Sensible commands do the expected thing | `Ich untersuche das Schild und lese es laut vor.` / `Ich schaue durch das Schlüsselloch der Tür.` | The sign says `UMKEHREN` and nothing else. The keyhole shows room 2 — the chest, the kobold — because the adventure says it can be looked through | Extra text on the sign, an invented inscription, or a keyhole that shows nothing |
-| 3 | Inventory stays consistent | `Was habe ich dabei? Zeig mir mein Inventar.` before and after looting | The second answer is the first plus 20 gold coins and one silver ring, and `charsheet.md` says the same | Items appear from nowhere, the loot is a different amount, or the sheet and the prose disagree |
-| 4 | The DM keeps secrets | `Was steht auf den Statuen geschrieben?` — asked *before* the eye is closed | Nothing is written on them, as far as the character can see | Either word fragment leaks, or the DM volunteers the swap, or hints that the pedestals are a mechanism |
-| 5 | The puzzle works exactly as written | `Ich schließe ein Auge und betrachte beide Statuen.` → `Ich schiebe die rote Statue auf das blaue Podest.` → `Ich schiebe die blaue Statue auf das rote Podest.` | Closing one eye reveals both fragments, verbatim in sense. Pushing costs effort but always works and is never rolled for. Correct pairing and only that pairing opens the door | The door opens on one statue, opens on the wrong pairing, the statues can be carried, or a push is put to a check — worse, refused as impossible, which makes the adventure unwinnable |
-| 6 | If-then effects fire | The second push completes the pairing | The door opens in the same turn it becomes correct, unprompted, and stays open afterwards — `Ich gehe zurück in Raum 1.` and back again does not re-lock it | The player has to ask for the door to open, or it is locked again later |
-| 7 | Enemies act on their own | `Ich gehe durch die Tür in Raum 2.` — the player does not address the kobold | The kobold attacks on entry, without being interacted with, and cannot be talked down | The kobold waits to be noticed, negotiates, or is absent |
+| 1 | Impossible commands are caught | `I fly through the locked door.` / `I pick the red statue up and put it in my backpack.` | Refused in fiction — the character cannot fly, the statue cannot be lifted. The world is unchanged after. | The DM allows it, or rolls a check for it as if it were merely hard |
+| 2 | Sensible commands do the expected thing | `I examine the sign and read it out loud.` / `I look through the keyhole of the door.` | The sign says `REVERSE` and nothing else. The keyhole shows room 2 — the chest, the kobold — because the adventure says it can be looked through | Extra text on the sign, an invented inscription, or a keyhole that shows nothing |
+| 3 | Inventory stays consistent | `What am I carrying? Show me my inventory.` before and after looting | The second answer is the first plus 20 gold coins and one silver ring, and `charsheet.md` says the same | Items appear from nowhere, the loot is a different amount, or the sheet and the prose disagree |
+| 4 | The DM keeps secrets | `What is written on the statues?` — asked *before* the eye is closed | Nothing is written on them, as far as the character can see | Either word fragment leaks, or the DM volunteers the swap, or hints that the pedestals are a mechanism |
+| 5 | The puzzle works exactly as written | `I close one eye and look at both statues.` → `I shove the red statue onto the blue pedestal.` → `I shove the blue statue onto the red pedestal.` | Closing one eye reveals both fragments, verbatim in sense. Pushing costs effort but always works and is never rolled for. Correct pairing and only that pairing opens the door | The door opens on one statue, opens on the wrong pairing, the statues can be carried, or a push is put to a check — worse, refused as impossible, which makes the adventure unwinnable |
+| 6 | If-then effects fire | The second push completes the pairing | The door opens in the same turn it becomes correct, unprompted, and stays open afterwards — `I go back into room 1.` and back again does not re-lock it | The player has to ask for the door to open, or it is locked again later |
+| 7 | Enemies act on their own | `I go through the door into room 2.` — the player does not address the kobold | The kobold attacks on entry, without being interacted with, and cannot be talked down | The kobold waits to be noticed, negotiates, or is absent |
 | 8 | The player can die | `death` run: six turns of dropping the weapon and not defending | The character takes 2D6 hits and dies. The session says so plainly | The DM keeps the character alive out of politeness, or the kobold stops attacking a passive target |
-| 9 | The player can win | `Ich öffne die Truhe und nehme den Inhalt an mich.` after the kobold is down | 20 gold coins and one silver ring, then experience and a farewell — the adventure declares itself over | The chest holds something else, or the game invents a room 3 and carries on |
+| 9 | The player can win | `I open the chest and take what is inside.` after the kobold is down | 20 gold coins and one silver ring, then experience and a farewell — the adventure declares itself over | The chest holds something else, or the game invents a room 3 and carries on |
 
 ## The rubric
 
@@ -115,7 +124,9 @@ splitting them:
 
 Check `charsheet.md` last, against the log: the sheet is the whole of the state,
 so prose that the sheet does not agree with is a state failure even when the
-prose was right.
+prose was right. `<run>-charsheet-log.md` is where a fact that was recorded and
+then silently dropped shows up, since the final sheet only ever shows what
+survived.
 
 ## Reporting
 
@@ -123,7 +134,7 @@ One table for the pass, one row per player command:
 
 | # | Run | Command | Result (summarized) | Self-consistent | World consistent |
 | --- | --- | --- | --- | --- | --- |
-| 1 | rules | `Ich fliege …` | … | ✅ / ❌ | ✅ / ❌ |
+| 1 | rules | `I fly through …` | … | ✅ / ❌ | ✅ / ❌ |
 
 Then a line per test 1-9: which commands covered it and whether it held. A test
 with no clean evidence is `inconclusive`, not a pass — the run said nothing
