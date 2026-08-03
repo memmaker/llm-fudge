@@ -84,13 +84,24 @@ type session struct {
 // absent or malformed prompt file fails there, loudly, rather than turning into
 // an empty string three turns in.
 type gamePrompts struct {
-	narrationDemand string
-	emptyReply      string
 	charsheetHeader string
 	styleMarker     string
 	noteMissing     string
 	noteForm        string
 }
+
+// sceneDemand is what the narration phase opens with, and what it says again to
+// a reply that came back empty. It is not a prompt file: nobody tunes it
+// between runs, and the two files it replaces said the same thing twice.
+//
+// It says the tools are gone rather than letting the DM discover that its next
+// call does not exist, because tools that quietly vanish read as a malfunction
+// from the inside, and a malfunction gets retried.
+const sceneDemand = "Stop resolving and narrate. The dice are no longer available to you and the " +
+	"player has been shown nothing since their last line. Write the scene now from what you already " +
+	"know: the results above are what happened, and anything still unsettled is yours to settle in " +
+	"the fiction. Then close with the whole character sheet in the world update block, and write " +
+	"nothing else outside it."
 
 func loadGamePrompts() (gamePrompts, error) {
 	var p gamePrompts
@@ -98,8 +109,6 @@ func loadGamePrompts() (gamePrompts, error) {
 		into *string
 		file string
 	}{
-		{&p.narrationDemand, "turn-narration-demand.md"},
-		{&p.emptyReply, "turn-empty-reply.md"},
 		{&p.charsheetHeader, "charsheet-header.md"},
 		{&p.styleMarker, "style-override.md"},
 		{&p.noteMissing, "note-missing-block.md"},

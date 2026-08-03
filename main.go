@@ -246,60 +246,19 @@ func setupSetting(s *session, rl *readline.Instance) error {
 		return err
 	}
 
-	// Phase 1: clarification, refined until the player says yes.
-	clarifyPrompt, err := prompts.LoadPrompt("", nil, "setting-clarification.md")
-	if err != nil {
-		return err
-	}
-	conceptRequest, err := prompts.Fill("setting-concept-request.md", map[string]string{"CONCEPT": description})
-	if err != nil {
-		return err
-	}
-	clarifyMessages := []llm.Message{
-		{Role: llm.RoleSystem, Content: clarifyPrompt},
-		{Role: llm.RoleUser, Content: conceptRequest},
-	}
-
-	var agreedConcept string
-	for {
-		fmt.Println()
-		response, err := s.chat(clarifyMessages, nil)
-		if err != nil {
-			return err
-		}
-		fmt.Println()
-
-		userResponse, err := ui.GetInput(rl, "Does this sound right? (yes/no): ")
-		if err != nil {
-			return err
-		}
-		if userResponse == "yes" || userResponse == "y" {
-			agreedConcept = response.Message.Content
-			break
-		}
-
-		clarifyMessages = append(clarifyMessages, response.Message, llm.Message{
-			Role:    llm.RoleUser,
-			Content: userResponse,
-		})
-		fmt.Println()
-	}
-
-	// Phase 2: creation.
-	createPrompt, err := prompts.LoadPrompt("", nil, "setting-creation.md")
-	if err != nil {
-		return err
-	}
-	creationRequest, err := prompts.Fill("setting-creation-request.md", map[string]string{
-		"CONCEPT": description,
-		"DESIGN":  agreedConcept,
-	})
+	// One request. There was a clarification round in front of this — propose a
+	// design, ask "does this sound right?", then build the agreed one — which
+	// cost a prompt file, a request stub and a confirmation loop to produce
+	// text that was handed straight back to the model. The setting is written to
+	// disk either way, and a player who dislikes it can say so by running this
+	// again.
+	createPrompt, err := prompts.Fill("setting-creation.md", nil)
 	if err != nil {
 		return err
 	}
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
-		{Role: llm.RoleUser, Content: creationRequest},
+		{Role: llm.RoleUser, Content: "Create a custom Fudge setting with this concept: " + description},
 	}
 
 	fmt.Println()
@@ -354,25 +313,14 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 
 	// This phase says nothing to the player at all: it runs silent and its whole
 	// output is a file, which becomes the DM's briefing.
-	prompt, err := prompts.LoadPrompt("", nil, "adventure-creation.md")
-	if err != nil {
-		return err
-	}
-	request, err := prompts.Fill("adventure-request.md", map[string]string{
-		"SETTING":  s.settingDesc,
-		"SCENARIO": scenario,
-	})
-	if err != nil {
-		return err
-	}
-	retry, err := prompts.Fill("adventure-retry.md", nil)
+	prompt, err := prompts.Fill("adventure-creation.md", nil)
 	if err != nil {
 		return err
 	}
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: prompt},
-		{Role: llm.RoleUser, Content: request},
+		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for this setting:\n\n%s\n\nThe scenario: %s", s.settingDesc, scenario)},
 	}
 
 	fmt.Println()
@@ -390,7 +338,7 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 			}
 			messages = append(messages, llm.Message{
 				Role:    llm.RoleUser,
-				Content: retry,
+				Content: "You did not save the adventure. Call write_adventure with the title and full content now.",
 			})
 			continue
 		}
@@ -968,9 +916,7 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 // output is the scene. The tools come off the table rather than being left
 // unused, so that resolving further is not merely discouraged but unavailable.
 func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool) {
-	// The demand says the tools are gone, because tools that quietly vanish read
-	// as a malfunction from the inside, and a malfunction gets retried.
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.narrationDemand})
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: sceneDemand})
 
 	for request := 1; request <= maxProseRequests; request++ {
 		response, err := chat(s.withCharsheet(*messages), nil)
@@ -988,8 +934,9 @@ func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool)
 		if told.prose != "" {
 			return told, true
 		}
-		// A reply with no tools available and no prose says nothing at all.
-		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.emptyReply})
+		// A reply with no tools available and no prose says nothing at all. It is
+		// asked again, in the same words: there is only one thing left to do.
+		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: sceneDemand})
 	}
 	return scene{}, false
 }

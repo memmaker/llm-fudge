@@ -17,19 +17,16 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		file string
 		vars map[string]string
 	}{
-		{"turn-narration-demand.md", nil},
-		{"turn-empty-reply.md", nil},
 		{"charsheet-header.md", nil},
 		{"note-missing-block.md", nil},
 		{"note-block-form.md", nil},
 		{"style-override.md", nil},
 		{"image-request.md", nil},
-		{"adventure-retry.md", nil},
+		{"setting-creation.md", nil},
+		{"adventure-creation.md", nil},
 		{"adventure-briefing.md", map[string]string{"ADVENTURE": "x"}},
 		{"opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": "x"}},
-		{"setting-concept-request.md", map[string]string{"CONCEPT": "x"}},
-		{"setting-creation-request.md", map[string]string{"CONCEPT": "x", "DESIGN": "y"}},
-		{"adventure-request.md", map[string]string{"SETTING": "x", "SCENARIO": "y"}},
+		{"dm.md", map[string]string{"CHARSHEET_TEMPLATE": "x"}},
 	}
 
 	for _, c := range cases {
@@ -90,10 +87,6 @@ func TestNoOrphanedPromptFiles(t *testing.T) {
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".md") {
-			continue
-		}
-		// always.md is wrapped in by LoadPrompt itself.
-		if name == "always.md" {
 			continue
 		}
 		if !strings.Contains(code.String(), name) {

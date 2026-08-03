@@ -56,27 +56,26 @@ func substitute(name, text string, vars map[string]string) (string, error) {
 	return strings.TrimSpace(text), nil
 }
 
-// LoadPrompt assembles one system prompt: always.md, then each of the given
-// prompt files in order, then the setting. The wrapper appears exactly once no
-// matter how many files are combined, and the {{KEY}} substitution runs over
-// the assembled whole — a prompt names a file at authoring time and receives its
-// contents at runtime, which is the only way a pointer survives a turn that has
-// no read tool to follow one with.
+// LoadPrompt assembles one system prompt: each of the given prompt files in
+// order, then the setting. The {{KEY}} substitution runs over the assembled
+// whole — a prompt names a file at authoring time and receives its contents at
+// runtime, which is the only way a pointer survives a turn that has no read
+// tool to follow one with.
+//
+// There is no wrapper file any more. The Fudge reference used to be prepended
+// to every system prompt this built, including the two setup prompts that have
+// no use for a ladder; it lives in dm.md now, where its only reader is.
 func LoadPrompt(setting string, vars map[string]string, filenames ...string) (string, error) {
-	always, err := os.ReadFile(Path("always.md"))
-	if err != nil {
-		return "", fmt.Errorf("failed to load always.md: %w", err)
-	}
-
 	var b strings.Builder
-	b.Write(always)
 
-	for _, filename := range filenames {
+	for i, filename := range filenames {
 		content, err := os.ReadFile(Path(filename))
 		if err != nil {
 			return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
 		}
-		b.WriteString("\n\n")
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
 		b.Write(content)
 	}
 

@@ -33,8 +33,10 @@ which is where to look when reading old commits.
 - Context: What the DM sees, in three blocks and no more: Ground Rules, Chat,
   Charsheet. The Charsheet is pinned last and re-arranged each turn so exactly
   one copy of it is ever present.
-- Ground Rules: The assembled system prompt — the Fudge reference, the DM's job,
-  the setting prose. Carries the rules text that used to be Go code.
+- Ground Rules: The assembled system prompt — `dm.md`, which carries the DM's
+  job, the Fudge reference and the shape of the sheet, plus the setting prose.
+  One file rather than a wrapper and a body: the wrapper was prepended to the
+  setup prompts too, which have no use for a ladder.
 - Prompt set: Every model-facing word, in one language. A game is monolingual:
   the language the player reads is the language the prompt set is written in,
   and there is no directive asking for it. Playing in another language means
