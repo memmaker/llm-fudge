@@ -68,8 +68,13 @@ func requestTokens(messages []llm.Message, response llm.Response) int {
 func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
+	language := flag.String("lang", "en", "Language for prompts (for example: en or de)")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
 	flag.Parse()
+	if err := prompts.SetLanguage(*language); err != nil {
+		fmt.Println("Error selecting language:", err)
+		return
+	}
 
 	if *scriptFile != "" {
 		in := io.Reader(os.Stdin)
@@ -127,11 +132,11 @@ func loadDMPrompt(s *session) (string, error) {
 	// The template is inlined rather than pointed at: an ordinary turn has no
 	// read tool left to follow a pointer with, and the shape of the sheet is
 	// what the world update block is measured against every turn.
-	template, err := os.ReadFile(charsheetTemplate)
+	template, err := prompts.Fill(charsheetTemplate, nil)
 	if err != nil {
 		return "", err
 	}
-	return prompts.LoadPrompt(s.settingDesc, map[string]string{"CHARSHEET_TEMPLATE": string(template)}, files...)
+	return prompts.LoadPrompt(s.settingDesc, map[string]string{"CHARSHEET_TEMPLATE": template}, files...)
 }
 
 // debugArgLimit caps the arguments shown for a tool call. Narration prose and
@@ -256,9 +261,13 @@ func setupSetting(s *session, rl *readline.Instance) error {
 	if err != nil {
 		return err
 	}
+	userPrompt, err := prompts.Fill("setting-concept.md", map[string]string{"DESCRIPTION": description})
+	if err != nil {
+		return err
+	}
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: createPrompt},
-		{Role: llm.RoleUser, Content: "Create a custom Fudge setting with this concept: " + description},
+		{Role: llm.RoleUser, Content: userPrompt},
 	}
 
 	fmt.Println()
@@ -318,9 +327,16 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 		return err
 	}
 
+	userPrompt, err := prompts.Fill("adventure-scenario.md", map[string]string{
+		"SETTING":  s.settingDesc,
+		"SCENARIO": scenario,
+	})
+	if err != nil {
+		return err
+	}
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: prompt},
-		{Role: llm.RoleUser, Content: fmt.Sprintf("Improvise an adventure for this setting:\n\n%s\n\nThe scenario: %s", s.settingDesc, scenario)},
+		{Role: llm.RoleUser, Content: userPrompt},
 	}
 
 	fmt.Println()
@@ -336,10 +352,11 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 			if response.Message.Content != "" {
 				messages = append(messages, response.Message)
 			}
-			messages = append(messages, llm.Message{
-				Role:    llm.RoleUser,
-				Content: "You did not save the adventure. Call write_adventure with the title and full content now.",
-			})
+			reminder, err := prompts.Fill("adventure-save-reminder.md", nil)
+			if err != nil {
+				return err
+			}
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: reminder})
 			continue
 		}
 
@@ -523,26 +540,21 @@ func (s *session) requestImagePrompt(chat chatRound) error {
 	if s.lastNarration == "" {
 		return fmt.Errorf("no scene yet — play a turn first")
 	}
-	guidance, err := os.ReadFile(prompts.Path("image-guidance.md"))
+	guidance, err := prompts.Fill("image-guidance.md", nil)
 	if err != nil {
 		return err
 	}
 
-	request, err := prompts.Fill("image-request.md", nil)
+	request, err := prompts.Fill("image-request.md", map[string]string{
+		"GUIDANCE": guidance,
+		"SETTING":  s.settingDesc,
+	})
 	if err != nil {
 		return err
-	}
-
-	var sys strings.Builder
-	sys.WriteString(request)
-	sys.WriteString("\n\n")
-	sys.Write(guidance)
-	if s.settingDesc != "" {
-		fmt.Fprintf(&sys, "\nSetting: %s\n", s.settingDesc)
 	}
 
 	response, err := chat(s.withCharsheet([]llm.Message{
-		{Role: llm.RoleSystem, Content: sys.String()},
+		{Role: llm.RoleSystem, Content: request},
 		{Role: llm.RoleUser, Content: s.lastNarration},
 	}), nil)
 	if err != nil {
@@ -916,7 +928,7 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 // output is the scene. The tools come off the table rather than being left
 // unused, so that resolving further is not merely discouraged but unavailable.
 func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool) {
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: sceneDemand})
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.sceneDemand})
 
 	for request := 1; request <= maxProseRequests; request++ {
 		response, err := chat(s.withCharsheet(*messages), nil)
@@ -936,7 +948,7 @@ func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool)
 		}
 		// A reply with no tools available and no prose says nothing at all. It is
 		// asked again, in the same words: there is only one thing left to do.
-		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: sceneDemand})
+		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.sceneDemand})
 	}
 	return scene{}, false
 }

@@ -21,12 +21,31 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		{"note-missing-block.md", nil},
 		{"note-block-form.md", nil},
 		{"style-override.md", nil},
-		{"image-request.md", nil},
+		{"image-request.md", map[string]string{"GUIDANCE": "guidance", "SETTING": "setting"}},
 		{"setting-creation.md", nil},
+		{"setting-concept.md", map[string]string{"DESCRIPTION": "x"}},
 		{"adventure-creation.md", nil},
+		{"adventure-scenario.md", map[string]string{"SETTING": "x", "SCENARIO": "y"}},
+		{"adventure-save-reminder.md", nil},
+		{"scene-demand.md", nil},
+		{"tool-user-choice.md", nil},
+		{"tool-user-choice-option.md", nil},
+		{"tool-create-setting.md", nil},
+		{"tool-create-setting-name.md", nil},
+		{"tool-write-setting.md", nil},
+		{"tool-write-setting-content.md", nil},
+		{"tool-write-adventure.md", nil},
+		{"tool-write-adventure-title.md", nil},
+		{"tool-write-adventure-content.md", nil},
+		{"tool-check.md", nil},
+		{"tool-check-level.md", nil},
+		{"tool-check-vs.md", nil},
+		{"tool-check-modifier.md", nil},
+		{"tool-check-what.md", nil},
 		{"adventure-briefing.md", map[string]string{"ADVENTURE": "x"}},
 		{"opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": "x"}},
 		{"dm.md", map[string]string{"CHARSHEET_TEMPLATE": "x"}},
+		{"setting-information.md", map[string]string{"SETTING": "x"}},
 	}
 
 	for _, c := range cases {
@@ -38,6 +57,24 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		if strings.TrimSpace(text) == "" {
 			t.Errorf("%s is empty", c.file)
 		}
+	}
+}
+
+func TestPromptLanguages(t *testing.T) {
+	for _, language := range []string{"en", "de"} {
+		if err := prompts.SetLanguage(language); err != nil {
+			t.Fatal(err)
+		}
+		text, err := prompts.Fill("scene-demand.md", nil)
+		if err != nil {
+			t.Fatalf("%s: %v", language, err)
+		}
+		if strings.TrimSpace(text) == "" {
+			t.Fatalf("%s scene demand is empty", language)
+		}
+	}
+	if err := prompts.SetLanguage("en"); err != nil {
+		t.Fatal(err)
 	}
 }
 

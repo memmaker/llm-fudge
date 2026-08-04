@@ -16,7 +16,8 @@ model, item conservation, a validated state diff — and
 it on purpose. If you are looking for that design, it is in ADRs 001-005 and in
 the git history.
 [ADR 007](docs/adr/007-two-phase-turn-and-in-band-charsheet.md) is the current
-shape: the sheet arrives in band, and the prompt set is monolingual.
+shape: the sheet arrives in band, and prompts are selected as a language-specific
+set.
 
 ## Quick start
 
@@ -28,9 +29,9 @@ go build -o fudge .
 You'll pick a setting and an adventure, then the DM makes your character with
 you in conversation and opens the first scene. Type actions in plain English.
 
-The game is played in the language `system-prompts/` is written in, which is
-English. Playing in another language means translating that directory, not
-passing a flag — see [ADR 007](docs/adr/007-two-phase-turn-and-in-band-charsheet.md).
+The game uses English prompts by default. Pass `--lang de` to use the German
+prompt set; future languages can be added as another subdirectory under
+`prompts/`.
 
 An API key is required — see [Configuration](#configuration) below.
 
@@ -44,6 +45,7 @@ An API key is required — see [Configuration](#configuration) below.
 | --- | --- | --- |
 | `-debug` | off | Show tool calls, their arguments and results, and what each reply cost — and write every request and response in full to `log/` in the session directory. |
 | `-img-gen` | off | Ask the DM for an image prompt each turn, written to `img-gen.md`. |
+| `-lang` | `en` | Select the prompt language, such as `en` or `de`. |
 | `-script` | — | Play non-interactively from a file of answers, one per line. See [Scripted play](#scripted-play). |
 
 ### In-game commands
@@ -192,15 +194,9 @@ tools.go                    Every tool the DM can call, and their handlers
 
 rules/check.go              The whole engine: the ladder, 4dF, one check
 
-prompts/                    Reads prompt files, fills {{PLACEHOLDER}}s, and
-                             appends the setting
-system-prompts/             The model-facing text worth editing between runs,
-                             in one language: dm.md (the job, the Fudge
-                             reference and the sheet's shape), the two
-                             briefings, the setup prompts, the carried notes,
-                             the header above the character sheet, and the
-                             image prompts. Text nobody tunes — a request stub,
-                             a retry, the narration demand — is a const in Go
+prompts/                    Prompt loader plus language-specific model-facing
+                             text in prompts/en/ and prompts/de/. The loader
+                             fills {{PLACEHOLDER}}s and appends the setting.
 
 settings/<name>/            One folder per playable setting: description.md
   adventures/                and pre-written adventures. Ships with deadlands,

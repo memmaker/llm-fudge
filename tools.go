@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"fudge/prompts"
 	"fudge/rules"
 	"fudge/ui"
 
@@ -16,29 +17,35 @@ import (
 // userChoiceTool is the menu, offered wherever the model needs the player to
 // pick between a small number of distinct options.
 func userChoiceTool() llm.Tool {
+	description := prompts.MustFill("tool-user-choice.md", nil)
+	optionDescription := prompts.MustFill("tool-user-choice-option.md", nil)
 	return llm.Tool{Type: "function", Function: llm.ToolFunction{
 		Name:        "user_choice",
-		Description: "Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically.",
+		Description: description,
 		Parameters: map[string]any{"type": "object", "properties": map[string]any{
-			"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "2-4 mutually exclusive options."},
+			"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": optionDescription},
 		}, "required": []string{"options"}},
 	}}
 }
 
 func settingCreationTools() []llm.Tool {
+	createDescription := prompts.MustFill("tool-create-setting.md", nil)
+	createNameDescription := prompts.MustFill("tool-create-setting-name.md", nil)
+	writeDescription := prompts.MustFill("tool-write-setting.md", nil)
+	writeContentDescription := prompts.MustFill("tool-write-setting-content.md", nil)
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{
 			Name:        "create_setting",
-			Description: "Initialize a new setting with a chosen name. Call this FIRST. The name becomes the folder name (lowercased, spaces to hyphens): 'Haunted Deadlands' becomes 'haunted-deadlands'.",
+			Description: createDescription,
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "The setting name."},
+				"name": map[string]any{"type": "string", "description": createNameDescription},
 			}, "required": []string{"name"}},
 		}},
 		{Type: "function", Function: llm.ToolFunction{
 			Name:        "write_setting_file",
-			Description: "Write the setting's description.md: plain markdown describing the world's atmosphere, themes and core concept, and — because there is no separate data file any more — the species, professions, skills, gifts and faults that exist in it, as prose the DM reads. Two to six paragraphs. Call this once, after create_setting.",
+			Description: writeDescription,
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"content": map[string]any{"type": "string", "description": "The full description.md text."},
+				"content": map[string]any{"type": "string", "description": writeContentDescription},
 			}, "required": []string{"content"}},
 		}},
 		userChoiceTool(),
@@ -46,13 +53,16 @@ func settingCreationTools() []llm.Tool {
 }
 
 func adventureCreationTools() []llm.Tool {
+	description := prompts.MustFill("tool-write-adventure.md", nil)
+	titleDescription := prompts.MustFill("tool-write-adventure-title.md", nil)
+	contentDescription := prompts.MustFill("tool-write-adventure-content.md", nil)
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{
 			Name:        "write_adventure",
-			Description: "Persist the improvised adventure to disk and hand it to the DM as this session's briefing. REQUIRED: call this exactly once, as your only output—do not write the adventure as plain text.",
+			Description: description,
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"title":   map[string]any{"type": "string", "description": "Short evocative title (3-6 words), used as the filename."},
-				"content": map[string]any{"type": "string", "description": "The full adventure text: hook, situation, immediate stakes."},
+				"title":   map[string]any{"type": "string", "description": titleDescription},
+				"content": map[string]any{"type": "string", "description": contentDescription},
 			}, "required": []string{"title", "content"}},
 		}},
 	}
@@ -64,15 +74,20 @@ func adventureCreationTools() []llm.Tool {
 // milestone costs no request — so nothing else has a consumer left. A tool the
 // DM is never shown is one it cannot reach for by mistake. See docs/adr/007.
 func gameTools() []llm.Tool {
+	checkDescription := prompts.MustFill("tool-check.md", nil)
+	levelDescription := prompts.MustFill("tool-check-level.md", nil)
+	vsDescription := prompts.MustFill("tool-check-vs.md", nil)
+	modifierDescription := prompts.MustFill("tool-check-modifier.md", nil)
+	whatDescription := prompts.MustFill("tool-check-what.md", nil)
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{
 			Name:        "check",
-			Description: "Roll 4dF for one action and get the result. Use it whenever an outcome is genuinely uncertain; do not decide success or failure yourself, and never invent a roll. Trivial actions with no stakes need no check at all.",
+			Description: checkDescription,
 			Parameters: map[string]any{"type": "object", "properties": map[string]any{
-				"level":    map[string]any{"type": "string", "description": "The acting trait's level from the character sheet: Terrible, Poor, Mediocre, Fair, Good, Great or Superb."},
-				"vs":       map[string]any{"type": "string", "description": "What is being overcome. For an unopposed action, a difficulty: Trivially easy, Very easy, Easy, Average, Hard, Very hard, Extremely hard. For an opposed action, the opponent's trait level (Fair, Good, ...), and the opponent rolls too."},
-				"modifier": map[string]any{"type": "integer", "description": "Situational modifier, roughly -4 to +4. Zero should be the common case. Include the wound penalty from the sheet here."},
-				"what":     map[string]any{"type": "string", "description": "One short phrase naming the attempt, e.g. 'Garret picks the cellar lock'."},
+				"level":    map[string]any{"type": "string", "description": levelDescription},
+				"vs":       map[string]any{"type": "string", "description": vsDescription},
+				"modifier": map[string]any{"type": "integer", "description": modifierDescription},
+				"what":     map[string]any{"type": "string", "description": whatDescription},
 			}, "required": []string{"level", "vs", "what"}},
 		}},
 		userChoiceTool(),

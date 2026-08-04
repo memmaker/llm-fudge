@@ -1,0 +1,1 @@
+Würfle 4dF für eine Handlung und gib das Ergebnis zurück. Verwende dies, wann immer ein Ausgang wirklich ungewiss ist; entscheide Erfolg oder Misserfolg nicht selbst und erfinde niemals einen Wurf. Triviale Handlungen ohne Risiko brauchen keinen Check.

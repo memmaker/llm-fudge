@@ -1,0 +1,1 @@
+Präsentiere der spielenden Person 2–4 sich gegenseitig ausschließende Optionen. Verwende dies NUR, wenn du ohne ihre Wahl nicht weitermachen kannst. Schreibe zuerst die Frage als normalen Text; das Menü erscheint darunter. Füge niemals eine Option „Eigene Antwort“ hinzu – sie wird automatisch ergänzt.

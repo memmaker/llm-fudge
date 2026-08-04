@@ -26,9 +26,9 @@ const (
 	// only ever shows the latest state, so a fact that quietly stopped being
 	// restated would leave no trace anywhere else.
 	charsheetLog = "charsheet-log.md"
-	// charsheetTemplate lives at the repo root rather than in the session
-	// directory. It is inlined into the DM prompt to shape the first sheet, and
-	// after that the sheet is its own template.
+	// charsheetTemplate is a language-specific prompt asset. It is inlined into
+	// the DM prompt to shape the first sheet, and after that the sheet is its own
+	// template.
 	charsheetTemplate = "charsheet_template.md"
 	// requestLogDir holds one file per request made to the model, written only
 	// under -debug.
@@ -88,20 +88,8 @@ type gamePrompts struct {
 	styleMarker     string
 	noteMissing     string
 	noteForm        string
+	sceneDemand     string
 }
-
-// sceneDemand is what the narration phase opens with, and what it says again to
-// a reply that came back empty. It is not a prompt file: nobody tunes it
-// between runs, and the two files it replaces said the same thing twice.
-//
-// It says the tools are gone rather than letting the DM discover that its next
-// call does not exist, because tools that quietly vanish read as a malfunction
-// from the inside, and a malfunction gets retried.
-const sceneDemand = "Stop resolving and narrate. The dice are no longer available to you and the " +
-	"player has been shown nothing since their last line. Write the scene now from what you already " +
-	"know: the results above are what happened, and anything still unsettled is yours to settle in " +
-	"the fiction. Then close with the whole character sheet in the world update block, and write " +
-	"nothing else outside it."
 
 func loadGamePrompts() (gamePrompts, error) {
 	var p gamePrompts
@@ -113,6 +101,7 @@ func loadGamePrompts() (gamePrompts, error) {
 		{&p.styleMarker, "style-override.md"},
 		{&p.noteMissing, "note-missing-block.md"},
 		{&p.noteForm, "note-block-form.md"},
+		{&p.sceneDemand, "scene-demand.md"},
 	} {
 		text, err := prompts.Fill(load.file, nil)
 		if err != nil {

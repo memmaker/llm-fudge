@@ -1,0 +1,1 @@
+Was überwunden werden soll. Bei einer nicht umkämpften Handlung eine Schwierigkeit: Trivial, Sehr leicht, Leicht, Durchschnittlich, Schwer, Sehr schwer, Extrem schwer. Bei einer umkämpften Handlung die Eigenschaftsstufe des Gegners; der Gegner würfelt ebenfalls.

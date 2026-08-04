@@ -1,0 +1,1 @@
+Speichere das improvisierte Abenteuer und übergib es der Spielleitung als Briefing dieser Runde. VERBINDLICH: genau einmal aufrufen, als einzige Ausgabe – schreibe das Abenteuer nicht als normalen Text.

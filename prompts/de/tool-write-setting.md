@@ -1,0 +1,1 @@
+Schreibe description.md des Settings: schlichtes Markdown über Atmosphäre, Themen und Grundidee der Welt sowie – da es keine separate Datendatei mehr gibt – über Spezies, Berufe, Fertigkeiten, Gaben und Schwächen, als Prosa für die Spielleitung. Zwei bis sechs Absätze. Einmal nach create_setting aufrufen.

@@ -1,0 +1,1 @@
+Present the player with 2-4 mutually exclusive options. ONLY use when you cannot continue without knowing which they pick. Write the question as ordinary text first; the menu appears under it. Never include a 'Type your answer' option—it is added automatically.

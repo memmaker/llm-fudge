@@ -7,29 +7,47 @@ import (
 	"strings"
 )
 
-// A prompt set is monolingual: the language the player reads is the language
-// these files are written in, and there is no directive asking for one. Playing
-// in another language means translating the set. An instruction to switch can
-// be disobeyed, and every language slip observed in play was meta text escaping
-// into the player's channel rather than a translation failure. See docs/adr/007.
+// Prompt files are grouped by language. English is the default; callers select
+// another language once at startup and every subsequent load uses that set.
 
-// dir is where every prompt file lives. Prompts are read from disk rather than
+// root is where every language-specific prompt set lives. Prompts are read from disk rather than
 // embedded so they can be edited between runs without a rebuild, which is most
 // of what working on this project consists of — but the path is resolved once,
 // at init, so a later chdir cannot move it out from under a turn in progress.
-var dir = absolutePromptDir()
+var root = absolutePromptDir()
+var language = "en"
 
 func absolutePromptDir() string {
-	abs, err := filepath.Abs("system-prompts")
+	abs, err := filepath.Abs("prompts")
 	if err != nil {
-		return "system-prompts"
+		return "prompts"
 	}
 	return abs
 }
 
+// SetLanguage selects the prompt directory used by subsequent loads.
+func SetLanguage(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) {
+		return fmt.Errorf("invalid language %q", value)
+	}
+	info, err := os.Stat(filepath.Join(root, value))
+	if err != nil {
+		return fmt.Errorf("language %q is not available: %w", value, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("language %q is not a prompt directory", value)
+	}
+	language = value
+	return nil
+}
+
+// Language reports the currently selected prompt language.
+func Language() string { return language }
+
 // Path is the full path of one prompt file, for the callers that read a prompt
 // themselves rather than through Fill.
-func Path(name string) string { return filepath.Join(dir, name) }
+func Path(name string) string { return filepath.Join(root, language, name) }
 
 // Fill reads one prompt file and substitutes each {{KEY}} with its value. A key
 // left in the file with nothing to fill it is an error rather than a
@@ -37,9 +55,20 @@ func Path(name string) string { return filepath.Join(dir, name) }
 func Fill(name string, vars map[string]string) (string, error) {
 	content, err := os.ReadFile(Path(name))
 	if err != nil {
-		return "", fmt.Errorf("failed to load prompt %q: %w", name, err)
+		return "", fmt.Errorf("failed to load %s prompt %q: %w", language, name, err)
 	}
 	return substitute(name, string(content), vars)
+}
+
+// MustFill loads a prompt that is required to construct a request. It is
+// intended for static tool metadata, where a missing file is a configuration
+// error that should stop startup rather than silently sending an empty field.
+func MustFill(name string, vars map[string]string) string {
+	text, err := Fill(name, vars)
+	if err != nil {
+		panic(err)
+	}
+	return text
 }
 
 func substitute(name, text string, vars map[string]string) (string, error) {
@@ -71,7 +100,7 @@ func LoadPrompt(setting string, vars map[string]string, filenames ...string) (st
 	for i, filename := range filenames {
 		content, err := os.ReadFile(Path(filename))
 		if err != nil {
-			return "", fmt.Errorf("failed to load prompt file %q: %w", filename, err)
+			return "", fmt.Errorf("failed to load %s prompt file %q: %w", language, filename, err)
 		}
 		if i > 0 {
 			b.WriteString("\n\n")
@@ -82,9 +111,18 @@ func LoadPrompt(setting string, vars map[string]string, filenames ...string) (st
 	// Append the setting's own prose if there is any. It is a description now,
 	// not a table of slugs: nothing validates what the DM invents inside it.
 	if setting != "" {
-		b.WriteString("\n## Setting Information:\n\n")
-		b.WriteString(setting)
+		content, err := os.ReadFile(Path("setting-information.md"))
+		if err != nil {
+			return "", fmt.Errorf("failed to load %s prompt file %q: %w", language, "setting-information.md", err)
+		}
+		b.WriteString("\n")
+		b.Write(content)
 	}
 
-	return substitute(strings.Join(filenames, "+"), b.String(), vars)
+	allVars := make(map[string]string, len(vars)+1)
+	for key, value := range vars {
+		allVars[key] = value
+	}
+	allVars["SETTING"] = setting
+	return substitute(strings.Join(filenames, "+"), b.String(), allVars)
 }

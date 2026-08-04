@@ -1,0 +1,1 @@
+Roll 4dF for one action and get the result. Use it whenever an outcome is genuinely uncertain; do not decide success or failure yourself, and never invent a roll. Trivial actions with no stakes need no check at all.

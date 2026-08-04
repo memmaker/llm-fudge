@@ -1,0 +1,1 @@
+What is being overcome. For an unopposed action, a difficulty: Trivially easy, Very easy, Easy, Average, Hard, Very hard, Extremely hard. For an opposed action, the opponent's trait level (Fair, Good, ...), and the opponent rolls too.

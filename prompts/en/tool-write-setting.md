@@ -1,0 +1,1 @@
+Write the setting's description.md: plain markdown describing the world's atmosphere, themes and core concept, and — because there is no separate data file any more — the species, professions, skills, gifts and faults that exist in it, as prose the DM reads. Two to six paragraphs. Call this once, after create_setting.
