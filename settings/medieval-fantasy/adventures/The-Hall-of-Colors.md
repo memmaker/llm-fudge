@@ -126,7 +126,7 @@ A plain wooden chest.
 
 # GM Information
 
-## Secret
+## All of this is Secret
 
 **This information must not be given to the players unless it comes out through
 play.**
@@ -141,8 +141,8 @@ The sign "REVERSE" is the only clue to this solution.
 
 The pedestals have no visible mechanism.
 
-If you close one eye, fragments of words become visible on each statue. **This
-always works and needs no check:** whoever closes one eye and looks, reads the
+If the player character closes one eye, fragments of words become visible on each statue.
+**This always works and needs no check:** whoever closes one eye and looks, reads the
 words. The GM does not roll for it and does not let it fail.
 
 - The red one reads: "I want to go to the sea"
