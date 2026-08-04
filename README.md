@@ -198,10 +198,9 @@ prompts/                    Prompt loader plus language-specific model-facing
                              text in prompts/en/ and prompts/de/. The loader
                              fills {{PLACEHOLDER}}s and appends the setting.
 
-settings/<name>/            One folder per playable setting: description.md
-  adventures/                and pre-written adventures. Ships with deadlands,
-                             medieval-fantasy, neon-grid, starlight-empires,
-                             everyday-modern.
+settings/<lang>/<name>/     One folder per playable setting and language:
+  description.md              description plus pre-written adventures. Ships
+  adventures/                 with English and German catalogs.
 
 ui/                         Terminal I/O: readline input, choice menus,
                              spinner, text wrapping, scripted input

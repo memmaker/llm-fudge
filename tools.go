@@ -95,7 +95,7 @@ func gameTools() []llm.Tool {
 }
 
 func loadSetting(s *session, name string) error {
-	path := filepath.Join("settings", name)
+	path := filepath.Join(settingsRoot(), name)
 	info, err := os.Stat(path)
 	if err != nil || !info.IsDir() {
 		return fmt.Errorf("setting not found: %s", name)
@@ -113,11 +113,15 @@ func loadAdventure(s *session, name string) (string, error) {
 	if s.settingName == "" {
 		return "", fmt.Errorf("no setting loaded")
 	}
-	content, err := os.ReadFile(filepath.Join("settings", s.settingName, "adventures", name+".md"))
+	content, err := os.ReadFile(filepath.Join(settingsRoot(), s.settingName, "adventures", name+".md"))
 	if err != nil {
 		return "", fmt.Errorf("failed to load adventure: %w", err)
 	}
 	return string(content), nil
+}
+
+func settingsRoot() string {
+	return filepath.Join("settings", prompts.Language())
 }
 
 // executeAction runs one tool call. Every handler returns text the model reads,
@@ -183,22 +187,22 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		if name == "" {
 			return "", fmt.Errorf("the setting needs a name")
 		}
-		if err := os.MkdirAll(filepath.Join("settings", name, "adventures"), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Join(settingsRoot(), name, "adventures"), 0755); err != nil {
 			return "", err
 		}
 		s.settingName = name
-		return fmt.Sprintf("Created settings/%s. Write description.md next.", name), nil
+		return fmt.Sprintf("Created %s/%s. Write description.md next.", settingsRoot(), name), nil
 
 	case "write_setting_file":
 		if s.settingName == "" {
 			return "", fmt.Errorf("call create_setting first")
 		}
 		content := str("content")
-		if err := os.WriteFile(filepath.Join("settings", s.settingName, "description.md"), []byte(content), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(settingsRoot(), s.settingName, "description.md"), []byte(content), 0644); err != nil {
 			return "", err
 		}
 		s.settingDesc = content
-		return fmt.Sprintf("Wrote settings/%s/description.md.", s.settingName), nil
+		return fmt.Sprintf("Wrote %s/%s/description.md.", settingsRoot(), s.settingName), nil
 
 	case "write_adventure":
 		if s.settingName == "" {
@@ -208,7 +212,7 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		if title == "" {
 			return "", fmt.Errorf("the adventure needs a title")
 		}
-		path := filepath.Join("settings", s.settingName, "adventures", slugify(title)+".md")
+		path := filepath.Join(settingsRoot(), s.settingName, "adventures", slugify(title)+".md")
 		if err := os.WriteFile(path, []byte(str("content")), 0644); err != nil {
 			return "", err
 		}

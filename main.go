@@ -394,7 +394,10 @@ func (s *session) runToolCalls(calls []llm.ToolCall, echo bool) []llm.Message {
 }
 
 func listAvailableSettings() ([]string, error) {
-	entries, err := os.ReadDir("settings")
+	entries, err := os.ReadDir(settingsRoot())
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +415,7 @@ func listAvailableAdventures(s *session) ([]string, error) {
 	if s.settingName == "" {
 		return nil, fmt.Errorf("no setting loaded")
 	}
-	entries, err := os.ReadDir(filepath.Join("settings", s.settingName, "adventures"))
+	entries, err := os.ReadDir(filepath.Join(settingsRoot(), s.settingName, "adventures"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
