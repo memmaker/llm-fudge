@@ -70,6 +70,7 @@ func main() {
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
 	language := flag.String("lang", "en", "Language for prompts (for example: en or de)")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
+	resumeFile := flag.String("resume", "", "Start at a recorded turn instead of playing up to it: the path of a log/context-NNN.json written under -debug. Nothing before that turn is played — the recorded conversation is handed to the model as it is, under ground rules rebuilt from today's prompt files. Setting, adventure and character come from the recording; the first line of the script is the turn's player line.")
 	flag.Parse()
 	if err := prompts.SetLanguage(*language); err != nil {
 		fmt.Println("Error selecting language:", err)
@@ -112,12 +113,33 @@ func main() {
 
 	// Setup picks the world and the scenario. The character is made in the game
 	// phase, in conversation, because there is no engine left to build one in.
-	if err := runSetupPhase(s, rl); err != nil {
+	// A resumed run skips all of it: the recording says which setting and
+	// adventure it was played in, and the character is already in its charsheet.
+	var resumed *recording
+	if *resumeFile != "" {
+		rec, err := loadRecording(*resumeFile)
+		if err != nil {
+			fmt.Println("Resume error:", err)
+			return
+		}
+		if err := loadSetting(s, rec.meta.Setting); err != nil {
+			fmt.Println("Resume error:", err)
+			return
+		}
+		adventure, err := loadAdventure(s, rec.meta.Adventure)
+		if err != nil {
+			fmt.Println("Resume error:", err)
+			return
+		}
+		s.adventure, s.adventureName = adventure, rec.meta.Adventure
+		s.resumedFrom = *resumeFile
+		resumed = &rec
+	} else if err := runSetupPhase(s, rl); err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	runGamePhase(s, rl)
+	runGamePhase(s, rl, resumed)
 }
 
 func loadDMPrompt(s *session) (string, error) {
@@ -442,7 +464,9 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 	case "/quit", "/exit":
 		fmt.Println("Session ended.")
 		// os.Exit runs no deferred calls, so main's ShowCursor never fires and
-		// the player is left with an invisible cursor in their shell.
+		// the player is left with an invisible cursor in their shell — and the
+		// recording's last context, which runGamePhase defers, is never written.
+		s.writeFinalContext(*messages)
 		ui.ShowCursor()
 		os.Exit(0)
 	case "/context":
@@ -632,7 +656,7 @@ func (s *session) dumpContextToFile(filename string, messages *[]llm.Message) er
 	return os.WriteFile(filename, []byte(b.String()), 0644)
 }
 
-func runGamePhase(s *session, rl *readline.Instance) {
+func runGamePhase(s *session, rl *readline.Instance, resumed *recording) {
 	// Every prompt the turn loop will need, loaded before the first request. A
 	// missing file is a startup failure rather than an empty string sent to the
 	// model three turns in.
@@ -649,11 +673,24 @@ func runGamePhase(s *session, rl *readline.Instance) {
 		return
 	}
 
+	// A resumed run gets the adventure without the instructions that only apply
+	// to the first turn, for the same reason a milestone does: the character it
+	// would ask for has already been made, and asking again would restart the
+	// game on top of the turn under test.
 	briefing, err := s.openingBriefing()
+	if resumed != nil {
+		briefing, err = s.adventureBriefing()
+	}
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
+
+	if _, err := s.createDir(savesRoot, s.adventureName); err != nil {
+		fmt.Println("Session directory error:", err)
+		return
+	}
+	fmt.Printf("\033[90m[saving to %s]\033[0m\n\n", s.dir)
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: dmPrompt},
@@ -661,11 +698,32 @@ func runGamePhase(s *session, rl *readline.Instance) {
 	}
 
 	chat := s.chatSilent
+	// The last reply of a session is in no request's sidecar — a sidecar holds
+	// what was sent, and nothing was sent after it. This is the file that closes
+	// the recording's last gap.
+	defer func() { s.writeFinalContext(messages) }()
 
-	// The opening turn makes the character and then plays the first scene. It
-	// reacts to no player line, so it opens on the briefing alone.
-	fmt.Println()
-	s.processGameTurn(chat, &messages, "")
+	switch {
+	case resumed != nil:
+		// Nothing before this turn is played. The recorded conversation goes in
+		// as it is, under ground rules and a briefing rebuilt from today's
+		// prompt files, and the first call this run makes is the turn itself.
+		messages = append(messages, resumed.messages...)
+		s.turn = resumed.turn - 1
+		if resumed.sheet != "" {
+			if err := s.writeCharsheet(resumed.sheet); err != nil {
+				fmt.Println("Charsheet error:", err)
+				return
+			}
+		}
+		fmt.Printf("\033[90m[resumed at turn %d; %d messages, %d ahead of the sheet]\033[0m\n\n",
+			resumed.turn, len(messages), len(resumed.messages))
+	default:
+		// The opening turn makes the character and then plays the first scene.
+		// It reacts to no player line, so it opens on the briefing alone.
+		fmt.Println()
+		s.processGameTurn(chat, &messages, "")
+	}
 
 	for {
 		line, err := ui.GetInput(rl, "> ")
@@ -807,6 +865,12 @@ type scene struct {
 func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playerInput string) {
 	s.turn++
 
+	// Recorded before the note is folded in, and before anything can fail: the
+	// transcript is what the player typed, not what the DM was sent.
+	if playerInput != "" {
+		s.appendTranscript("> " + playerInput)
+	}
+
 	// The carried note is the harness correcting the DM without spending a
 	// request on it. It goes in under the player's line and the player never
 	// sees it. It stays on the session until the turn carrying it survives:
@@ -846,16 +910,19 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 	}
 }
 
-// recordSheet puts the turn's block on disk, and opens the session directory if
-// this was the first one. A block that never came is not worth a request to ask
-// for: the next one restates everything, including whatever happened while it
-// was missing, so the whole correction is a note on the next player line.
+// recordSheet puts the turn's block on disk. A block that never came is not
+// worth a request to ask for: the next one restates everything, including
+// whatever happened while it was missing, so the whole correction is a note on
+// the next player line.
 func (s *session) recordSheet(told scene) {
 	if told.sheet == "" {
-		// Before the first block there is no lapse to correct: character
-		// creation is a conversation, and a note asking for a sheet that does
-		// not exist yet would only produce a half-made one.
-		if s.dir != "" {
+		// The note waits for a sheet to exist, not for a directory — the
+		// directory is opened at startup now and is evidence of nothing.
+		// Character creation is a conversation, and a note asking for a sheet
+		// that does not exist yet would only produce a half-made one. The cost
+		// is recorded in AGENTS.md: a session whose opening turn emits no block
+		// is never corrected at all.
+		if s.sheetWritten {
 			s.carried = s.prompts.noteMissing
 		}
 		if debug {
@@ -865,13 +932,6 @@ func (s *session) recordSheet(told scene) {
 	}
 	if told.tolerated {
 		s.carried = s.prompts.noteForm
-	}
-	if s.dir == "" {
-		if err := s.deriveDir(told.sheet); err != nil {
-			fmt.Println("\nSession directory error:", err)
-			return
-		}
-		fmt.Printf("\033[90m[saving to %s]\033[0m\n\n", s.dir)
 	}
 	if err := s.writeCharsheet(told.sheet); err != nil {
 		fmt.Println("\nCharsheet error:", err)
@@ -981,6 +1041,10 @@ func (s *session) showScene(prose, img string) {
 	}
 	fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))
 	fmt.Println()
+	// Wrapped for the terminal, unwrapped for the transcript: the wrap width
+	// belongs to whatever terminal happened to run this, and a line break in the
+	// middle of a sentence is how a phrase stops matching.
+	s.appendTranscript(prose)
 	s.spoken = append(s.spoken, prose)
 	s.lastNarration = strings.Join(s.spoken, "\n\n")
 	if err := os.WriteFile(narrationFile, []byte(s.lastNarration), 0o644); err != nil {

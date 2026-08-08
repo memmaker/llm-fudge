@@ -1,28 +1,48 @@
 Glossary
 
-Reflects ADR 007. Terms belonging to the engine-held world model — Entity,
+Reflects ADRs 007-009. Terms belonging to the engine-held world model — Entity,
 Kernel, State block, Event tag, Under-determination test, Derived field,
 Narrative properties, Conservation, Retirement, Query tool — are retired along
 with the code that gave them meaning. They are still defined in ADRs 002-005,
 which is where to look when reading old commits.
 
-- Session: One played game, whole. Lives in a Session directory, is played as a
-  single conversation, and is not resumed by replaying anything — the Charsheet
-  is what carries over.
+- Session: One played game, whole. Lives in a Session directory and is played as
+  a single conversation. A player never resumes one — the Charsheet is what
+  carries over. A test harness can, from a recorded Context log; see Resume.
 - Session directory: The scratchpad the game writes into,
-  `saves/NNNN-<character>-<adventure>/`. Created by the harness from the first
-  World update block, whose sheet carries the character's name — so the opening
-  turn looks like every other turn and cannot get the order wrong. Nothing but
-  the harness writes into it.
+  `saves/NNNN-<adventure>/`. Created at startup and numbered; the character's
+  name is not in it, because that name only exists once the first World update
+  block arrives and making the directory wait for it loses the logs of every
+  session that never emits one. Nothing but the harness writes into it.
+- Session metadata: `metadata.json` in the Session directory — setting,
+  adventure, language, model, start time, and the sidecar a resumed run started
+  from — written at startup. The only structured file the harness writes for
+  itself, and what makes a recording self-describing enough to resume.
 - Charsheet: `charsheet.md`, the single file holding everything the game knows —
   the character, the world around them, and what has been established as true.
   Emitted whole by the LLM in every World update block and written by the
-  harness. Nothing parses it beyond the character's name on the first one. It is
-  at once the character sheet, the world state, and the save file.
-- Request log: `log/NNNN.md` in the Session directory, one file per call to the
-  model, written only under `-debug`: everything sent, every tool schema sent
-  with it, and everything that came back. Calls made before the Session
-  directory exists are held and written the moment it does.
+  harness. Nothing parses it at all any more — the name regex went with the
+  character-named Session directory. It is at once the character sheet, the
+  world state, and the save file.
+- Context log: `log/context-NNN.md` in the Session directory, one pair per call
+  to the model, written only under `-debug`: everything sent, every tool schema
+  sent with it, and everything that came back. Numbered per request, not per
+  Turn — a Turn makes several, and collapsing them would hide the tool rounds.
+  Beside each is `log/context-NNN.json`, the exact message list that went on the
+  wire, which is what `-resume` reads.
+- Transcript: `transcript.md` in the Session directory, written every turn
+  whether or not `-debug` is set: the prose the player read and the lines they
+  typed, in order, and nothing else. Unwrapped, unlike the terminal, so a
+  sentence survives as a sentence — this is the artefact a test suite greps.
+- Resume: `-resume <context-NNN.json>`, which starts a Session at that Turn
+  instead of playing up to it. Nothing before that Turn is played — the recorded
+  messages are injected into the history and the first call made is the Turn
+  itself, because a model keeps no state and a Turn is defined entirely by the
+  Context it is handed. Ground Rules and the adventure briefing are rebuilt from
+  today's prompt files, so re-running one context after editing a prompt
+  measures that edit. The trailing player line is dropped and supplied by the
+  script instead; the Charsheet comes from the recording's Charsheet log. A
+  resumed run writes its own Session directory.
 - Charsheet log: `charsheet-log.md`, every accepted World update block in order.
   The Charsheet only ever shows the state that survived, so a line that quietly
   stopped being restated would leave no trace anywhere else. It is the one
@@ -88,16 +108,26 @@ which is where to look when reading old commits.
   `adventures/*.md`. The species and skill lists that used to be `.rec` data are
   paragraphs the LLM reads, not a vocabulary it is checked against.
 - Adventure: A pre-written scenario within a Setting, and half of a Session
-  directory's name.
+  directory's name. Its Secrets live beside it, in `<adventure>.secrets/`.
 - DM: The LLM. Narrates, decides consequences, restates the Charsheet at the end
   of every scene, and rolls nothing.
 - Engine: What is left of `rules/` — the Ladder, 4dF, and Check. Holds no state.
   Seeded, so a roll is fair and testable in Go, but a Session as a whole no
   longer replays.
-- Tools: What a Turn offers the DM, which is Check and the menu. Every other
+- Secret: Something an Adventure knows and the DM is not told. It lives in
+  `<adventure>.secrets/<name>.md`, outside the briefing, and reaches the Context
+  only when the DM reads it with the `secret` tool. The briefing carries the
+  trigger and the name, never the text: a rule asking a model not to say what it
+  knows is a rule it breaks at some temperature, and what is not in the window
+  cannot leak. See ADR 008.
+- Trigger: The condition in an Adventure's briefing that releases a Secret,
+  written as something the player must have *typed*. A trigger the DM would have
+  to invent an act to reach has not fired.
+- Tools: What a Turn offers the DM, which is Check, the Secret read and the
+  menu. Every other
   game tool lost its consumer when the World update block became the Charsheet's
-  only writer — the template is inlined, the Session directory is derived, and a
-  Milestone writes nothing. A tool the DM is never shown is one it cannot reach
+  only writer — the template is inlined, the Session directory is numbered rather
+  than derived, and a Milestone writes nothing. A tool the DM is never shown is one it cannot reach
   for by mistake. The file tools of ADR 006, and the confinement around them,
   are gone with them.
 - NPC: A character the DM runs. A few lines in the Charsheet's world state, with

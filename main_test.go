@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -310,17 +312,19 @@ func TestATruncatedBlockWritesNothing(t *testing.T) {
 	}
 }
 
-// The first block is what opens the save directory, which is why the opening
-// turn looks like every other turn instead of having an order to get wrong.
-func TestTheFirstBlockCreatesTheSessionDirectory(t *testing.T) {
+// The directory is open from the start now, so it is no longer evidence that a
+// sheet exists. What still has to hold is the other half of the old rule: the DM
+// is not nagged for a sheet during character creation, and is from the first one
+// on.
+func TestCharacterCreationIsNotNaggedForASheet(t *testing.T) {
 	s, _ := playSession(t)
 	s.adventureName = "Dryfall Bridge"
+	if _, err := s.createDir("saves", s.adventureName); err != nil {
+		t.Fatal(err)
+	}
 	messages := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
 
 	s.processGameTurn(replies(llm.Message{Content: "What kind of person is she?"}), &messages, "")
-	if s.dir != "" {
-		t.Fatalf("character creation opened a directory: %q", s.dir)
-	}
 	if s.carried != "" {
 		t.Fatal("the DM was nagged for a sheet that does not exist yet")
 	}
@@ -329,7 +333,7 @@ func TestTheFirstBlockCreatesTheSessionDirectory(t *testing.T) {
 		llm.Message{Content: "The hall is cold." + block("## Identity\n\n- Name: Mira the Sly")},
 	), &messages, "let's play")
 
-	if base := filepath.Base(s.dir); base != "0001-mira-the-sly-dryfall-bridge" {
+	if base := filepath.Base(s.dir); base != "0001-dryfall-bridge" {
 		t.Fatalf("session directory = %q", base)
 	}
 	sheet, err := os.ReadFile(s.charsheetPath())
@@ -338,6 +342,13 @@ func TestTheFirstBlockCreatesTheSessionDirectory(t *testing.T) {
 	}
 	if !strings.Contains(string(sheet), "Mira the Sly") {
 		t.Fatalf("charsheet = %q", sheet)
+	}
+
+	// From here a blockless turn is a lapse, and the note rides in on the next
+	// player line.
+	s.processGameTurn(replies(llm.Message{Content: "You go north."}), &messages, "go north")
+	if s.carried == "" {
+		t.Fatal("a blockless turn after the first sheet carried no note")
 	}
 }
 
@@ -484,22 +495,19 @@ func TestDebugLogsEveryRequestWholeOnceThereIsADirectory(t *testing.T) {
 		t.Fatal("a log directory was made before the session directory existed")
 	}
 
+	if _, err := s.createDir("saves", s.adventureName); err != nil {
+		t.Fatal(err)
+	}
 	s.processGameTurn(replies(
 		llm.Message{Content: "The hall is cold." + block("- Name: Mira")},
 	), &messages, "let's play")
 
-	entries, err := os.ReadDir(filepath.Join(s.dir, requestLogDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("the log holds %d files, want the held request", len(entries))
-	}
-	body, err := os.ReadFile(filepath.Join(s.dir, requestLogDir, entries[0].Name()))
+	body, err := os.ReadFile(filepath.Join(s.dir, requestLogDir, "context-000.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"turn 0",                        // which turn it belonged to
 		"test-model",                    // which model answered
 		"what do you want to play?",     // everything sent
 		`"name":"check"`,                // every tool schema sent with it
@@ -510,17 +518,66 @@ func TestDebugLogsEveryRequestWholeOnceThereIsADirectory(t *testing.T) {
 			t.Errorf("the log is missing %q:\n%s", want, body)
 		}
 	}
+
+	// Beside it, the same request as bytes: what -resume reads, so it must be a
+	// message list and not prose about one.
+	sidecar, err := os.ReadFile(filepath.Join(s.dir, requestLogDir, "context-000.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent []llm.Message
+	if err := json.Unmarshal(sidecar, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || sent[0].Content != "what do you want to play?" {
+		t.Fatalf("sidecar = %+v", sent)
+	}
 }
 
 // A tool the DM is never shown is one it cannot reach for by mistake. Every
-// other game tool lost its consumer when the block took over the sheet.
-func TestATurnOffersOnlyTheDiceAndTheMenu(t *testing.T) {
+// other game tool lost its consumer when the block took over the sheet — what
+// is left is the dice, the secrets the briefing withheld, and the menu.
+func TestATurnOffersOnlyTheDiceTheSecretsAndTheMenu(t *testing.T) {
 	var names []string
 	for _, tool := range gameTools() {
 		names = append(names, tool.Function.Name)
 	}
-	if strings.Join(names, ",") != "check,user_choice" {
+	if strings.Join(names, ",") != "check,secret,user_choice" {
 		t.Fatalf("a turn offers %v", names)
+	}
+}
+
+// A secret is a file the DM can only reach by name. The name comes from a
+// model, so it is a name and never a path: the escape below must land on the
+// missing-secret sentence rather than on a file outside the adventure.
+func TestSecretReadsByNameOnly(t *testing.T) {
+	s, dir := playSession(t)
+	s.settingName, s.adventureName = "medieval-fantasy", "The-Hall-of-Colors"
+	if err := os.MkdirAll(secretsDir(s.settingName, s.adventureName), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secretsDir(s.settingName, s.adventureName), "door.md"), []byte("it opens"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "outside.md"), []byte("not a secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(name string) string {
+		result, err := s.executeAction(llm.ToolCall{Function: llm.ToolCallFunction{
+			Name: "secret", Arguments: `{"name":` + strconv.Quote(name) + `}`,
+		}})
+		if err != nil {
+			t.Fatalf("secret %q: %v", name, err)
+		}
+		return result
+	}
+
+	if got := call("door"); got != "it opens" {
+		t.Errorf("secret door returned %q", got)
+	}
+	if got := call("../../../../outside"); !strings.Contains(got, "no secret") {
+		t.Errorf("a path escaped the adventure: %q", got)
 	}
 }
 

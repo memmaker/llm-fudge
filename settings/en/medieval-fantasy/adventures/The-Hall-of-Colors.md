@@ -126,28 +126,31 @@ A plain wooden chest.
 
 # GM Information
 
-## All of this is Secret
+## The secrets are not in this file
 
-**This information must not be given to the players unless it comes out through
-play.**
+You do not know how this hall works. What is hidden lives in secrets you have to
+read with the `secret` tool, one at a time, and only once its trigger has fired:
 
-The door opens only when
+| Trigger | Secret |
+|---|---|
+| The player typed that they close one eye and look at a statue | `statue-words` |
+| The player typed a push that has just landed a statue on a pedestal | `door` |
 
-- the red statue stands on the blue pedestal and
+The closed-eye reading always works and needs no check.
 
-- the blue statue stands on the red pedestal.
+Until a trigger fires you have nothing to reveal: you do not know what the
+statues say, and you do not know what opens the door. You have no theory about
+it either — pressed for one, say you do not know, and stop there.
 
-The sign "REVERSE" is the only clue to this solution.
+The table itself is secret. Never quote a trigger to the player, never tell them
+what would unlock something, and keep secrets and tools out of your narration
+entirely — to them you are simply a game master describing a room. Reading a
+secret the moment its trigger fires is not a leak, it is the job: read it first,
+then narrate.
+
+The sign "REVERSE" is the only clue the player gets.
 
 The pedestals have no visible mechanism.
-
-If the player character closes one eye, fragments of words become visible on each statue.
-**This always works and needs no check:** whoever closes one eye and looks, reads the
-words. The GM does not roll for it and does not let it fail.
-
-- The red one reads: "I want to go to the sea"
-
-- The blue one reads: "Take me to the sunset"
 
 ---
 
@@ -169,17 +172,8 @@ words. The GM does not roll for it and does not let it fail.
 
 ### Door
 
-Initial state:
+It starts locked. Whether it ever opens is not something you know.
 
-- locked
-
-Once the puzzle is solved:
-
-- the door opens
-
-After that:
-
-- it stays open permanently.
 
 It has a keyhole that can be looked through.
 

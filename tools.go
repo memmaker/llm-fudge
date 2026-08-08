@@ -79,6 +79,8 @@ func gameTools() []llm.Tool {
 	vsDescription := prompts.MustFill("tool-check-vs.md", nil)
 	modifierDescription := prompts.MustFill("tool-check-modifier.md", nil)
 	whatDescription := prompts.MustFill("tool-check-what.md", nil)
+	secretDescription := prompts.MustFill("tool-secret.md", nil)
+	secretNameDescription := prompts.MustFill("tool-secret-name.md", nil)
 	return []llm.Tool{
 		{Type: "function", Function: llm.ToolFunction{
 			Name:        "check",
@@ -90,8 +92,24 @@ func gameTools() []llm.Tool {
 				"what":     map[string]any{"type": "string", "description": whatDescription},
 			}, "required": []string{"level", "vs", "what"}},
 		}},
+		{Type: "function", Function: llm.ToolFunction{
+			Name:        "secret",
+			Description: secretDescription,
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": secretNameDescription},
+			}, "required": []string{"name"}},
+		}},
 		userChoiceTool(),
 	}
+}
+
+// secretsDir is where an adventure keeps what the DM is not told up front: one
+// file per secret, beside the adventure and named after it. Each file opens
+// The briefing lists the triggers and the names and nothing else: the text of a
+// secret stays out of the context window until the DM asks for it by name, so a
+// DM that never earns it can never leak it. See docs/adr/008.
+func secretsDir(settingName, adventureFile string) string {
+	return filepath.Join(settingsRoot(), settingName, "adventures", adventureFile+".secrets")
 }
 
 func loadSetting(s *session, name string) error {
@@ -153,6 +171,21 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 			what = "the attempt"
 		}
 		return what + ": " + result.Describe(), nil
+
+	case "secret":
+		// The name is a file name, so it is taken apart rather than trusted: a
+		// model that answers with a path walks out of the adventure's directory.
+		name := slugify(filepath.Base(str("name")))
+		if name == "" {
+			return "", fmt.Errorf("which secret?")
+		}
+		body, err := os.ReadFile(filepath.Join(secretsDir(s.settingName, s.adventureName), name+".md"))
+		if err != nil {
+			// Reported as text, not as an error: a wrong guess should send the
+			// model back to the briefing's list, not stop the turn.
+			return fmt.Sprintf("There is no secret called %q. Only the names in the briefing exist.", name), nil
+		}
+		return string(body), nil
 
 	case "user_choice":
 		raw, _ := args["options"].([]any)
