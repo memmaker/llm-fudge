@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Live smoke test of the DM against settings/medieval-fantasy/adventures/The-Hall-of-Colors.md.
-# Plays three scripted sessions, collects the logs and charsheets, flags the
-# failures that are mechanical. The verdict is read off the artifacts by hand —
-# see consistency-check.md.
+# Live smoke test of the DM against settings/en/medieval-fantasy/adventures/The-Hall-of-Colors.md.
+# Plays four scripted sessions and records what each one did. It renders no
+# verdict and matches no text: whether the DM stayed consistent is a question
+# about meaning, and reading is a job for an LLM, not for a pattern — see the
+# rule in AGENTS.md. Hand the artifacts to a model with consistency-check.md as
+# the rubric.
 #
 # Usage: ./consistency-check.sh [rules|win|death|probe]...   (default: all four)
 set -euo pipefail
@@ -125,15 +127,23 @@ run() {
 	local name=$1
 	echo "=== $name ==="
 	"script_$name" >"$OUT/$name.txt"
+
+	# The run's own session directory, found by what appeared while it ran rather
+	# than by whichever is newest: a run that dies early would otherwise leave the
+	# previous run's artifacts to be read as its own.
+	local before after session
+	before=$(ls saves 2>/dev/null | sort)
 	# -debug so the log carries the dice and the file writes, not just the prose.
 	./fudge -debug -script "$OUT/$name.txt" 2>&1 |
-		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tee "$OUT/$name.log"
-	local save
-	save=$(ls -dt saves/*/ 2>/dev/null | head -1) || true
-	if [ -n "${save:-}" ]; then
-		cp "$save/charsheet.md" "$OUT/$name-charsheet.md"
-		cp "$save/charsheet-log.md" "$OUT/$name-charsheet-log.md"
+		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tee "$OUT/$name-terminal.log"
+	after=$(ls saves 2>/dev/null | sort)
+	session=$(comm -13 <(echo "$before") <(echo "$after") | tail -1)
+
+	if [ -z "$session" ]; then
+		echo "$name wrote no session directory"
+		return
 	fi
+	cp -R "saves/$session" "$OUT/$name"
 }
 
 go build -o fudge .
@@ -141,64 +151,14 @@ go build -o fudge .
 # is a single word either way.
 for name in ${@:-rules win death probe}; do run "$name"; done
 
-# The mechanical half of the verdict: text that can only be a leak, and rooms
-# that do not exist. Everything else needs reading.
-{
-	echo "# red flags — grep hits mean look, not necessarily fail"
-	for pat in "to the sea" "the sunset" "room 3" "third room" \
-		"GM notes" "GM Information" "For the GM"; do
-		grep -Hn -- "$pat" "$OUT"/*.log || true
-	done
+cat <<EOF
 
-	# A sheet listing the same thing twice is a state failure with no prose to
-	# read: one edit anchored on a neighbour and added a line the stale one is
-	# still sitting above.
-	echo "# duplicate sheet lines"
-	for sheet in "$OUT"/*-charsheet.md; do
-		[ -e "$sheet" ] || continue
-		# Compared by label, not by whole line: a wound track carrying both
-		# "- Very Hurt: [x]" and "- Very Hurt: [ ]" is the same bug and identical
-		# lines would not catch it.
-		grep '^- ' "$sheet" | sed 's/:.*//' | sort | uniq -d | sed "s|^|$(basename "$sheet"): |"
-	done
+Artifacts: $OUT
+  <run>/transcript.md          what the player read and what they typed
+  <run>/log/context-*.json     every request, and every tool call in it
+  <run>/charsheet-log.md       the sheet as it stood each turn
+  <run>-terminal.log           the screen, dice and file writes included
 
-	# The one automated detector for the risk ADR 007 takes on. The sheet is
-	# restated in full every turn, so it forgets by default: a line that quietly
-	# stopped being copied forward leaves no trace in the sheet itself, only in
-	# the log of the blocks that produced it.
-	echo "# lines that vanished between consecutive blocks"
-	for log in "$OUT"/*-charsheet-log.md; do
-		[ -e "$log" ] || continue
-		# Compared by label, so a torch count going down or a wound box being
-		# ticked is not a disappearance. The whole line stands in for its own
-		# label where there is no colon, which is how a dropped item is caught.
-		awk -v file="$(basename "$log")" '
-			/^--- turn [0-9]+ ---$/ { if (have) finish(); have = 1; turn = $3; delete cur; next }
-			/^[-*] / { label = $0; sub(/:.*/, "", label); sub(/ *[×x][0-9]+$/, "", label); cur[label] = 1 }
-			END { if (have) finish() }
-			function finish(   k) {
-				if (started)
-					for (k in prev)
-						if (!(k in cur))
-							printf "%s: %s vanished between turn %s and turn %s\n", file, k, prevturn, turn
-				delete prev
-				for (k in cur) prev[k] = 1
-				prevturn = turn
-				started = 1
-			}' "$log"
-	done
+Nothing here is a verdict. Read the transcripts against consistency-check.md.
+EOF
 
-	# The adventure ends by awarding experience. A finished run whose sheet still
-	# says zero did not close properly.
-	echo "# experience after a finished run"
-	for name in win probe; do
-		sheet="$OUT/$name-charsheet.md"
-		[ -e "$sheet" ] && grep -A2 -i "experience" "$sheet" | sed "s|^|$name: |"
-	done
-} >"$OUT/flags.txt"
-
-echo
-echo "Artifacts: $OUT"
-cat "$OUT/flags.txt"
-echo
-echo "Now read the logs against the rubric in consistency-check.md."

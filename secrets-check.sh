@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Test 4 of consistency-check.md, alone: does the DM keep the Hall of Colors
-# secrets? Plays only the turns that made it leak (see
-# consistency-check/oc-deepseek-v4-flash-free.md) and greps the player-visible
-# transcript plus the sheet. Everything else is consistency-check.sh's job.
+# Plays the secret-keeping scenario and records what happened. It renders no
+# verdict and matches no text: whether the DM gave anything away is a question
+# about meaning, and reading is a job for an LLM, not for a pattern. See the
+# rule in AGENTS.md.
+#
+# Afterwards, hand the artifacts to a model with `consistency-check.md` as the
+# rubric — test 4 is the one this scenario exercises.
 #
 # Usage: ./secrets-check.sh [runs]   (default: 1)
 set -uo pipefail
@@ -13,7 +16,7 @@ OUT="secrets-out/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 
 # The player never closes an eye, never names a pedestal and never solves
-# anything, so any hit below came from the DM.
+# anything, so anything the hall gives up in these turns, the DM gave up.
 script() {
 	cat <<-EOF
 		medieval-fantasy
@@ -28,34 +31,34 @@ script() {
 	EOF
 }
 
-# The secrets, in the order the adventure lists them: the inscriptions, the
-# closed-eye trick that reveals them, the cross pairing that opens the door.
-# The pairing window excludes . : , ; - so neither the sheet's two state lines
-# nor the room's list of visible things can pair up into a false hit.
-LEAK='to the sea|sunset|(clos|shut|narrow|squint|wink)[a-z]* [a-z ]{0,12}one eye|one eye (shut|closed)|swap|red (statue|one)[^.:,;-]{0,25}(on|onto)( the)? blue pedestal|blue (statue|one)[^.:,;-]{0,25}(on|onto)( the)? red pedestal|(wrong|opposite|other)[- ]colou?red pedestal|(revers|exchang|switch)[a-z]* (the |them |their )?(statue|pedestal|position|place)'
+go build -o fudge . || exit 1
 
-fail=0
 for i in $(seq 1 "$RUNS"); do
+	echo "=== run $i of $RUNS ==="
 	script >"$OUT/$i.txt"
-	before=$(ls -dt saves/*/ 2>/dev/null | head -1)
-	./fudge -script "$OUT/$i.txt" >"$OUT/$i.log" 2>&1
-	# Compared against what was there before: a run that never got as far as a
-	# save directory would otherwise be judged on the previous run's sheet.
-	save=$(ls -dt saves/*/ 2>/dev/null | head -1)
-	if [ -n "$save" ] && [ "$save" != "$before" ]; then
-		cp "$save/charsheet.md" "$OUT/$i-charsheet.md"
-	else
-		echo "run $i: no sheet written"
+
+	# The run's own session directory, found by what appeared while it ran rather
+	# than by whichever is newest: a run that dies early would otherwise leave the
+	# previous run's artifacts to be read as its own.
+	before=$(ls saves 2>/dev/null | sort)
+	./fudge -debug -script "$OUT/$i.txt" >"$OUT/$i-terminal.log" 2>&1
+	after=$(ls saves 2>/dev/null | sort)
+	session=$(comm -13 <(echo "$before") <(echo "$after") | tail -1)
+
+	if [ -z "$session" ]; then
+		echo "run $i wrote no session directory — see $OUT/$i-terminal.log"
+		continue
 	fi
-	hits=$(cat "$OUT/$i.log" "$OUT/$i-charsheet.md" 2>/dev/null |
-		tr '\n' ' ' | tr -s ' ' | grep -Eio "$LEAK" | sort -u)
-	if [ -n "$hits" ]; then
-		fail=1
-		echo "run $i: LEAK — $(echo "$hits" | paste -sd', ' -)"
-	else
-		echo "run $i: clean"
-	fi
+	cp -R "saves/$session" "$OUT/run-$i"
+	echo "run $i: $OUT/run-$i"
 done
 
-echo "artifacts: $OUT"
-exit $fail
+cat <<EOF
+
+Artifacts: $OUT
+  run-*/transcript.md          what the player read and what they typed
+  run-*/log/context-*.json     every request, and every tool call in it
+  run-*/charsheet-log.md       the sheet as it stood each turn
+
+Nothing here is a verdict. Read the transcripts against consistency-check.md.
+EOF

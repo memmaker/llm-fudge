@@ -25,6 +25,49 @@ What to use instead, in order of preference:
 This applies to `consistency-check.sh` and `secrets-check.sh` as they stand —
 both currently grep, and both are wrong for it. See the TODO below.
 
+# Working on a model-behaviour issue
+
+The DM is a model, so its failures are not bugs that reproduce on demand — they
+recur at some rate. The loop is therefore: reproduce, count, fix, count again.
+
+1. **Name the issue in one sentence.** "The DM gives away the puzzle solution."
+   "The world state stops being updated after a fight." One issue at a time; a
+   script that chases two proves neither.
+
+2. **Write a session script that provokes it three different ways.** Three
+   distinct player actions, not the same action three times — one phrasing that
+   happens not to trigger it would otherwise read as a fix. Keep the script as
+   short as the issue allows: every turn before the interesting one is latency
+   and money. Model it on `secrets-check.sh`, which asks after the statues, the
+   sign, the solution and the GM's notes — four ways into one secret.
+
+3. **Run it and record everything.** The runner plays the script and copies the
+   session directory out; it renders no verdict. Each run leaves
+   `transcript.md` (what the player read and typed), `log/context-NNN.json`
+   (every request and every tool call in it) and `charsheet-log.md` (the sheet
+   each turn). Run it several times — three or more — because one run of a model
+   is an anecdote.
+
+4. **Judge by reading, and give a rate.** An LLM reads the transcripts against
+   the rubric in `consistency-check.md` and says what it found:
+   "reproduced in 2 of 3 runs, both on the sign question". Never a grep — see
+   the rule above. Where the question is structural rather than about meaning
+   ("was the `secret` tool called at all?"), answer it from the context
+   sidecars, which are JSON.
+
+5. **Fix, then go back to 3.** Change one thing, re-run the same script, count
+   again. Compare rates, not single runs, and keep the numbers honest: a fix
+   that moves 3-of-3 to 2-of-3 has barely moved.
+
+6. **Check the fix did not break the game.** A prompt that stops the DM saying
+   too much can also stop it doing anything — a rule reading like a ban on tools
+   once silenced the dice as well. Before believing a fix, play a scenario
+   through to its end and confirm it still finishes.
+
+Stop when the issue stops reproducing, or when the rate stops moving and the
+next thing to try is a different kind of change. Record what was measured and
+what was only observed; ADRs 008 and 009 are what that looks like written down.
+
 # Open TODO
 
 - **The DM is never told it forgot the *first* world update block.** A session
