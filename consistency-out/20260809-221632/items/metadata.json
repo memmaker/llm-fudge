@@ -1,0 +1,11 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "openai/gpt-5.6-luna",
+  "service_tier": "flex",
+  "commit": "c63381c",
+  "branch": "claude/caveman-ultra-e87a7e",
+  "prompts": "3942504039ec",
+  "started": "2026-08-09T22:16:33+02:00"
+}

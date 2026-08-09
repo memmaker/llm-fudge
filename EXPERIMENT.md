@@ -33,6 +33,19 @@ the crossbow between the `### Weapons` table and `### Inventory`, and the torch
 head folding back into a count. Both had failed in nearly every run of every
 other arm, and both go clean once an example shows the edit.
 
-What is left: the loose torch head still stops existing when the head is pulled
-off, in every arm including this one, and one run in twelve dropped an item on
-the last turn without it reaching `# World State`.
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.

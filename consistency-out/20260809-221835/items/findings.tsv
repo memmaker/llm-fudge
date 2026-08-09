@@ -1,0 +1,6 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet.md:60	the crossbow is whole in the ### Weapons table while its stock, prod and string still stand in ### Inventory
