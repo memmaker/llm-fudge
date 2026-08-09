@@ -57,6 +57,34 @@ says what came out, when, on which model, and at which commit.
 | 2026-08-09 | `44c2df3` | nemotron | Run finishes without writing `charsheet.md` | 0 of 5 runs | measured | same — the `charsheet-none.md` fallback appears to have closed this |
 | 2026-08-09 | `44c2df3` | nemotron | Drift rows on the easy `drift` run (5 prompt variants × 2 rounds) | 0 of 50 rows failed | measured | probe had no dynamic range; see the note below |
 
+### Appended 2026-08-09, same five runs, re-read
+
+The invented-gear rows above were read off the *final* sheets. Re-reading the
+*first* sheet in each `charsheet-log.md` shows the whole thing happens on the
+character-creation turn and nothing is added later.
+
+| Date | Commit | Model | Issue | Rate | Kind | Artifacts |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-08-09 | `44c2df3` | nemotron | Invented worn armor (`Leather armor (+1 defensive)` ×4, `Chain hauberk (+2)` ×1) | 5 of 5 runs | measured | first sheet, turn 2 |
+| 2026-08-09 | `44c2df3` | nemotron | Any invented Equipment or Wealth line on the first sheet | 5 of 5 runs | measured | first sheet, turn 2 |
+| 2026-08-09 | `44c2df3` | nemotron | Invented gear appearing *after* the creation turn | 0 of 5 runs | measured | later sheets only do arithmetic on turn 2's |
+
+Mechanism, evidenced: the model is not copying `charsheet_template.md`, it is
+filling its headings. The thief-flavoured lines (`Lockpicks`, `Club`) never
+appear, `Torches ×5` never overrides the granted three, and `Quest Items` reads
+`None` in 5 of 5 instead of copying `Brass key` — so it can write "none" into a
+section. It invents only where the example's value is genre-neutral enough to
+read as something every character has: a silver count, worn armor, flint and
+steel, a third weapon at the example's `+2`.
+
+Nothing else in the repo supplies that vocabulary; a search of `prompts/`,
+`settings/` and `rules/` finds it only in `charsheet_template.md`. The
+`Damage factor` column is prompt-only — `rules/check.go` never reads it.
+
+Caveat on these five runs: `run2` ended one mid-run turn without narrating. The
+creation turn is unaffected, so the rows above stand, but the run is spoiled for
+anything measured later in the session.
+
 ## Null results worth keeping
 
 A probe that cannot fail is worth recording, so nobody builds it twice.
