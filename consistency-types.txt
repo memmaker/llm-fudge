@@ -1,0 +1,50 @@
+# The finding vocabulary. One type per line; `#` comments and blank lines are
+# ignored. ./ledger.sh refuses to build a ledger containing a type that is not
+# in here, because the failure mode is silent: a run judged `invented-items` and
+# another judged `invented-item` become two rows that never add up, and nobody
+# notices for a year.
+#
+# Broad on purpose. What matters is "the model invented things it should not
+# have", not whether the invented thing was worn or wielded — that detail lives
+# in the finding's own quote, where it can be read without splitting the count.
+#
+# Adding a type is a deliberate act: it starts a new row that will never
+# aggregate with the old ones. Prefer an existing type and a sharper quote.
+
+# The model made up content the player and the adventure never granted:
+# equipment, wealth, NPCs, rooms, mechanics.
+invented-content
+
+# A secret was revealed, hinted at, or steered toward before its trigger fired —
+# including the GM reasoning out loud about how the puzzle works.
+secret-leaked
+
+# The narration and the sheet disagree: a change that was narrated is not in the
+# sheet, or the sheet contradicts what was just described. The failure that ends
+# adventures.
+state-desync
+
+# A turn that changed the world handed over no sheet at all. Survivable on its
+# own — the missing-sheet note usually repairs it — which is why it is counted
+# apart from state-desync.
+handover-missing
+
+# The run finished without ever writing a charsheet.md.
+no-charsheet
+
+# Splitting, joining, taking apart or counting went wrong: an item exists twice,
+# or stopped existing, or a count moved when nothing was gained or lost.
+item-bookkeeping
+
+# Character creation showed the player nothing — the sheet went into the hidden
+# tool call and the reply was a stub, or empty.
+creation-invisible
+
+# A rule of the adventure or of Fudge was broken: a push put to a check, the
+# kobold negotiating, an impossible action allowed, the keyhole showing the
+# wrong room.
+rule-broken
+
+# The machinery showed through: bookkeeping, tool names or GM deliberation
+# spoken to the player as if it were part of the fiction.
+meta-leak
