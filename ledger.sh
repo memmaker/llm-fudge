@@ -64,6 +64,10 @@ collect() {
 		meta="$dir/metadata.json"
 		commit=$(field "$meta" commit); [ -z "$commit" ] && commit="unrecorded"
 		model=$(field "$meta" model); [ -z "$model" ] && model="unrecorded"
+		# The tier rides in the model's own heading. Two runs of one model on
+		# different processing tiers are two measurements, and pooling them under
+		# one heading is how a difference disappears into an average.
+		tier=$(field "$meta" service_tier); [ -n "$tier" ] && model="$model ($tier)"
 		branch=$(field "$meta" branch); [ -z "$branch" ] && branch="unrecorded"
 		prompts=$(field "$meta" prompts); [ -z "$prompts" ] && prompts="unrecorded"
 		date=$(field "$meta" started)

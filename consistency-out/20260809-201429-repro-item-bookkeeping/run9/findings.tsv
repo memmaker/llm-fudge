@@ -1,0 +1,7 @@
+# run: run
+# spoiled: no
+# judged: item-bookkeeping invented-content
+
+type	proof	quote
+item-bookkeeping	charsheet.md	both rope halves and Bolts x12 stopped existing: only the grappling line remains
+invented-content	charsheet.md	a torch was pulled apart though the player never touched one

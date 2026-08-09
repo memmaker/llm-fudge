@@ -202,6 +202,10 @@ type sessionMeta struct {
 	Adventure string `json:"adventure"`
 	Language  string `json:"language"`
 	Model     string `json:"model"`
+	// ServiceTier is the processing tier asked for, when one was. Two runs of
+	// the same model on different tiers are two measurements, and without this
+	// the ledger silently pools them under one heading.
+	ServiceTier string `json:"service_tier,omitempty"`
 	// Commit is the build's revision, `-dirty` when the tree it was built from
 	// had uncommitted changes. A measurement is only comparable against another
 	// if the prompts were the same, and the prompts are what the commit pins —
@@ -291,6 +295,7 @@ func (s *session) writeMetadata(adventure string) error {
 		Adventure:   adventure,
 		Language:    prompts.Language(),
 		Model:       s.model,
+		ServiceTier: string(s.serviceTier),
 		Commit:      buildCommit(),
 		Branch:      currentBranch(),
 		Prompts:     prompts.Fingerprint(),

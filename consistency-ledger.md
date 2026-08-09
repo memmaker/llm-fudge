@@ -627,3 +627,22 @@ Sessions:
 - `consistency-out/20260809-200553-repro-item-bookkeeping/run7`
 - `consistency-out/20260809-200553-repro-item-bookkeeping/run8`
 - `consistency-out/20260809-200553-repro-item-bookkeeping/run9`
+
+## openai/gpt-5.4-nano (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| invented-content | 5 | 10 |
+| item-bookkeeping | 6 | 10 |
+
+Sessions:
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run1`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run10`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run2`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run3`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run4`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run5`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run6`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run7`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run8`
+- `consistency-out/20260809-201429-repro-item-bookkeeping/run9`
