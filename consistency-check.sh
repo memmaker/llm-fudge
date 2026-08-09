@@ -6,7 +6,7 @@
 # rule in AGENTS.md. Hand the artifacts to a model with consistency-check.md as
 # the rubric.
 #
-# Usage: ./consistency-check.sh [rules|win|death|probe|state|items]...  (default: all six)
+# Usage: ./consistency-check.sh [rules|win|death|probe|state|items|drift]...  (default: all seven)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -196,6 +196,49 @@ script_items() {
 	EOF
 }
 
+# The drift run needs gear it can spend and change, so its opening names some.
+# One line, for the reason above.
+DRIFT_OPENING='A cautious mercenary called Testa. Give her a full waterskin, three torches, six rations, a dagger and a 15 m rope, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.'
+
+# Divergence between what the DM says and what the sheet holds. Every other run
+# asks whether a turn handed over a sheet at all; this one asks whether the sheet
+# it handed over is the world the DM just narrated, and whether the DM still
+# believes it two turns later.
+#
+# That is a different failure and it is the expensive one. A missed handover is
+# recorded as "nothing changed" when what happened is "unknown", the stale line
+# is pinned to every later request, and the header tells the DM the sheet
+# outranks anything said earlier — so one omission hardens into a world where a
+# door the player opened is locked again. It cannot be seen in a single turn:
+# the turn that narrates the change looks perfect. It shows up only when
+# something later depends on the change.
+#
+# So every probe here is a triple: change it, let a turn pass, then act on it.
+# The acting turn is the measurement — the change turn never fails visibly.
+# Five of them, and the first three are deliberately free of the puzzle, the
+# door and the kobold, so a push that goes wrong voids rows 8-13 and nothing
+# else.
+script_drift() {
+	cat <<-EOF
+		$DRIFT_OPENING
+		I pour my waterskin out on the floor until it is completely empty.
+		I light one of my torches.
+		I eat two of my rations.
+		I drink from my waterskin.
+		I put the burning torch out and stow it again.
+		I eat one more ration.
+		I close one eye and look at both statues.
+		I shove the red statue onto the blue pedestal with all my strength.
+		I shove the blue statue onto the red pedestal with all my strength.
+		I go through the door into room 2.
+		I go back into room 1.
+		I go through the door into room 2 again.
+		What did the statues say when I closed one eye?
+		/quit
+	EOF
+}
+
 run() {
 	local name=$1
 	echo "=== $name ==="
@@ -220,9 +263,9 @@ run() {
 }
 
 go build -o fudge .
-# Unquoted on purpose: the default has to split into six words, and a run name
+# Unquoted on purpose: the default has to split into seven words, and a run name
 # is a single word either way.
-for name in ${@:-rules win death probe state items}; do run "$name"; done
+for name in ${@:-rules win death probe state items drift}; do run "$name"; done
 
 cat <<EOF
 

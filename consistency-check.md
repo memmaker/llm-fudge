@@ -34,7 +34,7 @@ never came at all shows up as a missing `charsheet.md`.
 
 - A working LLM backend — `llm_model.rec` plus an API key, as in the README.
 - Go, to build the binary.
-- Roughly 105 model calls for a full pass of all six. Nothing is written
+- Roughly 120 model calls for a full pass of all seven. Nothing is written
   outside the repo.
 
 ## Running it
@@ -54,9 +54,9 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | `<run>/charsheet-log.md` | Every world update block the run produced, in order |
 | `<run>/log/context-*.json` | Every request as it went out, tool calls included |
 
-`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state`, `items` alone.
+`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state`, `items`, `drift` alone.
 
-## The six runs
+## The seven runs
 
 Setting and adventure are passed as `-setting`/`-adventure` rather than typed
 into the menus: the menus test nothing here, and answering them by name means a
@@ -113,6 +113,46 @@ turns handed over a sheet. The split, the merge, the three-part disassembly and
 the coins were all correct; what failed was action 2, where the rope ended up
 both inside the grappling line and beside it, action 6, where the torch head
 stopped existing, and action 12, which is the known last-turn hole.
+
+**`drift`** — whether the sheet is the world the DM just narrated, and whether
+the DM still believes it two turns later. Every other run asks whether a turn
+handed over a sheet at all. This one asks what was in it.
+
+That is the expensive failure. A turn that changes the world and hands over
+nothing is recorded as *nothing changed*, when what happened is *unknown*; the
+stale line is then pinned to every later request, and the header tells the DM
+the sheet outranks anything said earlier. One omission hardens into a world
+where a door the player opened is locked again. It is invisible in the turn that
+causes it — that turn narrates the change correctly — and it surfaces only when
+something later depends on it.
+
+So each probe is a triple: change something, let a turn pass, act on the change.
+The third turn is the measurement; the first two cannot fail visibly. Five of
+them, and the first three touch neither the puzzle nor the door nor the kobold,
+so a push that goes wrong voids rows 8-13 and leaves the rest standing.
+
+| # | Action | What the sheet must say | Where it is measured |
+| --- | --- | --- | --- |
+| 1 | empty the waterskin | `Waterskin: empty`, not a plain `Waterskin` | 4 |
+| 2 | light a torch | torches down one, one of them burning | 5 |
+| 3 | eat two rations | `Rations ×4` | 6 |
+| 4 | drink from it | refused — it is empty, and stays empty | — |
+| 5 | put the torch out | the burning one is put out; a DM with no lit torch on the sheet has lost row 2 | — |
+| 6 | eat one more | `Rations ×3`, not ×5 | — |
+| 7 | close one eye | both word fragments become Known Facts | 13 |
+| 8 | push the red statue | red on the blue pedestal | 12 |
+| 9 | push the blue statue | blue on the red pedestal, `Door: open` | 10, 12 |
+| 10 | enter room 2 | location is room 2 | — |
+| 11 | go back | location is room 1, door still open | 12 |
+| 12 | enter room 2 again | it opens — the door was never re-locked | — |
+| 13 | what did the statues say | both fragments, from the sheet, unchanged | — |
+
+Read it in two passes, because two different things fail here. First
+`charsheet-log.md`: for each row, does the sheet the turn handed over carry the
+change? Then `transcript.md` at the measuring turn: does the prose act on it? A
+run can pass the first and fail the second — the DM wrote `Door: open` and then
+narrated a locked door anyway — and that is worth separating, because the fix is
+not the same one.
 
 **`probe`** — the open ones. Added after the first passes left three tests
 short, and aimed only at those: it demands the solution outright and restates an
