@@ -3,5 +3,6 @@
   "adventure": "The-Hall-of-Colors",
   "language": "en",
   "model": "oc/deepseek-v4-flash-free",
+  "prompts": "60ab5c233eae",
   "started": "2026-08-09T12:11:06+02:00"
 }

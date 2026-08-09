@@ -1,9 +1,12 @@
 package prompts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -125,4 +128,38 @@ func LoadPrompt(setting string, vars map[string]string, filenames ...string) (st
 	}
 	allVars["SETTING"] = setting
 	return substitute(strings.Join(filenames, "+"), b.String(), allVars)
+}
+
+// Fingerprint is a short hash of the prompt set actually on disk. Prompts are
+// read at run time rather than embedded, so the binary's commit says nothing
+// about them: a prompt file edited between two runs leaves both claiming the
+// same revision. This is the identity a measurement is comparable under.
+//
+// Names are hashed alongside contents, so an added or renamed file changes the
+// answer even when nothing else does.
+func Fingerprint() string {
+	dir := filepath.Join(root, language)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.New()
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	// Sorted, because ReadDir's order is not promised across filesystems and a
+	// fingerprint that depends on the machine compares nothing.
+	sort.Strings(names)
+	for _, name := range names {
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return ""
+		}
+		fmt.Fprintf(sum, "%s\n%d\n", name, len(body))
+		sum.Write(body)
+	}
+	return hex.EncodeToString(sum.Sum(nil))[:12]
 }

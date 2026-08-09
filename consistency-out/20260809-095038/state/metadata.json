@@ -3,5 +3,6 @@
   "adventure": "The-Hall-of-Colors",
   "language": "en",
   "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "prompts": "60ab5c233eae",
   "started": "2026-08-09T09:50:39+02:00"
 }

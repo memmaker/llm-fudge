@@ -52,14 +52,15 @@ collect() {
 		commit=$(field "$meta" commit); [ -z "$commit" ] && commit="unrecorded"
 		model=$(field "$meta" model); [ -z "$model" ] && model="unrecorded"
 		branch=$(field "$meta" branch); [ -z "$branch" ] && branch="unrecorded"
+		prompts=$(field "$meta" prompts); [ -z "$prompts" ] && prompts="unrecorded"
 		date=$(field "$meta" started)
 		run=$(sed -n 's/^# *run: *//p' "$f" | head -1)
 		spoiled=$(sed -n 's/^# *spoiled: *//p' "$f" | head -1)
-		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\t%s\tSPOILED\t\n' "$date" "$commit" "$branch" "$model" "$dir"; continue; }
+		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\t%s\t%s\tSPOILED\t\n' "$date" "$prompts" "$commit" "$branch" "$model" "$dir"; continue; }
 
-		awk -F'\t' -v d="$date" -v c="$commit" -v b="$branch" -v m="$model" -v dir="$dir" '
+		awk -F'\t' -v d="$date" -v p="$prompts" -v c="$commit" -v b="$branch" -v m="$model" -v dir="$dir" '
 			/^#/ || /^type\t/ || /^[[:space:]]*$/ { next }
-			{ print d "\t" c "\t" b "\t" m "\t" dir "\t" $1 "\t" $2 }
+			{ print d "\t" p "\t" c "\t" b "\t" m "\t" dir "\t" $1 "\t" $2 }
 		' "$f"
 	done
 }
@@ -88,12 +89,18 @@ find "$ROOT" -name findings.tsv | sort | collect | awk -F'\t' -v blurbfile="$bra
 		}
 	}
 	{
-		date=$1; commit=$2; branch=$3; model=$4; dir=$5; type=$6; occurred=$7
-		# Grouped by what was being measured, not by when: every run has its own
+		date=$1; prompts=$2; commit=$3; branch=$4; model=$5; dir=$6; type=$7; occurred=$8
+		# Grouped by the prompt set, not the commit. Prompts are read from disk at
+		# run time, so a commit describes the binary and not what the model was
+		# actually told — three commits today shipped byte-identical prompts, and
+		# grouping by commit would have split one measurement into three.
+		# Grouped by what was measured, not by when: every run has its own
 		# timestamp, so a key carrying one puts each run in a section of its own.
-		key = commit "\t" branch "\t" model
+		key = prompts "\t" model
 		if (!(key in seen) || date < first[key]) first[key] = date
 		seen[key] = 1
+		commits[key] = commits[key] (index(commits[key], commit) ? "" : (commits[key] == "" ? "" : ", ") "`" commit "`")
+		branches[key] = branch
 		if (type == "SPOILED") { spoiled[key]++; next }
 		kt = key "\t" type
 		runs[kt]++
@@ -119,21 +126,22 @@ find "$ROOT" -name findings.tsv | sort | collect | awk -F'\t' -v blurbfile="$bra
 		print "all. A `-dirty` commit means the tree had uncommitted changes, so the"
 		print "prompts were not the ones that commit names."
 
-		lastcommit = ""
+		lastprompts = ""
 		for (i = 1; i <= n; i++) {
 			split(order[i], f, "\t")
 			# order carries the date only to sort by; the group is the rest of it.
-			key = f[2] "\t" f[3] "\t" f[4]
-			if (f[2] != lastcommit) {
-				printf "\n---\n\n# `%s` — %s — branch `%s`\n", f[2], substr(f[1], 1, 10), f[3]
-				lastcommit = f[2]
-				if (f[3] in blurb) printf "\n%s", blurb[f[3]]
+			key = f[2] "\t" f[3]
+			if (f[2] != lastprompts) {
+				printf "\n---\n\n# prompt set `%s` — from %s — branch `%s`\n", f[2], substr(f[1], 1, 10), branches[key]
+				printf "\nBuilt at: %s\n", commits[key]
+				lastprompts = f[2]
+				if (branches[key] in blurb) printf "\n%s", blurb[branches[key]]
 			}
-			printf "\n## %s\n\n| Type | Occurrences | Runs |\n| --- | --- | --- |\n", f[4]
+			printf "\n## %s\n\n| Type | Occurrences | Runs |\n| --- | --- | --- |\n", f[3]
 			for (kt in types) {
 				split(kt, g, "\t")
-				if (g[1] "\t" g[2] "\t" g[3] != key) continue
-				printf "| %s | %d | %d |\n", g[4], (kt in hits) ? hits[kt] : 0, runs[kt]
+				if (g[1] "\t" g[2] != key) continue
+				printf "| %s | %d | %d |\n", g[3], (kt in hits) ? hits[kt] : 0, runs[kt]
 			}
 			printf "\nSessions:%s\n", sessions[key]
 			if (key in spoiled)

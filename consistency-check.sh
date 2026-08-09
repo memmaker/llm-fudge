@@ -244,18 +244,19 @@ run() {
 	echo "=== $name ==="
 	"script_$name" >"$OUT/$name.txt"
 
-	# The run's own session directory, found by what appeared while it ran rather
-	# than by whichever is newest: a run that dies early would otherwise leave the
-	# previous run's artifacts to be read as its own.
-	local before after session
-	before=$(ls saves 2>/dev/null | sort)
+	# The run's own session directory, taken from the line the binary prints when
+	# it opens one. Diffing `ls saves` before and after looks equivalent and is
+	# not: two of these running at once will each pick up the other's session, and
+	# the artifacts then get read under the wrong script's name. That happened on
+	# 2026-08-09 — two concurrent measurements produced nine directories holding
+	# seven sessions, two of them filed as a run they were not.
+	local session
 	# -debug so the log carries the dice and the file writes, not just the prose.
 	./fudge -debug "${WORLD[@]}" -script "$OUT/$name.txt" 2>&1 |
 		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tee "$OUT/$name-terminal.log"
-	after=$(ls saves 2>/dev/null | sort)
-	session=$(comm -13 <(echo "$before") <(echo "$after") | tail -1)
+	session=$(sed -n 's/^\[saving to saves\/\(.*\)\]$/\1/p' "$OUT/$name-terminal.log" | head -1)
 
-	if [ -z "$session" ]; then
+	if [ -z "$session" ] || [ ! -d "saves/$session" ]; then
 		echo "$name wrote no session directory"
 		return
 	fi

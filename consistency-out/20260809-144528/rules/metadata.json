@@ -3,5 +3,6 @@
   "adventure": "The-Hall-of-Colors",
   "language": "en",
   "model": "oc/nemotron-3-ultra-free",
+  "prompts": "60ab5c233eae",
   "started": "2026-08-09T14:45:30+02:00"
 }

@@ -3,6 +3,7 @@
   "adventure": "The-Hall-of-Colors",
   "language": "en",
   "model": "oc/deepseek-v4-flash-free",
+  "prompts": "60ab5c233eae",
   "commit": "8546623",
   "branch": "world-update-block",
   "started": "2026-08-09T12:39:43+02:00"

@@ -3,6 +3,7 @@
   "adventure": "The-Hall-of-Colors",
   "language": "en",
   "model": "oc/nemotron-3-ultra-free",
+  "prompts": "60ab5c233eae",
   "commit": "44c2df3",
   "branch": "world-update-block",
   "started": "2026-08-09T13:46:54+02:00",

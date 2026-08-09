@@ -11,7 +11,9 @@ prompts were not the ones that commit names.
 
 ---
 
-# `8546623` — 2026-08-09 — branch `world-update-block`
+# prompt set `60ab5c233eae` — from 2026-08-09 — branch `world-update-block`
+
+Built at: `8546623`
 
 Branch `world-update-block`.
 
@@ -31,11 +33,11 @@ that the player already opened.
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
+| handover-missing | 1 | 1 |
+| rule-broken | 1 | 1 |
+| secret-leaked | 2 | 3 |
 | item-bookkeeping | 1 | 1 |
 | creation-invisible | 4 | 6 |
-| secret-leaked | 2 | 3 |
-| rule-broken | 1 | 1 |
-| handover-missing | 1 | 1 |
 | state-desync | 2 | 4 |
 
 Sessions:
@@ -46,32 +48,16 @@ Sessions:
 - `consistency-out/20260809-122730/state`
 - `consistency-out/20260809-122730/win`
 
----
-
-# `44c2df3` — 2026-08-09 — branch `world-update-block`
-
-Branch `world-update-block`.
-
-Replaces the `<world-update>` prose block with a `world_update` tool call, and
-chases what happens after the handover rather than the handover itself. The
-sheet is pinned to the tail of every request, only the newest few calls stay in
-the history, and the missing-sheet note is the repair path when a turn changes
-the world and hands over nothing.
-
-What it is trying to settle: a turn that narrates a change and records nothing
-is common on every model tried and is usually repaired a turn later. The failure
-that ends adventures is the repair — a model that restates the pinned sheet
-instead of reconciling it against what it just narrated will keep a door locked
-that the player already opened.
-
 ## oc/nemotron-3-ultra-free
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| state-desync | 0 | 16 |
-| handover-missing | 4 | 4 |
-| invented-content | 5 | 5 |
+| meta-leak | 4 | 4 |
 | no-charsheet | 0 | 4 |
+| invented-content | 5 | 5 |
+| handover-missing | 4 | 4 |
+| secret-leaked | 2 | 7 |
+| state-desync | 0 | 16 |
 
 Sessions:
 - `consistency-out/20260809-140000-nemotron-doorprobe/run1`
@@ -91,3 +77,10 @@ Sessions:
 - `consistency-out/20260809-141500-nemotron-drift/run3`
 - `consistency-out/20260809-141500-nemotron-drift/run4`
 - `consistency-out/20260809-141500-nemotron-drift/run5`
+- `consistency-out/20260809-144528/rules`
+- `consistency-out/20260809-144816/probe`
+- `consistency-out/20260809-145754/rules`
+- `consistency-out/20260809-145922/probe`
+- `consistency-out/20260809-152011/probe`
+- `consistency-out/20260809-152952/rules`
+- `consistency-out/20260809-153213/probe`

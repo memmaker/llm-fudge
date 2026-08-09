@@ -177,7 +177,11 @@ type sessionMeta struct {
 	// Branch is where the experiment lives. Two branches can sit on sibling
 	// commits and mean entirely different things, so the commit alone does not
 	// say what was being tried — the branch's own EXPERIMENT.md does.
-	Branch  string `json:"branch,omitempty"`
+	Branch string `json:"branch,omitempty"`
+	// Prompts fingerprints the prompt set on disk. It is the identity a
+	// measurement is actually comparable under: prompts are read at run time, so
+	// two runs can share a commit and not share their prompts.
+	Prompts string `json:"prompts,omitempty"`
 	Started string `json:"started"`
 	// ResumedFrom is the sidecar this session was started from, when it was not
 	// started from the beginning. Without it a resumed run reads as an ordinary
@@ -255,6 +259,7 @@ func (s *session) writeMetadata(adventure string) error {
 		Model:       s.model,
 		Commit:      buildCommit(),
 		Branch:      currentBranch(),
+		Prompts:     prompts.Fingerprint(),
 		Started:     time.Now().Format(time.RFC3339),
 		ResumedFrom: s.resumedFrom,
 	}, "", "  ")
