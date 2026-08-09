@@ -104,6 +104,8 @@ type session struct {
 // an empty string three turns in.
 type gamePrompts struct {
 	charsheetHeader string
+	charsheetNone   string
+	charsheetShape  string
 	styleMarker     string
 	noteMissing     string
 	noteForm        string
@@ -117,6 +119,8 @@ func loadGamePrompts() (gamePrompts, error) {
 		file string
 	}{
 		{&p.charsheetHeader, "charsheet-header.md"},
+		{&p.charsheetNone, "charsheet-none.md"},
+		{&p.charsheetShape, charsheetTemplate},
 		{&p.styleMarker, "style-override.md"},
 		{&p.noteMissing, "note-missing-block.md"},
 		{&p.noteForm, "note-block-form.md"},
@@ -495,14 +499,19 @@ func (s *session) charsheetPath() string {
 // it get a message to itself; a user message after an assistant one is legal
 // everywhere.
 func (s *session) withCharsheet(msgs []llm.Message) []llm.Message {
+	// Before the first block there is no sheet, and the tail used to carry
+	// nothing at all — which left the one turn that has to produce a sheet as the
+	// only turn never asked for one. The empty-handed request sends the template
+	// in its place: same position, same demand, an example instead of a state.
+	header := s.prompts.charsheetHeader
 	body, err := os.ReadFile(s.charsheetPath())
 	if s.charsheetPath() == "" || err != nil {
-		return msgs
+		header, body = s.prompts.charsheetNone, []byte(s.prompts.charsheetShape)
 	}
 	// Anything after the `---` in the header prompt is sent below the sheet
 	// instead of above it: the tail of the request is the last thing the model
 	// reads before it writes, and the rules it breaks most need to sit there.
-	head, tail, _ := strings.Cut(s.prompts.charsheetHeader, "\n---\n")
+	head, tail, _ := strings.Cut(header, "\n---\n")
 
 	var b strings.Builder
 	b.WriteString(head)

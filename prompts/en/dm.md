@@ -37,18 +37,4 @@ Wounds:
 Scratch ×3 → Hurt (−1) → Very Hurt (−2) → Incapacitated → Near Death.
 
 Apply wound penalties via the modifier.
-
-## World Update
-
-Every narrated response ends with:
-
-<world-update>
-{{CHARSHEET_TEMPLATE}}
-</world-update>
-
-Everything outside `<world-update>` is shown to the player.
-
-Always write the **entire** character sheet. Never a diff or summary. The current sheet is included in every request; copy it forward and update it. **Anything omitted no longer exists.**
-
-The character sheet is the game's single source of truth. If it conflicts with earlier narration, the sheet is correct.
 ```

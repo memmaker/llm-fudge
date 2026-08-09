@@ -162,14 +162,10 @@ func loadDMPrompt(s *session) (string, error) {
 		// same guidance file without it.
 		files = append(files, "img-style.md", "image-guidance.md")
 	}
-	// The template is inlined rather than pointed at: an ordinary turn has no
-	// read tool left to follow a pointer with, and the shape of the sheet is
-	// what the world update block is measured against every turn.
-	template, err := prompts.Fill(charsheetTemplate, nil)
-	if err != nil {
-		return "", err
-	}
-	return prompts.LoadPrompt(s.settingDesc, map[string]string{"CHARSHEET_TEMPLATE": template}, files...)
+	// The shape of the sheet is not here. It rides on the tail of every request
+	// instead, beside the sheet itself and beside the one demand for it: a rule
+	// stated in two places is a rule with two wordings to drift apart.
+	return prompts.LoadPrompt(s.settingDesc, nil, files...)
 }
 
 // debugArgLimit caps the arguments shown for a tool call. Narration prose and

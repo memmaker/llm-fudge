@@ -336,11 +336,25 @@ func TestCharsheetTailsStayTemplateLegal(t *testing.T) {
 	}
 }
 
-func TestNoCharsheetYetLeavesTheRequestAlone(t *testing.T) {
+// The turn that has to produce the first sheet is the one turn with no sheet to
+// pin, and it used to be the only turn the demand never reached. Now the shape
+// goes in the sheet's place, so every request carries the demand exactly once.
+func TestNoCharsheetYetSendsTheShapeInstead(t *testing.T) {
 	s := newTestSession(t)
 	msgs := []llm.Message{{Role: llm.RoleSystem, Content: "ground rules"}}
-	if got := s.withCharsheet(msgs); len(got) != 1 {
-		t.Fatalf("a missing charsheet added %d messages", len(got)-1)
+
+	got := s.withCharsheet(msgs)
+	if len(got) != 2 {
+		t.Fatalf("the shape was not sent: %d messages", len(got))
+	}
+	tail := got[len(got)-1].Content
+	for _, want := range []string{"<world-update>", "## Identity", "## Wounds"} {
+		if !strings.Contains(tail, want) {
+			t.Fatalf("the empty-handed tail is missing %q:\n%s", want, tail)
+		}
+	}
+	if strings.Count(tail, "<world-update>") != 1 {
+		t.Fatalf("the demand was stated more than once:\n%s", tail)
 	}
 }
 

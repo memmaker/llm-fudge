@@ -18,6 +18,7 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		vars map[string]string
 	}{
 		{"charsheet-header.md", nil},
+		{"charsheet-none.md", nil},
 		{"note-missing-block.md", nil},
 		{"note-block-form.md", nil},
 		{"style-override.md", nil},
@@ -46,7 +47,7 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		{"tool-secret-name.md", nil},
 		{"adventure-briefing.md", map[string]string{"ADVENTURE": "x"}},
 		{"opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": "x"}},
-		{"dm.md", map[string]string{"CHARSHEET_TEMPLATE": "x"}},
+		{"dm.md", nil},
 		{"setting-information.md", map[string]string{"SETTING": "x"}},
 	}
 

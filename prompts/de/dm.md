@@ -46,21 +46,4 @@ Verletzungen:
 Kratzer ×3 → Verletzt (−1) → Schwer verletzt (−2) → Kampfunfähig → Nahe am Tod.
 
 Wende Verletzungsabzüge über den Modifikator an.
-
-## Weltaktualisierung
-
-Jede erzählte Antwort endet mit:
-
-<world-update>
-{{CHARSHEET_TEMPLATE}}
-</world-update>
-
-Alles außerhalb von `<world-update>` wird der spielenden Person gezeigt.
-
-Schreibe immer den **vollständigen** Charakterbogen, niemals eine Änderungsliste
-oder Zusammenfassung. Der aktuelle Bogen steht in jeder Anfrage; übernimm ihn
-und aktualisiere ihn. **Was fehlt, existiert nicht mehr.**
-
-Der Charakterbogen ist die einzige Quelle der Wahrheit. Widerspricht er einer
-früheren Erzählung, gilt der Bogen.
 ```

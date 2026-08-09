@@ -41,25 +41,47 @@ recur at some rate. The loop is therefore: reproduce, count, fix, count again.
    and money. Model it on `secrets-check.sh`, which asks after the statues, the
    sign, the solution and the GM's notes — four ways into one secret.
 
-3. **Run it and record everything.** The runner plays the script and copies the
+3. **Resume into the failing turn instead of playing up to it.** A full pass is
+   ~25 requests per run and most of them only exist to walk the character back
+   to where it goes wrong. Every recorded turn is a resume point:
+
+   ```bash
+   ./fudge -debug -resume consistency-out/<pass>/<run>/log/context-NNN.json -script one-line.txt
+   ```
+
+   Setting, adventure, character and the whole conversation up to that turn come
+   from the recording; the script is the one player line you want to try, then
+   `/quit`. One or two requests instead of twenty-five, so a variation can be
+   tried, read and thrown away in a minute. Pick the sidecar by reading
+   `transcript.md` and counting turns — `context-NNN.json` is the request that
+   *opened* turn NNN.
+
+   Two limits, both from ADR 009. A resumed run continues from a conversation
+   today's prompts did not produce, so it measures the prompt's effect on *that
+   turn*, not on a session; and a recording made before a prompt change carries
+   the old behaviour in its history, which is the point when the question is
+   "does the new wording recover a turn the old one lost" and a confound when it
+   is not. Confirm a fix that passes here with one full run before believing it.
+
+4. **Run it and record everything.** The runner plays the script and copies the
    session directory out; it renders no verdict. Each run leaves
    `transcript.md` (what the player read and typed), `log/context-NNN.json`
    (every request and every tool call in it) and `charsheet-log.md` (the sheet
    each turn). Run it several times — three or more — because one run of a model
    is an anecdote.
 
-4. **Judge by reading, and give a rate.** An LLM reads the transcripts against
+5. **Judge by reading, and give a rate.** An LLM reads the transcripts against
    the rubric in `consistency-check.md` and says what it found:
    "reproduced in 2 of 3 runs, both on the sign question". Never a grep — see
    the rule above. Where the question is structural rather than about meaning
    ("was the `secret` tool called at all?"), answer it from the context
    sidecars, which are JSON.
 
-5. **Fix, then go back to 3.** Change one thing, re-run the same script, count
+6. **Fix, then go back to 4.** Change one thing, re-run the same script, count
    again. Compare rates, not single runs, and keep the numbers honest: a fix
    that moves 3-of-3 to 2-of-3 has barely moved.
 
-6. **Check the fix did not break the game.** A prompt that stops the DM saying
+7. **Check the fix did not break the game.** A prompt that stops the DM saying
    too much can also stop it doing anything — a rule reading like a ban on tools
    once silenced the dice as well. Before believing a fix, play a scenario
    through to its end and confirm it still finishes.
@@ -75,14 +97,20 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
   is gated on a sheet having been written at least once, so no block means no
   note means no block, for the whole run. Measured on 2026-08-08: about a third
   of otherwise clean runs (31 of ~90, rate-limited runs excluded) finished
-  without ever writing a `charsheet.md`, which also means `withCharsheet` sent
-  no sheet and no tail rules for the entire session. **Left open on purpose**
-  (decision 2026-08-09): nagging during character creation risks a half-made
-  sheet being copied forward as truth, which is the worse failure. ADR 009 makes
-  such a run readable — its logs now survive — but not correct.
-- Because of the above, the checklist at the tail of `prompts/*/charsheet-header.md`
-  was absent from about a third of the runs it was credited for. Re-measure
-  whether it still earns its tokens: `./secrets-check.sh 6` with and without it.
+  without ever writing a `charsheet.md`. **Left open on purpose** (decision
+  2026-08-09): nagging during character creation risks a half-made sheet being
+  copied forward as truth, which is the worse failure. ADR 009 makes such a run
+  readable — its logs now survive — but not correct.
+  - Half of that is now closed: since 2026-08-09 an empty-handed request sends
+    the template where the sheet would go (`charsheet-none.md`), so the demand
+    and the tail checklist reach every turn including the first. The demand
+    itself is no longer stated anywhere else — `dm.md`, `scene-demand.md` and
+    `opening-briefing.md` each used to repeat it in their own wording.
+    Measured against `nvidia/nemotron-3-ultra-550b-a55b` right after: `win` went
+    from 20-of-25 turns blockless to 12-of-25, `rules` from 5-of-11 to 7-of-11,
+    and `death` stayed at 19-of-19 with no `charsheet.md` at all. Prose demands
+    do not carry this model; the next variation to try is making the block a
+    tool call, which is the one thing it never fails to produce.
 - **Both check scripts grade by grepping prose, which the rule above forbids.**
   `secrets-check.sh` matches leak phrases against the terminal capture;
   `consistency-check.sh` has a red-flags grep over the same. Every number either
@@ -96,7 +124,7 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     never fired?" is then a question about recorded calls, not about words. What
     that does not catch is the DM *guessing* a solution it never read — that one
     is about meaning, so it wants an LLM judge over `transcript.md`.
-- `consistency-check.sh` copies the newest `saves/*/charsheet.md` by mtime, so a
-  run that wrote no sheet is silently graded against the previous run's. Since
-  ADR 009 the session directory exists from startup, so the run's own directory
-  can be captured directly instead of guessed at by mtime.
+- ~~`consistency-check.sh` copies the newest `saves/*/charsheet.md` by mtime~~ —
+  done: it now captures the session directory that appeared while the run was
+  playing, so a run that wrote no sheet shows up as a missing `charsheet.md`
+  rather than as the previous run's.

@@ -73,6 +73,10 @@ func adventureCreationTools() []llm.Tool {
 // by a tool, the session directory is derived rather than created, and a
 // milestone costs no request — so nothing else has a consumer left. A tool the
 // DM is never shown is one it cannot reach for by mistake. See docs/adr/007.
+//
+// A `world_update` tool was tried on 2026-08-09 and taken out again: offered to
+// nvidia/nemotron-3-ultra it was never once called, on five turns across fresh
+// and resumed sessions, while the same model wrote the block in prose.
 func gameTools() []llm.Tool {
 	checkDescription := prompts.MustFill("tool-check.md", nil)
 	levelDescription := prompts.MustFill("tool-check-level.md", nil)
