@@ -90,6 +90,50 @@ Stop when the issue stops reproducing, or when the rate stops moving and the
 next thing to try is a different kind of change. Record what was measured and
 what was only observed; ADRs 008 and 009 are what that looks like written down.
 
+8. **Reproduce before comparing wordings.** A sweep of five wordings against a
+   probe that never fails ranks noise and reads exactly like a result. Measured
+   2026-08-09: the first `drift` run came back 50 of 50 rows clean across five
+   arms and two rounds, because it opened the door on one clean push and tested
+   it two turns later. The failure it was built for had happened with the door
+   opening buried among retries and the test eight turns and a fight later.
+   Establish a failure rate on the unmodified prompts first; that rate is the
+   baseline every arm has to beat, and if there is no rate there is nothing to
+   compare.
+
+9. **A missed handover and a throttled turn are the same artifact.** Both leave
+   a turn with no sheet. Mark any run whose console holds a 429, or that ends
+   without narrating, and count it in neither column — a 502 the retry loop
+   recovered from is fine, the model did answer. Two model switches this session
+   came from measuring through rate limits before noticing.
+
+## What the handover actually fails at
+
+Measured 2026-08-09, and worth not re-deriving. The failure is two separate
+things that look like one:
+
+- **A world-changing turn hands over nothing.** Common, and on every model
+  tried. Five full runs on `oc/nemotron-3-ultra-free`: 26 player lines each, 11
+  to 14 sheets, and the missing-sheet note fired 11 to 14 times per run. Roughly
+  half of all turns miss.
+- **The repair fails to reconcile.** This is the one that ends adventures. The
+  note fires either way; what differs is what the model does with it. Nemotron
+  rewrites the changed lines from what it narrated and the run survives — the
+  door ended open in 5 of 5. Deepseek restated the sheet it was handed: in
+  `consistency-out/20260809-122730/win` the note fired 17 times, only 6 of ~26
+  turns handed over, and every one of them repeated `Door: closed, locked` after
+  the prose had said the door swung open and stayed open.
+
+So the model is not failing to *notice*. That same deepseek run wrote "world
+state in your sheet is stale" to the player and still copied the stale sheet
+forward. Prompting aimed at making it notice, or at reminding it to call, is
+aimed at the half that already works. The wording that has a chance is in
+`note-missing-block.md`, and it has to demand reconciliation — name that the
+narration and the sheet disagree and that the sheet's lines are what changes —
+rather than ask for the whole sheet again.
+
+For the same reason, re-asking inside the failing turn instead of on the next
+one is not obviously a fix: it fires the same note sooner.
+
 # Open TODO
 
 - **The DM is never told it forgot the *first* world update block.** A session
