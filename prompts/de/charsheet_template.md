@@ -50,14 +50,31 @@ Aktueller Abzug: keiner
 
 | Waffe | Schadensfaktor |
 | --- | --- |
+| Dolch | +1 |
+| Knüppel | +1 |
+| Kurzbogen | +2 |
 
 ### Getragen
 
+- Lederrüstung (+1 Verteidigung)
+
 ### Inventar
+
+- Pfeile ×20
+- Fackeln ×5
+- Rationen ×3
+- Wasserschlauch
+- Feuerstein und Stahl
+- Seil (15 m)
+- Dietriche
 
 ### Vermögen
 
+- Silber: 2
+
 ### Questgegenstände
+
+- Messingschlüssel vom Torhaus
 
 ---
 

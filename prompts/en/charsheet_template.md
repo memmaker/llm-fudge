@@ -50,14 +50,31 @@ Current penalty: none
 
 | Weapon | Damage factor |
 | --- | --- |
+| Dagger | +1 |
+| Club | +1 |
+| Shortbow | +2 |
 
 ### Worn
 
+- Leather armor (+1 defensive)
+
 ### Inventory
+
+- Arrows ×20
+- Torches ×5
+- Rations ×3
+- Waterskin
+- Flint and steel
+- Rope (15 m)
+- Lockpicks
 
 ### Wealth
 
+- Silver: 2
+
 ### Quest Items
+
+- Brass key from the gatehouse
 
 
 ---

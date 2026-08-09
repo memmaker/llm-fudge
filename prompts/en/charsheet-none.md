@@ -7,6 +7,11 @@ As soon as the player's character has a name, call `world_update` in that same
 reply with their whole sheet in this shape — and call it again in every later
 reply that changes anything the sheet records. Anything you leave out is gone.
 
+The example's gear is not theirs. They carry what the player named and nothing
+else: no armour, no second weapon, no coin, no kit that "everybody has". Picking
+their traits for them is attributes, skills, gifts and faults — never equipment.
+A section they named nothing for stays empty.
+
 Check before you write:
 
 - only what the player typed happens; they notice, try and conclude nothing else

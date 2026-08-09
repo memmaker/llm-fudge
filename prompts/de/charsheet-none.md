@@ -8,6 +8,12 @@ derselben Antwort mit ihrem vollständigen Bogen in dieser Form auf – und eben
 in jeder späteren Antwort, die etwas verändert, was der Bogen festhält. Was du
 weglässt, ist weg.
 
+Die Ausrüstung des Beispiels gehört ihr nicht. Sie trägt, was der Spieler
+genannt hat, und sonst nichts: keine Rüstung, keine zweite Waffe, kein Geld,
+keine Ausrüstung, die „jeder hat“. Ihre Eigenschaften für sie zu wählen, meint
+Attribute, Fertigkeiten, Gaben und Schwächen – niemals Ausrüstung. Ein Abschnitt,
+für den nichts genannt wurde, bleibt leer.
+
 Prüfe, bevor du schreibst:
 
 - nur was der Spieler getippt hat, geschieht; er bemerkt, versucht und schließt
