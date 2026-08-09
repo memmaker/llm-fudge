@@ -10,6 +10,9 @@
 #
 # Adding a type is a deliberate act: it starts a new row that will never
 # aggregate with the old ones. Prefer an existing type and a sharper quote.
+#
+# NOTHING IS ADDED HERE WITHOUT FELIX CONFIRMING IT FIRST. Propose the type and
+# wait. An unnecessary one costs a permanently split count that reads like data.
 
 # The model made up content the player and the adventure never granted:
 # equipment, wealth, NPCs, rooms, mechanics.

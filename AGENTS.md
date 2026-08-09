@@ -134,6 +134,77 @@ rather than ask for the whole sheet again.
 For the same reason, re-asking inside the failing turn instead of on the next
 one is not obviously a fix: it fires the same note sooner.
 
+# Recording what a run showed
+
+A rate that lives in a chat message is gone by the next session, and a table
+kept by hand is wrong by its third edit — the first one here already had
+`creation-invisible` at 5 of 6 when the transcripts said 4. So the numbers are
+generated and the judgement is written down beside the run it judges.
+
+Three files per session, each holding only what it is entitled to hold:
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `metadata.json` | the binary | commit, branch, model, date |
+| `findings.tsv` | whoever judged the run | what was seen, where, and the quote proving it |
+| the rest of the session | the binary | the logs those proofs cite |
+
+`./ledger.sh` accumulates them into `consistency-ledger.md`, commit outermost
+and chronological, model beneath. It counts and lays out; it decides nothing.
+Whether the narration and the state agree is the one question no script can
+answer, which is exactly why it is the part a model has to read and record.
+
+Never edit `consistency-ledger.md`. Change the verdict in the session and
+regenerate — the sessions are the source of truth and the ledger is a view of
+them.
+
+A verdict looks like this, tab separated:
+
+```
+# run: items
+# spoiled: no
+type	occurred	proof	quote
+invented-content	yes	charsheet.md:73	Silver: 5, never granted
+state-desync	no	charsheet.md:91	Door: open, matches the narration
+```
+
+- **Every occurrence needs a proof.** A count nobody can check is not evidence,
+  and the ledger prints `NO PROOF RECORDED` rather than tidying it away.
+- **`no` counts in the denominator**; a type left out was not judged and counts
+  in neither column. That is what lets a run whose later turns the backend ate
+  still contribute its creation-turn verdicts.
+- **`spoiled: yes` drops the run whole.** A turn the backend never let finish
+  leaves the same artifact as a turn the model fumbled — no sheet.
+- **A run with no `findings.tsv` is unjudged, not clean.** `ledger.sh` names
+  those on stderr; work through them rather than letting the ledger imply the
+  runs went well.
+
+## The finding vocabulary is closed
+
+The types live in `consistency-types.txt` and `ledger.sh` refuses to build a
+ledger containing one that is not in the list. They are broad on purpose: what
+matters is that the model invented things it should not have, not whether the
+invented thing was worn or wielded. That detail belongs in the finding's quote,
+where it can be read without splitting the count.
+
+**Never add a type on your own initiative. Propose it and wait for Felix to
+confirm it.** A new type starts a row that will never aggregate with the old
+ones, so the cost of an unnecessary one is a permanently split count that looks
+like data. If an existing type nearly fits, use it and say the rest in the
+quote.
+
+## Branches are experiments
+
+`metadata.json` records the branch, and the `EXPERIMENT.md` committed on that
+branch says in a paragraph what it does differently. The ledger prints it beside
+the branch's runs. Two branches can sit on sibling commits and mean entirely
+different things; the commit alone does not say what was being tried.
+
+A `-dirty` commit means the tree had uncommitted changes when the binary was
+built, so the prompts were **not** the ones that commit names. Treat those runs
+as belonging to no prompt state — a sweep that swaps prompt files in and out
+produces exactly this, and it is the honest reading.
+
 # Open TODO
 
 - **The DM is never told it forgot the *first* world update block.** A session
