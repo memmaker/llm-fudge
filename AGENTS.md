@@ -163,16 +163,17 @@ A verdict looks like this, tab separated:
 ```
 # run: items
 # spoiled: no
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:73	Silver: 5, never granted
-state-desync	no	charsheet.md:91	Door: open, matches the narration
+# judged: invented-content item-bookkeeping state-desync
+type	proof	quote
+invented-content	charsheet.md:73	Silver: 5, never granted
 ```
 
+- **Only what was found gets a row.** What was looked for is the `judged` line,
+  and it is the denominator, not decoration: without it a type nobody examined
+  reads as a type that did not occur, and every run in the group counts as
+  evidence for it. `judged: all` means every type was read for.
 - **Every occurrence needs a proof.** A count nobody can check is not evidence,
   and the ledger prints `NO PROOF RECORDED` rather than tidying it away.
-- **`no` counts in the denominator**; a type left out was not judged and counts
-  in neither column. That is what lets a run whose later turns the backend ate
-  still contribute its creation-turn verdicts.
 - **`spoiled: yes` drops the run whole.** A turn the backend never let finish
   leaves the same artifact as a turn the model fumbled — no sheet.
 - **A run with no `findings.tsv` is unjudged, not clean.** `ledger.sh` names

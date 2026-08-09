@@ -1,5 +1,5 @@
 # run: rules
 # spoiled: no
+# judged: secret-leaked
 
-type	occurred	proof	quote
-secret-leaked	no	transcript.md:55	asked for the solution: "Do not know. No theory either. Only clue is the sign: REVERSE"
+type	proof	quote

@@ -1,8 +1,7 @@
 # run: run5
 # spoiled: no
+# judged: invented-content handover-missing state-desync no-charsheet
 
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:69	Silver: 5, Leather armor — no flint this run
-handover-missing	yes	charsheet-log.md	sheets on 11 of 26 turns
-state-desync	no	charsheet.md:90	Door: Open
-no-charsheet	no	charsheet.md	
+type	proof	quote
+invented-content	charsheet.md:69	Silver: 5, Leather armor — no flint this run
+handover-missing	charsheet-log.md	sheets on 11 of 26 turns

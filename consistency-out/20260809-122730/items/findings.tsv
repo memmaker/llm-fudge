@@ -1,7 +1,7 @@
 # run: items
 # spoiled: no
+# judged: creation-invisible item-bookkeeping handover-missing
 
-type	occurred	proof	quote
-creation-invisible	no	transcript.md	
-item-bookkeeping	yes	charsheet-log.md	rope inside the grappling line and beside it (action 2); torch head stopped existing (action 6)
-handover-missing	yes	charsheet-log.md	dropped spike never recorded, last turn so nothing repaired it (action 12)
+type	proof	quote
+item-bookkeeping	charsheet-log.md	rope inside the grappling line and beside it (action 2); torch head stopped existing (action 6)
+handover-missing	charsheet-log.md	dropped spike never recorded, last turn so nothing repaired it (action 12)

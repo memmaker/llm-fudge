@@ -51,10 +51,14 @@ for i in $(seq 1 "$RUNS"); do
 	cp -R "saves/$session" "$OUT/run$i"
 
 	if grep -q 'API 429' "$OUT/run$i-terminal.log" || grep -q 'did not narrate this turn' "$OUT/run$i-terminal.log"; then
-		printf '# run: run%s\n# spoiled: yes\n\ntype\toccurred\tproof\tquote\n' "$i" >"$OUT/run$i/findings.tsv"
+		printf '# run: run%s\n# spoiled: yes\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$TYPE" >"$OUT/run$i/findings.tsv"
 		echo "run $i: SPOILED (backend), verdict pre-filled"
 	else
-		echo "run $i: done — judge it and write $OUT/run$i/findings.tsv"
+		# The header is pre-filled because the denominator is not the judge's to
+		# choose: this script exists to read one type, and a run of it that found
+		# nothing still counts as a run that looked.
+		printf '# run: run%s\n# spoiled: no\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$TYPE" >"$OUT/run$i/findings.tsv"
+		echo "run $i: done — read it and add a row to $OUT/run$i/findings.tsv if it occurred"
 	fi
 done
 

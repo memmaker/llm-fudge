@@ -1,6 +1,6 @@
 # run: state
 # spoiled: no
+# judged: creation-invisible state-desync
 
-type	occurred	proof	quote
-creation-invisible	yes	transcript.md:10	Character locked. Let me set the sheet.
-state-desync	no		
+type	proof	quote
+creation-invisible	transcript.md:10	Character locked. Let me set the sheet.

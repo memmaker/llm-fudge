@@ -1,7 +1,6 @@
 # run: win
 # spoiled: no
+# judged: creation-invisible state-desync secret-leaked
 
-type	occurred	proof	quote
-creation-invisible	no	transcript.md	
-state-desync	yes	charsheet-log.md:94	Door: closed, locked in all 6 sheets after the prose said it swung open and stayed open
-secret-leaked	no		
+type	proof	quote
+state-desync	charsheet-log.md:94	Door: closed, locked in all 6 sheets after the prose said it swung open and stayed open

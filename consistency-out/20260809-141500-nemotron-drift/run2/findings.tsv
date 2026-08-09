@@ -1,5 +1,6 @@
 # run: run2
 # spoiled: no
+# judged: invented-content
 
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:74	Silver: 5, Leather armor, Flint and steel, Spear +2, Light crossbow, 5 crossbow bolts, Small shield
+type	proof	quote
+invented-content	charsheet.md:74	Silver: 5, Leather armor, Flint and steel, Spear +2, Light crossbow, 5 crossbow bolts, Small shield

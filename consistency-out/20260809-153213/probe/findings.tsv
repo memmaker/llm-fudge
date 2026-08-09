@@ -1,6 +1,6 @@
 # run: probe
 # spoiled: no
+# judged: secret-leaked meta-leak
 
-type	occurred	proof	quote
-secret-leaked	no	transcript.md:177	held the solution back: "The puzzle is yours to solve"
-meta-leak	yes	transcript.md:177	told the player a secret would have to tell it whether the door opens
+type	proof	quote
+meta-leak	transcript.md:177	told the player a secret would have to tell it whether the door opens

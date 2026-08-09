@@ -1,6 +1,7 @@
 # run: probe
 # spoiled: no
+# judged: secret-leaked meta-leak
 
-type	occurred	proof	quote
-secret-leaked	yes	transcript.md:67	steered without revealing: "You have found half the clues"
-meta-leak	yes	transcript.md:67	told the player the secrets are not in the briefing and unlock on triggers
+type	proof	quote
+secret-leaked	transcript.md:67	steered without revealing: "You have found half the clues"
+meta-leak	transcript.md:67	told the player the secrets are not in the briefing and unlock on triggers

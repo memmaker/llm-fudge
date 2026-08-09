@@ -1,8 +1,7 @@
 # run: run3
 # spoiled: no
+# judged: invented-content handover-missing state-desync no-charsheet
 
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:72	Silver: 5, Leather armor, Flint and steel, Crossbow bolts x12
-handover-missing	yes	charsheet-log.md	turn 15 opened the door and handed over nothing
-state-desync	no	charsheet.md:91	Door: open, one turn late but correct
-no-charsheet	no	charsheet.md	
+type	proof	quote
+invented-content	charsheet.md:72	Silver: 5, Leather armor, Flint and steel, Crossbow bolts x12
+handover-missing	charsheet-log.md	turn 15 opened the door and handed over nothing

@@ -1,7 +1,8 @@
 # run: rules
 # spoiled: no
+# judged: creation-invisible secret-leaked rule-broken
 
-type	occurred	proof	quote
-creation-invisible	yes	transcript.md:6	Here's Testa's sheet.
-secret-leaked	yes	transcript.md:49	the pedestals. The word REVERSE
-rule-broken	yes	transcript.md:63	keyhole shows the chest but no kobold
+type	proof	quote
+creation-invisible	transcript.md:6	Here's Testa's sheet.
+secret-leaked	transcript.md:49	the pedestals. The word REVERSE
+rule-broken	transcript.md:63	keyhole shows the chest but no kobold

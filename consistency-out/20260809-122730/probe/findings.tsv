@@ -1,7 +1,7 @@
 # run: probe
 # spoiled: no
+# judged: creation-invisible secret-leaked state-desync
 
-type	occurred	proof	quote
-creation-invisible	yes	transcript.md:6	Let me build Testa's sheet.
-secret-leaked	yes	transcript.md	narrated the player own deduction back to them
-state-desync	no		
+type	proof	quote
+creation-invisible	transcript.md:6	Let me build Testa's sheet.
+secret-leaked	transcript.md	narrated the player own deduction back to them

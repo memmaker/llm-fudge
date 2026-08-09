@@ -1,5 +1,5 @@
 # run: probe6
 # spoiled: no
+# judged: state-desync
 
-type	occurred	proof	quote
-state-desync	no	charsheet.md:92	Door: open — resumed into the turn that bricked the deepseek win run
+type	proof	quote

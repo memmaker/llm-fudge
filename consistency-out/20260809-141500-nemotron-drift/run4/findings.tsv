@@ -1,8 +1,7 @@
 # run: run4
 # spoiled: no
+# judged: invented-content handover-missing state-desync no-charsheet
 
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:70	Silver: 5, Chain hauberk +2, Flint and steel, Longsword +2
-handover-missing	yes	charsheet-log.md	sheets on 11 of 26 turns
-state-desync	no	charsheet.md:89	Door: open
-no-charsheet	no	charsheet.md	
+type	proof	quote
+invented-content	charsheet.md:70	Silver: 5, Chain hauberk +2, Flint and steel, Longsword +2
+handover-missing	charsheet-log.md	sheets on 11 of 26 turns

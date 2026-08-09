@@ -16,8 +16,15 @@
 #
 #   # run: items
 #   # spoiled: no
-#   type<TAB>occurred<TAB>proof<TAB>quote
-#   invented-content<TAB>yes<TAB>charsheet.md:73<TAB>Silver: 5, never granted
+#   # judged: invented-content item-bookkeeping state-desync
+#   type<TAB>proof<TAB>quote
+#   invented-content<TAB>charsheet.md:73<TAB>Silver: 5, never granted
+#
+# Only what was found gets a row. What was *looked for* is the `judged` line, and
+# it is not optional: it is the denominator. Without it a type nobody examined
+# would be indistinguishable from a type that did not occur, and every run in the
+# group would silently count as evidence for it. `judged: all` means every type
+# in consistency-types.txt was read for.
 #
 # The ledger cites the session directory, not the individual proof: the finding
 # is the session's own record, and following the link is how it gets checked.
@@ -38,10 +45,16 @@ field() { sed -n "s/.*\"$2\": *\"\([^\"]*\)\".*/\1/p" "$1" | head -1; }
 # two spellings of one finding become two rows that never add up.
 bad=0
 while IFS= read -r f; do
+	# The rows, and the judged list in the header, which is just as capable of
+	# holding a typo and would silently inflate a denominator instead of a count.
 	while IFS=$'\t' read -r type _; do
 		case "$type" in '#'* | 'type' | '') continue ;; esac
 		grep -qxF "$type" "$TYPES" || { echo "$f: unknown type '$type' — add it to $TYPES or use an existing one" >&2; bad=1; }
 	done <"$f"
+	for type in $(sed -n 's/^# *judged: *//p' "$f" | head -1); do
+		[ "$type" = "all" ] && continue
+		grep -qxF "$type" "$TYPES" || { echo "$f: unknown type '$type' in the judged list" >&2; bad=1; }
+	done
 done < <(find "$ROOT" -name findings.tsv | sort)
 [ "$bad" = 1 ] && { echo "refusing to build a ledger with unknown types" >&2; exit 1; }
 
@@ -56,11 +69,21 @@ collect() {
 		date=$(field "$meta" started)
 		run=$(sed -n 's/^# *run: *//p' "$f" | head -1)
 		spoiled=$(sed -n 's/^# *spoiled: *//p' "$f" | head -1)
-		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\t%s\t%s\tSPOILED\t\n' "$date" "$prompts" "$commit" "$branch" "$model" "$dir"; continue; }
+		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\t%s\t%s\tSPOILED\tSPOILED\n' "$date" "$prompts" "$commit" "$branch" "$model" "$dir"; continue; }
+
+		# `judged` is what the run was read for; the rows are what was found in it.
+		# Both are needed and neither implies the other: without `judged` a type
+		# nobody looked for would read as a type that did not occur, and the
+		# denominator would quietly count runs that never examined it.
+		judged=$(sed -n 's/^# *judged: *//p' "$f" | head -1)
+		[ "$judged" = "all" ] && judged=$(grep -v '^#' "$TYPES" | grep -v '^[[:space:]]*$' | tr '\n' ' ')
+		for t in $judged; do
+			printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\tLOOKED\n' "$date" "$prompts" "$commit" "$branch" "$model" "$dir" "$t"
+		done
 
 		awk -F'\t' -v d="$date" -v p="$prompts" -v c="$commit" -v b="$branch" -v m="$model" -v dir="$dir" '
 			/^#/ || /^type\t/ || /^[[:space:]]*$/ { next }
-			{ print d "\t" p "\t" c "\t" b "\t" m "\t" dir "\t" $1 "\t" $2 }
+			{ print d "\t" p "\t" c "\t" b "\t" m "\t" dir "\t" $1 "\tFOUND" }
 		' "$f"
 	done
 }
@@ -103,10 +126,14 @@ find "$ROOT" -name findings.tsv | sort | collect | awk -F'\t' -v blurbfile="$bra
 		branches[key] = branch
 		if (type == "SPOILED") { spoiled[key]++; next }
 		kt = key "\t" type
-		runs[kt]++
 		types[kt] = type
 		sessions[key] = sessions[key] (index(sessions[key], dir) ? "" : "\n- `" dir "`")
-		if (occurred == "yes") hits[kt]++
+		# LOOKED is the denominator, FOUND the numerator. A found type that was
+		# never declared as looked-for still counts in both: finding it is proof
+		# enough that somebody was reading for it.
+		if (occurred == "LOOKED") runs[kt]++
+		else { hits[kt]++; if (!((dir "\t" type) in counted)) runs[kt]++ }
+		if (occurred == "LOOKED") counted[dir "\t" type] = 1
 	}
 	END {
 		n = 0

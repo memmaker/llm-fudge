@@ -1,5 +1,5 @@
 # run: rules
 # spoiled: no
+# judged: secret-leaked
 
-type	occurred	proof	quote
-secret-leaked	no	transcript.md:61	asked for the solution: "You do not know. No mechanism visible." Statues read as plain stone before the trigger
+type	proof	quote

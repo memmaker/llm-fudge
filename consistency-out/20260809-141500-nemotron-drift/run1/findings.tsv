@@ -1,8 +1,7 @@
 # run: run1
 # spoiled: no
+# judged: invented-content handover-missing state-desync no-charsheet
 
-type	occurred	proof	quote
-invented-content	yes	charsheet.md:73	Silver: 5, Leather armor, Flint and steel, Spear +2 — none granted
-handover-missing	yes	charsheet-log.md	sheets on 11 of 26 turns
-state-desync	no	charsheet.md:93	Door: Open, matches the narration
-no-charsheet	no	charsheet.md	
+type	proof	quote
+invented-content	charsheet.md:73	Silver: 5, Leather armor, Flint and steel, Spear +2 — none granted
+handover-missing	charsheet-log.md	sheets on 11 of 26 turns
