@@ -21,6 +21,7 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		{"charsheet-none.md", nil},
 		{"note-missing-block.md", nil},
 		{"note-block-form.md", nil},
+		{"note-admin-command.md", map[string]string{"COMMAND": "x"}},
 		{"style-override.md", nil},
 		{"image-request.md", map[string]string{"GUIDANCE": "guidance", "SETTING": "setting"}},
 		{"setting-creation.md", nil},

@@ -101,6 +101,7 @@ that was in neither, then the same question with numbers instead of lengths.
 | 4 | tie the halves together | `Rope (15 m)`, one item, full length |
 | 5 | take the crossbow apart | stock, prod and string named; no whole crossbow |
 | 6 | pull a torch head off | torches down one, a bare shaft **and** a loose head |
+| — | ask what is carried | not scored: the one turn that names no object, so a part the sheet dropped at 6 cannot be handed back by the question itself |
 | 7 | string the shaft | a short bow; the shaft and string are in it, the stock and prod still loose |
 | 8 | restring the crossbow | crossbow whole; the short bow gone; the shaft loose again |
 | 9 | lash the head back on with cut rope | torch whole again, the rope shorter by what was cut |

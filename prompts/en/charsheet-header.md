@@ -18,6 +18,8 @@ Worked, in the sheet's own lines:
 - take the crossbow apart — `Crossbow` goes from the `### Weapons` table, and
   `Crossbow stock`, `Crossbow prod` and `Crossbow string` arrive in
   `### Inventory`; putting it back together is exactly that in reverse
+- pull the head off a torch — `Torches ×3` becomes `Torches ×2`, and both
+  `Torch shaft (bare)` and `Torch head (loose)` arrive
 - lash the torch head back on — `Torch shaft (bare)` and `Torch head (loose)`
   both go, `Torches ×2` becomes `Torches ×3`, and the rope is shorter by what
   was cut off it

@@ -60,6 +60,7 @@ Typed at the `>` prompt during play, anything starting with `/`:
 | `/style <text>` | Append a style directive to the DM's system prompt for the rest of the session. Bare `/style` clears it. |
 | `/image` | Write an image prompt for the current scene to `img-gen.md`. One extra LLM call, only when asked for. |
 | `/milestone` | Archive the chat so far and clear it. Costs no model call. See below. |
+| `/cmd <what the sheet must say>` | Speak out of character to the sheet: "put the torch head back in my inventory". The story halts for the turn, nobody acts, and the DM edits the sheet to match. The player is the authority here — if it contradicts the narration, the narration was wrong. |
 
 ### Scripted play
 

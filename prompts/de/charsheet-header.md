@@ -21,6 +21,8 @@ Ausgeführt, in den Zeilen des Bogens selbst:
 - die Armbrust zerlegen – `Armbrust` geht aus der Tabelle `### Waffen`, und
   `Armbrustschaft`, `Armbrustbogen` und `Armbrustsehne` kommen in `### Inventar`;
   das Zusammenbauen ist genau das rückwärts
+- einer Fackel den Kopf abziehen – aus `Fackeln ×3` wird `Fackeln ×2`, und es
+  kommen `Fackelschaft (blank)` und `Fackelkopf (lose)`
 - den Fackelkopf wieder anbinden – `Fackelschaft (blank)` und `Fackelkopf (lose)`
   gehen beide, aus `Fackeln ×2` wird `Fackeln ×3`, und das Seil ist um das
   kürzer, was abgeschnitten wurde

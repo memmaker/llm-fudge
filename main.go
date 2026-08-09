@@ -504,6 +504,8 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 		if err := s.milestone(messages); err != nil {
 			fmt.Printf("Error writing milestone: %v\n", err)
 		}
+	case "/cmd":
+		s.adminCommand(chat, strings.TrimSpace(strings.TrimPrefix(line, cmd)), messages)
 	case "/help":
 		printMetaCommands()
 	default:
@@ -520,6 +522,32 @@ func printMetaCommands() {
 	fmt.Println("  /style <text> - Append a style directive to the DM prompt (no text clears it)")
 	fmt.Println("  /image - Write an image prompt for the current scene to img-gen.md")
 	fmt.Println("  /milestone - Archive the chat so far and continue from the character sheet")
+	fmt.Println("  /cmd <what the sheet must say> - Correct the sheet out of character; no scene happens")
+}
+
+// adminCommand is the player reaching past the story to the sheet. The model
+// gets bookkeeping wrong at a rate no wording has driven to zero — a part that
+// stops existing is the open one — so the player gets a way to say so directly
+// instead of arguing with the fiction until it comes back.
+//
+// It rides the carried-note mechanism rather than inventing a second one: the
+// note goes under the player's line, the player's line is what the transcript
+// records, and a turn that fails rolls the note back with it. It is appended to
+// whatever the harness was already carrying, because a missing-sheet correction
+// and this instruction both have to reach the same turn.
+func (s *session) adminCommand(chat chatRound, command string, messages *[]llm.Message) {
+	if command == "" {
+		fmt.Println("Usage: /cmd <what the sheet must say>")
+		return
+	}
+	note, err := prompts.Fill("note-admin-command.md", map[string]string{"COMMAND": command})
+	if err != nil {
+		fmt.Printf("Error loading the command note: %v\n", err)
+		return
+	}
+	s.carried = strings.TrimSpace(s.carried + "\n\n" + note)
+	ui.ScrollLastLineToTop()
+	s.processGameTurn(chat, messages, "/cmd "+command)
 }
 
 // milestone is the compaction, and the player decides when it happens. It costs

@@ -935,6 +935,45 @@ func TestTheEndOfSessionAskSurvivesOneRefusal(t *testing.T) {
 	}
 }
 
+// The command reaches the model under the player's own line, and the transcript
+// keeps what was typed. A note the harness was already carrying survives it:
+// both corrections belong to the same turn.
+func TestAnAdminCommandRidesUnderThePlayersLine(t *testing.T) {
+	s, messages := played(t)
+	s.carried = "a note already carried"
+
+	var sent string
+	s.adminCommand(func(m []llm.Message, _ []llm.Tool) (llm.Response, error) {
+		sent = m[len(m)-1].Content
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant,
+			Content: "The sheet now lists the torch head." + block("- Torch head (loose)")}}, nil
+	}, "put the torch head back in my inventory", &messages)
+
+	if !strings.Contains(sent, "put the torch head back in my inventory") {
+		t.Fatalf("the command did not reach the model: %q", sent)
+	}
+	if !strings.Contains(sent, "a note already carried") {
+		t.Fatalf("the carried note was dropped: %q", sent)
+	}
+	if !strings.HasPrefix(sent, "/cmd put the torch head back") {
+		t.Fatalf("the player's line is not what was sent first: %q", sent)
+	}
+}
+
+// An empty command spends no request: there is nothing to obey.
+func TestAnEmptyAdminCommandDoesNothing(t *testing.T) {
+	s, messages := played(t)
+
+	s.adminCommand(func([]llm.Message, []llm.Tool) (llm.Response, error) {
+		t.Fatal("an empty command asked the model something")
+		return llm.Response{}, nil
+	}, "", &messages)
+
+	if s.carried != "" {
+		t.Fatalf("an empty command carried a note: %q", s.carried)
+	}
+}
+
 // Two asks and no more: a model that has refused twice is not going to be
 // argued into it, and the player has already quit.
 func TestTheEndOfSessionAskGivesUpAfterTwo(t *testing.T) {

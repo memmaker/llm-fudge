@@ -177,6 +177,13 @@ Yes, that works.'
 # of a torch become a third object that was in neither. The coins are the same
 # question with numbers instead of lengths, which a model can get right by
 # arithmetic while getting the rope wrong by imagination.
+#
+# The inventory question after the torch is a read-only probe and scores nothing.
+# It is there because every other line names the object it is about, so a part
+# the sheet quietly dropped gets handed back by the next player line before
+# anyone can see it missing — measured 2026-08-09, the torch head vanished and
+# came back three turns later only because the script said "the torch head".
+# The question names nothing, so it is the one turn where the loss has to show.
 script_items() {
 	cat <<-EOF
 		$ITEMS_OPENING
@@ -186,6 +193,7 @@ script_items() {
 		I tie the two rope halves back together into one rope.
 		I take my crossbow apart into stock, prod and string.
 		I pull the head off one torch and keep the bare wooden shaft.
+		What am I carrying? Show me my inventory.
 		I string the crossbow's string onto the bare shaft to make a short bow.
 		I take the string off the shaft and put the crossbow back together.
 		I lash the torch head back onto its shaft with a short length cut from my rope.
