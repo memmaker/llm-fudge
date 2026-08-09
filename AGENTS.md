@@ -167,6 +167,14 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     | no handover at all | 63% (15/24, 6 runs) | 4/6 | 2/6 |
     | the call, sheet replaced by a stub | 42% (10/24, 6 runs) | — | — |
 
+    Re-measured on `oc/deepseek-v4-flash-free` with the ten-action `state` run,
+    where the cap actually binds (the five-turn script never made more than five
+    handovers, so "keep 5" and "keep everything" were the same measurement):
+    five runs each, interleaved, cap 3 gave 40 of 50 updates and cap 5 gave 36,
+    with rope and torch bookkeeping correct in 4 of 5 against 3 of 5. Both arms
+    contain a run at 9-10 and a run at 4-5, so the difference is inside the
+    spread — 3 stays, because nothing says a bigger history buys anything.
+
     Rates, because the arms are not the same size — the first was run five times
     and the rest six. † That arm was measured before the dropped-item rule
     reached `charsheet-header.md`, so its rope column is a floor and not
