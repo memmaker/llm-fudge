@@ -1,0 +1,8 @@
+# run: run1
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet.md	the rope was quartered, not halved: Rope (3.75 m) x2 beside Rope (7.5 m)
+item-bookkeeping	charsheet.md	the spike was annotated rather than joined: Iron spike (tied to one 3.75 m piece) is still its own line
+item-bookkeeping	charsheet.md	the purses were never recorded: Silver coins: 12 still stands

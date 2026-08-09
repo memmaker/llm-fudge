@@ -1,0 +1,8 @@
+# run: run1
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet.md	the rope was never cut: Rope (15 m) still stands
+item-bookkeeping	charsheet.md	the grappling line was never made: Iron spike still loose
+item-bookkeeping	charsheet.md	the same twelve coins twice: two purse lines in Inventory and Silver coins: 12 (split: 6 + 6) in Wealth
