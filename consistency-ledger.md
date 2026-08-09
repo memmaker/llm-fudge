@@ -167,25 +167,57 @@ Sessions:
 
 Built at: `93b16a1`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## oc/nemotron-3-ultra-free
 
@@ -222,25 +254,57 @@ Sessions:
 
 Built at: `bc4c2a8`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## bb/blackboxai/nvidia/nemotron-3-super-120b-a12b:free
 
@@ -493,25 +557,57 @@ Sessions:
 
 Built at: `75fe0d4-dirty`, `76b0e12`, `76b0e12-dirty`, `8f0d955-dirty`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## openai/gpt-5.6-luna (flex)
 
@@ -574,25 +670,57 @@ Sessions:
 
 Built at: `8f0d955-dirty`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## openai/gpt-5.6-luna (flex)
 
@@ -611,25 +739,57 @@ Sessions:
 
 Built at: `8f0d955-dirty`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## openai/gpt-5.6-luna (flex)
 
@@ -648,25 +808,57 @@ Sessions:
 
 Built at: `8f0d955-dirty`
 
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
+failures the luna survey left standing, and then the bookkeeping block itself,
+rebuilt from nothing.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 3, in place: the bookkeeping block is now one sentence and seven worked
+examples, and the five rules that stood above them are gone. Measured against
+the twelve-action `items` run, which is the fixture that still fails — the
+three-trigger `repro.sh item-bookkeeping` came back 15 of 15 clean on the
+shipped wording and had nothing left to say.
+
+| Guidance in the header | Runs | Actions correct |
+| --- | --- | --- |
+| nothing at all | 2 | 9/24 |
+| one sentence | 2 | 14/24 |
+| that sentence and three worked examples | 2 | 18/24 |
+| and the crossbow and torch crossings | 2 | 20/24 |
+| and put-down and pick-up (**in place**) | 2 | 21/24 |
+| five rules and eight examples (the shipped wording) | 3 | 26/36 |
+
+Two things the numbers say. Stripping the block costs about half the operations,
+so the guidance was earning its place; and the rules above the examples were
+not — the wording in place is shorter than the one it replaces and measures
+better. The examples that moved it were the two that cross a section boundary:
+the crossbow between the `### Weapons` table and `### Inventory`, and the torch
+head folding back into a count. Both had failed in nearly every run of every
+other arm, and both go clean once an example shows the edit.
+
+Arm 4, in place: the forward torch example (`pull the head off a torch`) is back
+beside its reverse, `note-session-end.md` says what leaving a section means, and
+the `items` run asks what is carried straight after the torch — a turn that
+names no object, so a part the sheet dropped cannot be handed back by the
+question itself.
+
+Measured after all four, three `items` runs, no `/cmd` used: **33 of 36
+actions**, against 26 of 36 on the wording this branch started from. The torch
+head was written in 3 of 3 and survived the probe turn in 3 of 3, where every
+arm carrying only the reverse example lost it 4 times in 4.
+
+What is left, in those three runs: one crossbow reassembled into the
+`### Weapons` table while its three parts stayed in `### Inventory`, and two
+runs where stringing a torch shaft into a short bow was refused as impossible
+rather than recorded — which may be the DM being right and the rubric being
+wrong.
 
 ## openai/gpt-5.6-luna (flex)
 
@@ -1344,9 +1536,9 @@ Sessions:
 
 ---
 
-# prompt set `1d0a26b955e7` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+# prompt set `1d0a26b955e7` — from 2026-08-09 — branch `main`
 
-Built at: `c63381c`
+Built at: `c63381c`, `325aec4`, `325aec4-dirty`
 
 Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
 failures the luna survey left standing, and then the bookkeeping block itself,
@@ -1404,7 +1596,11 @@ wrong.
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| item-bookkeeping | 1 | 1 |
+| item-bookkeeping | 4 | 5 |
 
 Sessions:
 - `consistency-out/20260809-223643/items`
+- `consistency-out/20260809-231148/items`
+- `consistency-out/20260809-231337/items`
+- `consistency-out/20260809-231506/items`
+- `consistency-out/20260809-231606/items`

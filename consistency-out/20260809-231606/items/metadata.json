@@ -1,0 +1,11 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "openai/gpt-5.6-luna",
+  "service_tier": "flex",
+  "commit": "325aec4-dirty",
+  "branch": "main",
+  "prompts": "1d0a26b955e7",
+  "started": "2026-08-09T23:16:06+02:00"
+}
