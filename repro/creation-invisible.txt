@@ -1,0 +1,5 @@
+# no resume: the trigger is character creation, which only happens at the start.
+# ONCE PER SESSION, as above — run it three times and count runs.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+What am I carrying? Show me my inventory.

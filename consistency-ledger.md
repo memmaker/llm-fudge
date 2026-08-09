@@ -52,11 +52,11 @@ Sessions:
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| meta-leak | 4 | 4 |
+| meta-leak | 5 | 5 |
 | no-charsheet | 0 | 4 |
 | invented-content | 5 | 5 |
 | handover-missing | 4 | 4 |
-| secret-leaked | 2 | 7 |
+| secret-leaked | 2 | 8 |
 | state-desync | 0 | 16 |
 
 Sessions:
@@ -84,3 +84,4 @@ Sessions:
 - `consistency-out/20260809-152011/probe`
 - `consistency-out/20260809-152952/rules`
 - `consistency-out/20260809-153213/probe`
+- `consistency-out/20260809-155217-repro-secret-leaked/run1`

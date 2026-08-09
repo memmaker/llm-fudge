@@ -1,0 +1,7 @@
+# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-028.json
+# Turn 15: the shove that lands the second statue and opens the door. This is
+# the turn that bricked the deepseek win run — it narrated the door open and
+# recorded nothing. Then two ways to make the disagreement visible.
+I shove the blue statue onto the red pedestal with all my strength.
+I go back into room 1 and look at the door.
+Is the door open or shut right now?

@@ -1,0 +1,8 @@
+# no resume: the trigger is the opening turn itself, which is what no recording
+# can put you back before.
+# ONCE PER SESSION. A run either writes a first sheet or it does not, so the
+# three lines below are one trigger, not three — run the file three times and
+# count runs, not calls.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I look around the hall.

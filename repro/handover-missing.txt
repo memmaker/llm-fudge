@@ -1,0 +1,6 @@
+# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-016.json
+# Three changes the sheet must record, of three different kinds: an item leaves
+# the character, a consumable is spent, and a fixture of the room moves.
+I drop my rope on the floor and leave it lying there.
+I eat one of my rations.
+I shove the red statue onto the blue pedestal with all my strength.

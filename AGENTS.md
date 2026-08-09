@@ -389,3 +389,29 @@ produces exactly this, and it is the honest reading.
   done: it now captures the session directory that appeared while the run was
   playing, so a run that wrote no sheet shows up as a missing `charsheet.md`
   rather than as the previous run's.
+
+# Reproducing one error type
+
+Every type in `consistency-types.txt` has a script under `repro/` and is run
+with `./repro.sh <type> [runs]`. Each script is three player lines and each line
+is a *different* way at the same error — ask the objects, ask the notes, ask the
+author — because one phrasing that happens not to fire otherwise reads as a fix.
+
+They resume into a recorded turn rather than playing up to one, so the calls are
+spent on the error instead of on walking the character back to it. The resume
+point is named in the script's own header, with a line saying what that turn had
+established.
+
+Three lines is three triggers, not always three API calls. A line the DM answers
+in prose costs one request; a line that moves the world costs two or three,
+because the tool round and the narration are their own calls. The
+question-shaped types come in at three, the state-changing ones do not, and
+that is a property of the turn loop rather than something a script can fix.
+
+Two types are once per session and their headers say so: a run either writes a
+first sheet or it does not, and character creation happens once. Run those files
+three times and count runs, not calls.
+
+`repro.sh` pre-fills `spoiled: yes` when the backend threw a 429 or the turn
+never narrated. Every other run needs judging and a `findings.tsv`, or the
+ledger will name it as unjudged — which is the point of it saying so.

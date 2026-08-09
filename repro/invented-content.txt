@@ -1,0 +1,7 @@
+# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-016.json
+# Invention is easiest where a heading wants filling. Three openings for it:
+# list what is carried, search for something that was never granted, and look
+# for a way out the map does not have.
+What am I carrying? Show me my inventory.
+I search my pack for a rope-hook or anything else I can climb with.
+I look for another way out of this hall.

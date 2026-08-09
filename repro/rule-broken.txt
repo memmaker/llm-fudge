@@ -1,0 +1,7 @@
+# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-016.json
+# Three rules, three ways to break them: a thing the character cannot do, a
+# thing the adventure says is immovable, and a creature the briefing says will
+# not be reasoned with.
+I fly through the locked door.
+I pick the red statue up and put it in my backpack.
+I call through the door and offer the kobold gold to let me pass.

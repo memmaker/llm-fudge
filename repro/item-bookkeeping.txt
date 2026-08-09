@@ -1,0 +1,6 @@
+# resume: consistency-out/20260809-122730/items/log/context-008.json
+# The items kit — rope, crossbow, spike, coins. Three operations that have each
+# gone wrong before: a split, a join of two kinds, and a count.
+I cut the rope into two equal halves with my dagger.
+I tie one half to the iron spike to make a grappling line.
+I split my silver coins into two purses of six.
