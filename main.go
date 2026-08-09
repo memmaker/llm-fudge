@@ -994,20 +994,32 @@ func (s *session) recordSheet(told scene) {
 // the end of a session that is an invitation to do the half the model is better
 // at. Measured — it narrated the scene again and called nothing in 4 of 4 runs.
 // This one forbids prose and asks for the call alone.
+//
+// Asked twice, because resolvePhase ends on any reply that carries no tool
+// call, and a refusal here is prose: measured over 20 sessions the first ask was
+// answered with a call 11 times and with prose 9, and the prose was not a
+// misunderstanding — it announced the very edit it was declining to make ("I
+// need to update the sheet to reflect the last player action"). A model that
+// close to the answer is worth one more request; a third would be arguing.
+const flushAttempts = 2
+
 func (s *session) flushSheet(chat chatRound, messages *[]llm.Message) {
 	if s.carried != s.prompts.noteMissing {
 		return
 	}
 	s.carried = ""
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.noteSessionEnd})
-	s.pendingSheet = ""
-	told, _ := s.resolvePhase(chat, messages)
-	if told.sheet == "" {
-		told.sheet = s.pendingSheet
+	var told scene
+	for attempt := 1; attempt <= flushAttempts && told.sheet == ""; attempt++ {
+		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.noteSessionEnd})
+		s.pendingSheet = ""
+		told, _ = s.resolvePhase(chat, messages)
+		if told.sheet == "" {
+			told.sheet = s.pendingSheet
+		}
 	}
 	if told.sheet == "" {
 		if debug {
-			fmt.Println("\033[90m[the last turn's sheet was asked for once more and did not come]\033[0m")
+			fmt.Printf("\033[90m[the last turn's sheet was asked for %d times and did not come]\033[0m\n", flushAttempts)
 		}
 		return
 	}

@@ -912,3 +912,43 @@ func TestASessionThatHandedOverIsNotAskedAgain(t *testing.T) {
 		t.Errorf("the history grew by %d messages at the end of a clean session", len(messages)-before)
 	}
 }
+
+// resolvePhase ends on any reply carrying no tool call, and at the end of a
+// session a refusal is exactly that: prose. One refusal must not be the end of
+// the matter, and a sheet on the second ask has to be taken.
+func TestTheEndOfSessionAskSurvivesOneRefusal(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You pocket the key."}), &messages, "take the key")
+
+	s.flushSheet(replies(
+		llm.Message{Content: "I need to update the sheet to reflect the key."},
+		llm.Message{Content: "Noted." + block("- Name: Garret\n- Inventory: brass key")},
+	), &messages)
+
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sheet), "brass key") {
+		t.Fatalf("the second ask was never made, or its sheet was dropped: %q", sheet)
+	}
+}
+
+// Two asks and no more: a model that has refused twice is not going to be
+// argued into it, and the player has already quit.
+func TestTheEndOfSessionAskGivesUpAfterTwo(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You pocket the key."}), &messages, "take the key")
+
+	asks := 0
+	s.flushSheet(func([]llm.Message, []llm.Tool) (llm.Response, error) {
+		asks++
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "I should update the sheet."}}, nil
+	}, &messages)
+
+	if asks != flushAttempts {
+		t.Errorf("the sheet was asked for %d times, want %d", asks, flushAttempts)
+	}
+}
