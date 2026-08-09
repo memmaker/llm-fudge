@@ -228,3 +228,8 @@ One table for the pass, one row per player command:
 Then a line per test 1-9: which commands covered it and whether it held. A test
 with no clean evidence is `inconclusive`, not a pass — the run said nothing
 about it, and saying so is the honest result.
+
+Add the rates to `consistency-ledger.md` afterwards, with the model and the
+commit the prompts were at. A pass that is read and not recorded cannot be
+compared against the next one, which is the only way to know whether a change
+helped.
