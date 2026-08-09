@@ -1,0 +1,11 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "bb/blackboxai/nvidia/nemotron-3-super-120b-a12b:free",
+  "commit": "e2e738c",
+  "branch": "main",
+  "prompts": "bd73bc1cd545",
+  "started": "2026-08-09T18:50:11+02:00",
+  "resumed_from": "consistency-out/20260809-122730/items/log/context-008.json"
+}

@@ -989,15 +989,17 @@ func (s *session) recordSheet(told scene) {
 // player line — the final turn has no next line, so without this the change the
 // player just made is lost for good.
 //
-// Only the sheet is wanted here. The scene was already shown and the session is
-// over, so whatever prose comes back is dropped rather than printed at a player
-// who has stopped playing.
+// Only the sheet is wanted here, and the note that asks for it is its own:
+// note-missing-block.md asks for the turn's narration *with* the sheet, and at
+// the end of a session that is an invitation to do the half the model is better
+// at. Measured — it narrated the scene again and called nothing in 4 of 4 runs.
+// This one forbids prose and asks for the call alone.
 func (s *session) flushSheet(chat chatRound, messages *[]llm.Message) {
 	if s.carried != s.prompts.noteMissing {
 		return
 	}
 	s.carried = ""
-	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.noteMissing})
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.noteSessionEnd})
 	s.pendingSheet = ""
 	told, _ := s.resolvePhase(chat, messages)
 	if told.sheet == "" {

@@ -114,6 +114,7 @@ type gamePrompts struct {
 	charsheetShape  string
 	styleMarker     string
 	noteMissing     string
+	noteSessionEnd  string
 	noteForm        string
 	sceneDemand     string
 }
@@ -129,6 +130,7 @@ func loadGamePrompts() (gamePrompts, error) {
 		{&p.charsheetShape, charsheetTemplate},
 		{&p.styleMarker, "style-override.md"},
 		{&p.noteMissing, "note-missing-block.md"},
+		{&p.noteSessionEnd, "note-session-end.md"},
 		{&p.noteForm, "note-block-form.md"},
 		{&p.sceneDemand, "scene-demand.md"},
 	} {
