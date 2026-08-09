@@ -56,7 +56,7 @@ Sessions:
 | meta-leak | 5 | 5 |
 | no-charsheet | 0 | 4 |
 | leak | 0 | 4 |
-| invented-content | 5 | 5 |
+| invented-content | 10 | 10 |
 | handover-missing | 4 | 4 |
 | secret-leaked | 2 | 8 |
 | state-desync | 0 | 16 |
@@ -87,3 +87,96 @@ Sessions:
 - `consistency-out/20260809-152952/rules`
 - `consistency-out/20260809-153213/probe`
 - `consistency-out/20260809-155217-repro-secret-leaked/run1`
+- `consistency-out/20260809-161240-repro-invented-content/run1`
+- `consistency-out/20260809-161240-repro-invented-content/run2`
+- `consistency-out/20260809-161240-repro-invented-content/run3`
+- `consistency-out/20260809-161240-repro-invented-content/run4`
+- `consistency-out/20260809-161240-repro-invented-content/run5`
+
+---
+
+# prompt set `3a31ccdb3b8f` — from 2026-08-09 — branch `charsheet-template-blank`
+
+Built at: `80fdbc4`
+
+Branch `charsheet-template-blank`, off `world-update-block` — everything that
+branch's note says still holds; this one changes character creation on top of it.
+
+Arm 1, measured and reverted: the sheet template's Equipment section kept its
+headings and lost its example values. Invention did not move, 5 of 5 either way
+(`consistency-out/20260809-161240-repro-invented-content` against
+`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
+and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
+copied, and the template is back.
+
+Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
+says the example's gear is not the character's — they carry what the player
+named and nothing else, and picking their traits means attributes, skills, gifts
+and faults, never equipment.
+
+What it is trying to settle: creation put gear on the sheet the player never
+asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
+line is what invites it ("pick the rest of her traits yourself"), and nothing in
+the prompts says traits stop short of the pack.
+
+## oc/nemotron-3-ultra-free
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| invented-content | 5 | 5 |
+
+Sessions:
+- `consistency-out/20260809-162359-repro-invented-content/run1`
+- `consistency-out/20260809-162359-repro-invented-content/run2`
+- `consistency-out/20260809-162359-repro-invented-content/run3`
+- `consistency-out/20260809-162359-repro-invented-content/run4`
+- `consistency-out/20260809-162359-repro-invented-content/run5`
+
+---
+
+# prompt set `00671a0b5906` — from 2026-08-09 — branch `charsheet-template-blank`
+
+Built at: `09da8b3`, `09da8b3-dirty`
+
+Branch `charsheet-template-blank`, off `world-update-block` — everything that
+branch's note says still holds; this one changes character creation on top of it.
+
+Arm 1, measured and reverted: the sheet template's Equipment section kept its
+headings and lost its example values. Invention did not move, 5 of 5 either way
+(`consistency-out/20260809-161240-repro-invented-content` against
+`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
+and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
+copied, and the template is back.
+
+Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
+says the example's gear is not the character's — they carry what the player
+named and nothing else, and picking their traits means attributes, skills, gifts
+and faults, never equipment.
+
+What it is trying to settle: creation put gear on the sheet the player never
+asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
+line is what invites it ("pick the rest of her traits yourself"), and nothing in
+the prompts says traits stop short of the pack.
+
+## oc/nemotron-3-ultra-free
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| no-charsheet | 0 | 1 |
+| invented-content | 0 | 6 |
+| handover-missing | 0 | 1 |
+| item-bookkeeping | 2 | 6 |
+| state-desync | 1 | 2 |
+
+Sessions:
+- `consistency-out/20260809-163457-repro-invented-content/run1`
+- `consistency-out/20260809-163457-repro-invented-content/run2`
+- `consistency-out/20260809-163457-repro-invented-content/run3`
+- `consistency-out/20260809-163457-repro-invented-content/run4`
+- `consistency-out/20260809-163457-repro-invented-content/run5`
+- `consistency-out/20260809-164429-repro-item-bookkeeping/run1`
+- `consistency-out/20260809-164429-repro-item-bookkeeping/run2`
+- `consistency-out/20260809-164429-repro-item-bookkeeping/run3`
+- `consistency-out/20260809-164429-repro-item-bookkeeping/run4`
+- `consistency-out/20260809-164429-repro-item-bookkeeping/run5`
+- `consistency-out/20260809-165110/win`

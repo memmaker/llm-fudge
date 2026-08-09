@@ -1,0 +1,11 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "oc/nemotron-3-ultra-free",
+  "commit": "09da8b3-dirty",
+  "branch": "charsheet-template-blank",
+  "prompts": "00671a0b5906",
+  "started": "2026-08-09T16:44:31+02:00",
+  "resumed_from": "consistency-out/20260809-122730/items/log/context-008.json"
+}

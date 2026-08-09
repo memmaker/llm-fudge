@@ -386,6 +386,16 @@ produces exactly this, and it is the honest reading.
     wording gets 6 of 9: `Rope (7.5 m) ×2` survives the turn that ties it back
     together, or the length comes back wrong. Splitting and recombining an item
     is the one operation no wording has fixed.
+  - **First nemotron numbers, 2026-08-09** (`./repro.sh item-bookkeeping 5`,
+    `consistency-out/20260809-164429-repro-item-bookkeeping`): rope and
+    grappling line correct in 4 of 4 readable runs — the operation deepseek
+    never got right. What went wrong instead was money: 2 of 4 wrote the split
+    purses into `### Inventory` *and* left `Silver coins: 12` standing in
+    `### Wealth`, the same coins in two places. The worked examples in
+    `charsheet-header.md` are all rope and torch; none of them is a count, and
+    none of them crosses two sections. The fifth run is unreadable for
+    bookkeeping — its last handover truncated to `## Identity / - Name:` and
+    took the whole sheet with it, which is the last-turn loss already open below.
   - A single round of six probes is not a result. The first round put the
     committed wording at 2 of 6 and one variation at 6 of 6; over three rounds
     those became 10 of 18 and 14 of 18. Resume makes a round cost six requests,

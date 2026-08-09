@@ -1,0 +1,6 @@
+# run: run3
+# spoiled: no
+# judged: item-bookkeeping state-desync
+
+type	proof	quote
+state-desync	charsheet.md:4	final handover truncated to "## Identity / - Name:" — the whole sheet the previous turn held is gone, and with it the coin split from the last player line
