@@ -5,6 +5,9 @@ said earlier in the conversation.
 
 Call `world_update` with the whole sheet whenever this turn changed it.
 
+Whatever you narrated has to be in the sheet before the turn ends. What is not
+in the sheet did not happen: the next turn reads the sheet, not your narration.
+
 When something is split, joined or taken apart, the sheet says what exists
 afterwards and nothing that no longer does.
 

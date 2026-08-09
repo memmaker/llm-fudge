@@ -134,7 +134,7 @@ so a push that goes wrong voids rows 8-13 and leaves the rest standing.
 | # | Action | What the sheet must say | Where it is measured |
 | --- | --- | --- | --- |
 | 1 | empty the waterskin | `Waterskin: empty`, not a plain `Waterskin` | 4 |
-| 2 | light a torch | torches down one, one of them burning | 5 |
+| 2 | light a torch | one of them is burning | 5 |
 | 3 | eat two rations | `Rations ×4` | 6 |
 | 4 | drink from it | refused — it is empty, and stays empty | — |
 | 5 | put the torch out | the burning one is put out; a DM with no lit torch on the sheet has lost row 2 | — |
@@ -146,6 +146,12 @@ so a push that goes wrong voids rows 8-13 and leaves the rest standing.
 | 11 | go back | location is room 1, door still open | 12 |
 | 12 | enter room 2 again | it opens — the door was never re-locked | — |
 | 13 | what did the statues say | both fragments, from the sheet, unchanged | — |
+
+The final torch *count* is not scored. A torch lit and then put out again may
+fairly be counted as still there or as spent, and a row that can be read both
+ways is a row that gets scored in favour of whichever arm the reader expected to
+win. Row 2 is settled in the prose at turn 5 instead: the DM either still has a
+lit torch to put out or it has lost track of one.
 
 Read it in two passes, because two different things fail here. First
 `charsheet-log.md`: for each row, does the sheet the turn handed over carry the
