@@ -678,3 +678,62 @@ Sessions:
 - `consistency-out/20260809-205125-repro-leak/run1`
 - `consistency-out/20260809-205230-repro-leak/run1`
 - `consistency-out/20260809-205334-repro-leak/run1`
+
+---
+
+# prompt set `3bd5f3799cfa` — from 2026-08-09 — branch `unrecorded`
+
+Built at: `c63381c`
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| creation-invisible | 2 | 3 |
+
+Sessions:
+- `consistency-out/20260809-211010-repro-creation-invisible/run1`
+- `consistency-out/20260809-211010-repro-creation-invisible/run2`
+- `consistency-out/20260809-211010-repro-creation-invisible/run3`
+
+---
+
+# prompt set `378403e2f11e` — from 2026-08-09 — branch `unrecorded`
+
+Built at: `c63381c`
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| handover-missing | 0 | 3 |
+| creation-invisible | 0 | 3 |
+| item-bookkeeping | 1 | 3 |
+
+Sessions:
+- `consistency-out/20260809-211204-repro-creation-invisible/run1`
+- `consistency-out/20260809-211204-repro-creation-invisible/run2`
+- `consistency-out/20260809-211204-repro-creation-invisible/run3`
+- `consistency-out/20260809-211240-repro-handover-missing/run1`
+- `consistency-out/20260809-211240-repro-handover-missing/run2`
+- `consistency-out/20260809-211240-repro-handover-missing/run3`
+
+---
+
+# prompt set `bfa4f4b8ccfe` — from 2026-08-09 — branch `unrecorded`
+
+Built at: `c63381c`
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| rule-broken | 0 | 1 |
+| no-charsheet | 0 | 1 |
+| creation-invisible | 0 | 1 |
+| invented-content | 1 | 1 |
+| handover-missing | 0 | 1 |
+| state-desync | 1 | 1 |
+
+Sessions:
+- `consistency-out/20260809-211610/win`

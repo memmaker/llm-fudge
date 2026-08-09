@@ -979,76 +979,9 @@ func (s *session) recordSheet(told scene) {
 	if told.tolerated {
 		s.carried = s.prompts.noteForm
 	}
-	// A part left standing beside the whole it went into is the one bookkeeping
-	// error the harness can see for itself, and the one no wording has fixed:
-	// five of them were tried and the join never got past 4 of 5. The rule is
-	// already in the header and stating rules is what does not work — so this
-	// does not state it again, it points at the two lines.
-	if item, whole := doubledItem(told.sheet); item != "" {
-		if note, err := prompts.Fill("note-doubled-item.md", map[string]string{
-			"ITEM": item, "WHOLE": whole,
-		}); err == nil {
-			s.carried = note
-			if debug {
-				fmt.Printf("\033[90m[%s is written twice: on its own and inside %s]\033[0m\n", item, whole)
-			}
-		}
-	}
 	if err := s.writeCharsheet(told.sheet); err != nil {
 		fmt.Println("\nCharsheet error:", err)
 	}
-}
-
-// doubledItem finds a line that is also named inside another line's parenthesis
-// — `- Iron spike` standing beside `- Grappling line (iron spike + 7.5 m rope)`.
-// It returns the two lines' names, or empty strings.
-//
-// Deliberately narrow. It matches the name of a whole line against what is
-// inside a bracket, and nothing else: no stemming, no plurals, no guessing at
-// prose. A join it cannot see costs a note that is not carried, which is what
-// happens today anyway; a false positive would tell the DM to delete a line the
-// player still has, which is worse than saying nothing.
-func doubledItem(sheet string) (string, string) {
-	type line struct{ full, name string }
-	var lines []line
-	for _, raw := range strings.Split(sheet, "\n") {
-		trimmed := strings.TrimSpace(raw)
-		if !strings.HasPrefix(trimmed, "- ") {
-			continue
-		}
-		full := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-		// The name is what comes before a bracket, a count or a colon.
-		name := full
-		for _, cut := range []string{"(", "×", " x", ":", ","} {
-			if i := strings.Index(name, cut); i > 0 {
-				name = name[:i]
-			}
-		}
-		lines = append(lines, line{full, strings.TrimSpace(name)})
-	}
-	for _, whole := range lines {
-		open := strings.Index(whole.full, "(")
-		close := strings.LastIndex(whole.full, ")")
-		if open < 0 || close < open {
-			continue
-		}
-		inside := strings.ToLower(whole.full[open+1 : close])
-		for _, part := range lines {
-			// Only a part carrying no size and no count can be judged from the
-			// sheet alone. `Rope (7.5 m)` beside `Grappling line (… + 7.5 m
-			// rope)` is the correct sheet for a cut rope — one half went in, the
-			// other stayed — and nothing in the text says which. A bare `Iron
-			// spike` has no such reading: there was one, it went in, and a line
-			// of its own is the leftover the join was supposed to remove.
-			if part.full == whole.full || part.full != part.name || len(part.name) < 3 {
-				continue
-			}
-			if strings.Contains(inside, strings.ToLower(part.name)) {
-				return part.full, whole.full
-			}
-		}
-	}
-	return "", ""
 }
 
 // flushSheet spends one request, at the end of a session, on a last turn that

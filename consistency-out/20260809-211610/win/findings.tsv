@@ -1,0 +1,7 @@
+# run: win
+# spoiled: no
+# judged: state-desync invented-content creation-invisible rule-broken no-charsheet handover-missing
+
+type	proof	quote
+state-desync	transcript.md:209	after the chest was opened and the loot granted, the next reply says "Chest remains unopened and locked ... No coins, ring, or XP gained" while the sheet has the ring, 20 gold and 3 XP
+invented-content	transcript.md:110	a rope the sheet never held is in the character's hand — line 80 says so outright ("your current sheet does not list one") and it is on the final sheet as Rope (15 m)

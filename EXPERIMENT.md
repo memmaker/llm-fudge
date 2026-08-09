@@ -1,19 +1,25 @@
-Branch `charsheet-template-blank`, off `world-update-block` — everything that
-branch's note says still holds; this one changes character creation on top of it.
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
 
-Arm 1, measured and reverted: the sheet template's Equipment section kept its
-headings and lost its example values. Invention did not move, 5 of 5 either way
-(`consistency-out/20260809-161240-repro-invented-content` against
-`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
-and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
-copied, and the template is back.
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
 
-Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
-says the example's gear is not the character's — they carry what the player
-named and nothing else, and picking their traits means attributes, skills, gifts
-and faults, never equipment.
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
 
-What it is trying to settle: creation put gear on the sheet the player never
-asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
-line is what invites it ("pick the rest of her traits yourself"), and nothing in
-the prompts says traits stop short of the pack.
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).

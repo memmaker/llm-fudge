@@ -5,8 +5,8 @@ said earlier in the conversation.
 
 Call `world_update` with the whole sheet whenever this turn changed it.
 
-When something is split, joined or taken apart, the sheet says what exists
-afterwards and nothing that no longer does.
+When something is split, joined, taken apart, put down or picked up, the sheet
+says what exists afterwards and nothing that no longer does.
 
 - split — the original line goes; the pieces take its place, with their sizes
 - joined — the parts go; one line takes their place, naming what it is made of
@@ -22,6 +22,10 @@ Worked, in the sheet's own lines:
 - tie the halves — `Rope (7.5 m) ×2` goes, `Rope (15 m)` arrives
 - tie one half to the spike — that half and `Iron spike` both go, one
   `Grappling line (iron spike + 7.5 m rope)` arrives, the other half stays
+- put the rope down — `### Inventory` loses `Rope (15 m)`, `# World State` gains
+  `Rope (15 m): on the floor where it was dropped`, and no other section changes
+- pick it back up — `# World State` loses that line, `### Inventory` gains
+  `Rope (15 m)` again
 - pull the head off a torch — `Torches ×3` becomes `Torches ×2`, and both
   `Torch shaft (bare)` and `Torch head (loose)` arrive
 - split the silver into two purses — `Silver: 12` goes from `### Wealth`,

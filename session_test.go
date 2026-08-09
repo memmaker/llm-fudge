@@ -397,6 +397,24 @@ func TestTheBranchIsReadOffHeadAndBlankWhenDetached(t *testing.T) {
 	}
 }
 
+// A worktree's `.git` is a file pointing at the real git directory. Reading it
+// as a directory is what left a day of runs recorded as `branch unrecorded`.
+func TestTheBranchIsFoundFromAWorktree(t *testing.T) {
+	real := t.TempDir()
+	if err := os.WriteFile(filepath.Join(real, "HEAD"), []byte("ref: refs/heads/an-experiment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tree, ".git"), []byte("gitdir: "+real+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(tree)
+
+	if got := currentBranch(); got != "an-experiment" {
+		t.Errorf("in a worktree: got %q, want an-experiment", got)
+	}
+}
+
 // The tier is optional and its absence has to mean today's request: a config
 // that does not mention it, or is not there at all, asks for no tier.
 func TestServiceTierIsReadFromTheConfigAndOptional(t *testing.T) {

@@ -25,6 +25,24 @@ What to use instead, in order of preference:
 This applies to `consistency-check.sh` and `secrets-check.sh` as they stand —
 both currently grep, and both are wrong for it. See the TODO below.
 
+**HARD RULE: NEVER EVER GREP THE CHARSHEET.** Not with `grep`, not with a `sed`
+range, not "just to pull out the Inventory section" — no pattern over
+`charsheet.md`, `charsheet-log.md` or a sheet inside a `world_update` argument
+may stand behind a number, a verdict or a claim that something was fixed. The
+sheet is written by the model, so it is prose in a table's clothing: a section
+can be renamed, a line reordered, an item annotated in place, a whole heading
+invented. All four happened while measuring the dropped rope on 2026-08-09 — one
+run put every dropped item under an invented `### Equipment on floor`, which any
+Inventory-versus-World-State pattern reads as a pass. Read the sheet whole, with
+your eyes or with an LLM judge against the rubric, and write the verdict into
+`findings.tsv`.
+
+No exceptions, including inside the harness. `doubledItem` was one — a narrow
+match over the handed-over sheet that carried a note back to the DM about a part
+left standing beside its whole — and it is deleted, along with
+`note-doubled-item.md`. A pattern that reads the sheet teaches whoever finds it
+that reading the sheet by pattern is allowed.
+
 # Working on a model-behaviour issue
 
 The DM is a model, so its failures are not bugs that reproduce on demand — they

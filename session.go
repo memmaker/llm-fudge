@@ -266,8 +266,18 @@ func commitFrom(settings []buildinfo.BuildSetting) string {
 // currentBranch is the branch being played, or "" when the game is not being
 // run out of a working tree. The build info carries the revision but not the
 // branch, and the branch is what names the experiment.
+// In a worktree `.git` is a file naming the real git directory, and reading it
+// as one leaves every run recorded there with no branch at all — which is how
+// the runs of 2026-08-09 came out as `branch unrecorded`, the worst kind of
+// wrong, since a worktree is exactly where an experiment is played.
 func currentBranch() string {
-	head, err := os.ReadFile(filepath.Join(".git", "HEAD"))
+	dir := ".git"
+	if b, err := os.ReadFile(dir); err == nil {
+		if p, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir: "); ok {
+			dir = p
+		}
+	}
+	head, err := os.ReadFile(filepath.Join(dir, "HEAD"))
 	if err != nil {
 		return ""
 	}

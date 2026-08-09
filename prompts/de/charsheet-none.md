@@ -8,6 +8,12 @@ derselben Antwort mit ihrem vollständigen Bogen in dieser Form auf – und eben
 in jeder späteren Antwort, die etwas verändert, was der Bogen festhält. Was du
 weglässt, ist weg.
 
+Der Aufruf ist nicht die Antwort. Der Spieler sieht ihn nie, also nennt dieselbe
+Antwort mit eigenen Worten, wen er spielt – jedes Attribut, jede Fertigkeit, jede
+Gabe und Schwäche, mit Namen und Stufe – bevor die erste Szene beginnt. Eine
+Antwort, die sofort zur Szene springt, hat eine Figur gemacht, die niemandem
+gezeigt wurde.
+
 Die Ausrüstung des Beispiels gehört ihr nicht. Sie trägt, was der Spieler
 genannt hat, und sonst nichts: keine Rüstung, keine zweite Waffe, kein Geld,
 keine Ausrüstung, die „jeder hat“. Ihre Eigenschaften für sie zu wählen, meint

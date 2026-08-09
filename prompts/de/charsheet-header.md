@@ -6,8 +6,8 @@ was früher im Gespräch gesagt wurde.
 Rufe `world_update` mit dem vollständigen Bogen auf, sobald diese Runde ihn
 verändert hat.
 
-Wird etwas geteilt, verbunden oder zerlegt, sagt der Bogen, was danach existiert
-und nichts, was es nicht mehr tut.
+Wird etwas geteilt, verbunden, zerlegt, abgelegt oder aufgenommen, sagt der
+Bogen, was danach existiert und nichts, was es nicht mehr tut.
 
 - geteilt – die ursprüngliche Zeile geht, die Teile treten mit ihren Größen an
   ihre Stelle
@@ -28,6 +28,11 @@ Ausgeführt, in den Zeilen des Bogens selbst:
 - eine Hälfte an den Eisenhaken binden – diese Hälfte und `Eisenhaken` gehen
   beide, ein `Enterleine (Eisenhaken + 7,5 m Seil)` kommt, die andere Hälfte
   bleibt
+- das Seil ablegen – `### Inventar` verliert `Seil (15 m)`, `# Weltzustand`
+  gewinnt `Seil (15 m): liegt am Boden, wo es abgelegt wurde`, und kein anderer
+  Abschnitt ändert sich
+- es wieder aufnehmen – `# Weltzustand` verliert diese Zeile, `### Inventar`
+  gewinnt wieder `Seil (15 m)`
 - einer Fackel den Kopf abziehen – aus `Fackeln ×3` wird `Fackeln ×2`, und es
   kommen `Fackelschaft (blank)` und `Fackelkopf (lose)`
 - das Silber auf zwei Beutel aufteilen – `Silber: 12` geht aus `### Vermögen`,
