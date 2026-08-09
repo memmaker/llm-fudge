@@ -6,14 +6,30 @@ was früher im Gespräch gesagt wurde.
 Rufe `world_update` mit dem vollständigen Bogen auf, sobald diese Runde ihn
 verändert hat.
 
-Beispiele, in den Zeilen des Bogens selbst:
+Wird etwas geteilt, verbunden oder zerlegt, sagt der Bogen, was danach existiert
+und nichts, was es nicht mehr tut.
 
-- Seil ablegen – das Inventar verliert `Seil (15 m)`, der Weltzustand gewinnt
-  `Seil (15 m): liegt dort, wo es fallen gelassen wurde`
-- wieder aufnehmen – der Weltzustand verliert diese Zeile, das Inventar gewinnt
-  sie zurück
-- in zwei Teile schneiden – aus `Seil (15 m)` wird `Seil (7,5 m) ×2`
-- die Hälften verknoten – aus `Seil (7,5 m) ×2` wird wieder `Seil (15 m)`
+- geteilt – die ursprüngliche Zeile geht, die Teile treten mit ihren Größen an
+  ihre Stelle
+- verbunden – die Teile gehen, eine Zeile tritt an ihre Stelle und nennt, woraus
+  sie besteht
+- zerlegt – das Ganze geht, jedes Teil wird eine eigene Zeile, auch das kleine,
+  um das du dich lieber nicht kümmern würdest
+- ein Gegenstand in einem anderen wird einmal geschrieben, darin, und niemals
+  auch daneben
+- eine Anzahl ändert sich nur, wenn etwas dazukam oder wegfiel, nie weil etwas
+  bewegt oder umbenannt wurde
+
+Ausgeführt, in den Zeilen des Bogens selbst:
+
+- das 15-m-Seil in zwei Teile schneiden – `Seil (15 m)` geht, `Seil (7,5 m) ×2`
+  kommt
+- die Hälften verknoten – `Seil (7,5 m) ×2` geht, `Seil (15 m)` kommt
+- eine Hälfte an den Eisenhaken binden – diese Hälfte und `Eisenhaken` gehen
+  beide, ein `Enterleine (Eisenhaken + 7,5 m Seil)` kommt, die andere Hälfte
+  bleibt
+- einer Fackel den Kopf abziehen – aus `Fackeln ×3` wird `Fackeln ×2`, und es
+  kommen `Fackelschaft (blank)` und `Fackelkopf (lose)`
 
 Prüfe, bevor du schreibst:
 

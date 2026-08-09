@@ -208,6 +208,33 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     Showing the four line edits fixed pick-up outright and nothing else came
     close. Stating the principle instead read better and measured worse. Adding
     the principle *to* the examples bought nothing, so it is not there.
+  - **Splitting and recombining: detail wins, and only with examples.** Five
+    wordings, resumed into four interactions from three `items` recordings, two
+    rounds each — 24 probes per wording:
+
+    | Guidance under the handover demand | split | join | merge | apart | total |
+    | --- | --- | --- | --- | --- | --- |
+    | none at all | 3/6 | 2/6 | 4/6 | 2/6 | 11/24 |
+    | one sentence | 5/6 | 2/6 | 3/6 | 1/6 | 11/24 |
+    | the principle spelled out | 3/6 | 2/6 | 4/6 | 3/6 | 12/24 |
+    | a rule per operation | 4/6 | 5/6 | 3/6 | 1/6 | 13/24 |
+    | rules **and** four worked examples (**in place**) | 5/6 | 5/6 | 5/6 | 4/6 | 19/24 |
+
+    Nothing below the last row beats no guidance by much: a sentence and a
+    principle both measure at chance against saying nothing, and rules alone fix
+    joining while making taking-apart worse. Only rules with examples move every
+    operation at once, which is the same shape as the earlier pick-up result —
+    this model learns the sheet's bookkeeping from edits it can copy, not from
+    statements about edits.
+  - The cost is a longer tail, and it shows: end-to-end `items` runs handed over
+    on 8 and 9 of 12 turns with this wording against 11 of 12 with the short one.
+    Taken anyway, because a missed handover is repaired by the next one and a
+    wrong sheet is not.
+  - **Hold the handover demand constant when testing bookkeeping.** The first
+    attempt at a no-guidance arm removed the demand along with the guidance, so
+    the DM narrated a rope being cut and called nothing at all: that arm measured
+    whether the sheet is handed over, which is settled, and not whether it is
+    handed over correctly.
   - **Merges are still unsolved.** Best measured is 8 of 9 and the shipped
     wording gets 6 of 9: `Rope (7.5 m) ×2` survives the turn that ties it back
     together, or the length comes back wrong. Splitting and recombining an item

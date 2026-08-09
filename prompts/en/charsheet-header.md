@@ -5,13 +5,25 @@ said earlier in the conversation.
 
 Call `world_update` with the whole sheet whenever this turn changed it.
 
-Worked examples, in the sheet's own lines:
+When something is split, joined or taken apart, the sheet says what exists
+afterwards and nothing that no longer does.
 
-- put the rope down — Inventory loses `Rope (15 m)`, World State gains
-  `Rope (15 m): on the floor where it was dropped`
-- pick it back up — World State loses that line, Inventory gains it again
-- cut it in two — `Rope (15 m)` becomes `Rope (7.5 m) ×2`
-- tie the halves — `Rope (7.5 m) ×2` becomes `Rope (15 m)` again
+- split — the original line goes; the pieces take its place, with their sizes
+- joined — the parts go; one line takes their place, naming what it is made of
+- taken apart — the whole goes; every part it had becomes a line of its own,
+  including the small one you would rather not bother with
+- an item inside another is written once, inside it, and never also beside it
+- a count only changes when something was gained or lost, never because a thing
+  was moved or renamed
+
+Worked, in the sheet's own lines:
+
+- cut the 15 m rope in two — `Rope (15 m)` goes, `Rope (7.5 m) ×2` arrives
+- tie the halves — `Rope (7.5 m) ×2` goes, `Rope (15 m)` arrives
+- tie one half to the spike — that half and `Iron spike` both go, one
+  `Grappling line (iron spike + 7.5 m rope)` arrives, the other half stays
+- pull the head off a torch — `Torches ×3` becomes `Torches ×2`, and both
+  `Torch shaft (bare)` and `Torch head (loose)` arrive
 
 Check before you write:
 
