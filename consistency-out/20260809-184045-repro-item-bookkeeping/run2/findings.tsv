@@ -1,0 +1,7 @@
+# run: run2
+# spoiled: no
+# judged: item-bookkeeping handover-missing state-desync
+
+type	proof	quote
+handover-missing	transcript.md	the purse split is narrated in full and no sheet follows the turn
+state-desync	charsheet.md	narration says two purses and an empty wealth pouch; the sheet still reads Silver coins: 12, and Iron spike still stands beside Rope (7.5 m) x2 after the grappling line was tied

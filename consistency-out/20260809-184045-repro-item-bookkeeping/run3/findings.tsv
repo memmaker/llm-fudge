@@ -1,0 +1,7 @@
+# run: run3
+# spoiled: no
+# judged: item-bookkeeping handover-missing state-desync
+
+type	proof	quote
+handover-missing	transcript.md	the turn lists the new Inventory in prose and hands over no sheet
+state-desync	charsheet.md	"your wealth no longer tracks loose coin" but the sheet still reads Silver coins: 12 and names no purse

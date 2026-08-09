@@ -1,0 +1,7 @@
+# run: run4
+# spoiled: no
+# judged: item-bookkeeping handover-missing state-desync
+
+type	proof	quote
+handover-missing	transcript.md	the purse split is narrated and no sheet follows the turn
+state-desync	charsheet.md	narration has two purses at the belt and a grappling line in hand; the sheet keeps Silver coins: 12, Rope (7.5 m) x2 and a loose Iron spike

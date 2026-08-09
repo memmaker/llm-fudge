@@ -1,0 +1,7 @@
+# run: run5
+# spoiled: no
+# judged: item-bookkeeping handover-missing state-desync
+
+type	proof	quote
+handover-missing	transcript.md	the purse split is narrated and no sheet follows the turn
+state-desync	charsheet.md	"no loose silver remains listed under Wealth" while the sheet reads Silver coins: 12; the grappling turn returned [Empty message] and never happened
