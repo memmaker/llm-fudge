@@ -159,13 +159,19 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     never lacks current state — what the history copies give it is a
     *demonstration* of the behaviour. Six runs per arm, same script:
 
-    | History holds | Required updates | State survived |
-    | --- | --- | --- |
-    | every handover, sheet and all (grows per turn) | 20/20 | statue and rope in 5 of 5 |
-    | the newest three (**in place**) | 22/24 | statue 6 of 6, rope 5 of 6 |
-    | the newest one | 15/24 | statue 6 of 6, rope 4 of 6 |
-    | no handover at all | 15/24 | statue 4 of 6, rope 2 of 6 |
-    | the call, sheet replaced by a stub | 10/24 | — |
+    | History holds | Required updates | Statue kept | Rope kept |
+    | --- | --- | --- | --- |
+    | every handover, sheet and all (grows per turn) | 100% (20/20, 5 runs) | 5/5 | 3/5 † |
+    | the newest three (**in place**) | 92% (22/24, 6 runs) | 6/6 | 5/6 |
+    | the newest one | 63% (15/24, 6 runs) | 6/6 | 4/6 |
+    | no handover at all | 63% (15/24, 6 runs) | 4/6 | 2/6 |
+    | the call, sheet replaced by a stub | 42% (10/24, 6 runs) | — | — |
+
+    Rates, because the arms are not the same size — the first was run five times
+    and the rest six. † That arm was measured before the dropped-item rule
+    reached `charsheet-header.md`, so its rope column is a floor and not
+    comparable with the rows below it; the updates column is unaffected, since
+    whether a handover happens does not depend on that rule.
 
     The stub is the surprise: a call whose argument looks empty teaches the DM
     to make empty calls, and measures worse than removing the call entirely.
