@@ -409,11 +409,17 @@ produces exactly this, and it is the honest reading.
     put it on the floor three times running. **Anything that must hold
     mid-session belongs in the header, not the template.**
 
-- **A sheet missed on the last turn of a session is lost for good.** The
+- **A sheet missed on the last turn of a session was lost for good.** The
   missing-block note fires on the next player line, so every other miss is
   repaired by the next full restatement; the final turn has no next line. Two of
-  the fourteen runs measured on 2026-08-09 lost a change this way. A cheap fix
-  would be one request at `/quit` when the last turn handed over nothing.
+  the fourteen runs measured on 2026-08-09 lost a change this way. Fixed by
+  `flushSheet`: one request at the end of a session whose last turn handed over
+  nothing, from `/quit` and from a script running out alike, with the prose
+  dropped because the scene was already shown. **This distorted every repro
+  measurement taken before it**, because a repro script's last player line is a
+  trigger and its miss was unrepairable by construction — the 4 of 5
+  handover-missing measured on `bb/…nemotron-3-super-120b` were all the last
+  turn.
 - **Both check scripts grade by grepping prose, which the rule above forbids.**
   `secrets-check.sh` matches leak phrases against the terminal capture;
   `consistency-check.sh` has a red-flags grep over the same. Every number either

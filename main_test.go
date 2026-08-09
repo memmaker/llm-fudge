@@ -865,3 +865,50 @@ func TestSplitReplyReadsACallWrittenOutAsText(t *testing.T) {
 		t.Fatal("a repaired form earned no note")
 	}
 }
+
+// The missing-block note rides the next player line, and the last turn of a
+// session has none: without one more request at the end, the change the player
+// just made never reaches the sheet. A session that ended cleanly must not
+// spend that request.
+func TestTheLastTurnsMissedSheetIsAskedForOnce(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You pocket the key."}), &messages, "take the key")
+	if s.carried == "" {
+		t.Fatal("a turn with no block carried no note")
+	}
+
+	s.flushSheet(replies(llm.Message{Content: "Noted." + block("- Name: Garret\n- Location: the hall\n- Inventory: brass key")}), &messages)
+
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sheet), "brass key") {
+		t.Fatalf("the last turn's change was lost: %q", sheet)
+	}
+	joined := strings.Join(contents(messages), "\n")
+	if !strings.Contains(joined, "handed over no sheet") {
+		t.Fatalf("the note never reached the DM:\n%s", joined)
+	}
+}
+
+func TestASessionThatHandedOverIsNotAskedAgain(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You go north." + block("- Location: the stair")}), &messages, "go north")
+	before := len(messages)
+
+	asked := false
+	s.flushSheet(func([]llm.Message, []llm.Tool) (llm.Response, error) {
+		asked = true
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant}}, nil
+	}, &messages)
+
+	if asked {
+		t.Error("a session whose last turn handed over a sheet still spent a request")
+	}
+	if len(messages) != before {
+		t.Errorf("the history grew by %d messages at the end of a clean session", len(messages)-before)
+	}
+}

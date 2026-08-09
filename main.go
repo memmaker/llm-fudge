@@ -478,6 +478,7 @@ func (s *session) handleMetaCommand(chat chatRound, line string, messages *[]llm
 
 	switch cmd := parts[0]; cmd {
 	case "/quit", "/exit":
+		s.flushSheet(chat, messages)
 		fmt.Println("Session ended.")
 		// os.Exit runs no deferred calls, so main's ShowCursor never fires and
 		// the player is left with an invisible cursor in their shell — and the
@@ -747,6 +748,9 @@ func runGamePhase(s *session, rl *readline.Instance, resumed *recording) {
 			if !errors.Is(err, io.EOF) {
 				fmt.Println("Error reading input; exiting.")
 			}
+			// A script that runs out ends the session as surely as /quit does,
+			// and its last turn is the one most likely to have missed.
+			s.flushSheet(chat, &messages)
 			return
 		}
 
@@ -974,6 +978,36 @@ func (s *session) recordSheet(told scene) {
 	}
 	if told.tolerated {
 		s.carried = s.prompts.noteForm
+	}
+	if err := s.writeCharsheet(told.sheet); err != nil {
+		fmt.Println("\nCharsheet error:", err)
+	}
+}
+
+// flushSheet spends one request, at the end of a session, on a last turn that
+// handed over nothing. Every other miss is repaired by the note riding the next
+// player line — the final turn has no next line, so without this the change the
+// player just made is lost for good.
+//
+// Only the sheet is wanted here. The scene was already shown and the session is
+// over, so whatever prose comes back is dropped rather than printed at a player
+// who has stopped playing.
+func (s *session) flushSheet(chat chatRound, messages *[]llm.Message) {
+	if s.carried != s.prompts.noteMissing {
+		return
+	}
+	s.carried = ""
+	*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: s.prompts.noteMissing})
+	s.pendingSheet = ""
+	told, _ := s.resolvePhase(chat, messages)
+	if told.sheet == "" {
+		told.sheet = s.pendingSheet
+	}
+	if told.sheet == "" {
+		if debug {
+			fmt.Println("\033[90m[the last turn's sheet was asked for once more and did not come]\033[0m")
+		}
+		return
 	}
 	if err := s.writeCharsheet(told.sheet); err != nil {
 		fmt.Println("\nCharsheet error:", err)
