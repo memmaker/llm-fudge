@@ -1,0 +1,6 @@
+# run: run2
+# spoiled: no
+# judged: item-bookkeeping handover-missing state-desync
+
+type	proof	quote
+item-bookkeeping	charsheet.md	"Silver coins:" left standing in Wealth with no value after the coins moved into the purses

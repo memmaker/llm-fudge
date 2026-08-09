@@ -1,5 +1,7 @@
 # run: run5
 # spoiled: no
-# judged: item-bookkeeping
+# judged: item-bookkeeping handover-missing state-desync
 
 type	proof	quote
+handover-missing	transcript.md	the purse split is narrated and no sheet follows; the end-of-session ask was answered with prose and no call
+state-desync	charsheet.md	two purses narrated, the sheet still reads Silver coins: 12

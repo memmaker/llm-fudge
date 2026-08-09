@@ -1,5 +1,6 @@
 # run: run1
 # spoiled: no
-# judged: item-bookkeeping
+# judged: item-bookkeeping handover-missing state-desync
 
 type	proof	quote
+item-bookkeeping	charsheet.md	the spike and one half exist twice: Rope (7.5 m) x2 and Iron spike stand beside Grappling line (iron spike + 7.5 m rope)
