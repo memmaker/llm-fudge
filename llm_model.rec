@@ -9,7 +9,8 @@
 # ornith-1.0-35b-bf16 @ http://127.0.0.1:8082/v1 (llama.cpp)
 
 provider: openai
-model: oc/deepseek-v4-flash-free
+model: oc/nemotron-3-ultra-free
+#model: oc/deepseek-v4-flash-free
 #model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
 base_url: http://localhost:20128/v1
 
