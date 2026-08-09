@@ -15,4 +15,4 @@ describing only what is visible — no story, no dialogue, no plot, and no fact
 the picture cannot show. The goal is a consistent, detailed visual record of
 each scene.
 
-Specify an ultra realistic style inspired by Pulp Fiction and Odyssey 2001
+Specify a comic book style reminiscent of fantasy drawings of the 80s.
