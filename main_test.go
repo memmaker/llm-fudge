@@ -888,7 +888,7 @@ func TestTheLastTurnsMissedSheetIsAskedForOnce(t *testing.T) {
 		t.Fatalf("the last turn's change was lost: %q", sheet)
 	}
 	joined := strings.Join(contents(messages), "\n")
-	if !strings.Contains(joined, "Write nothing to the player") {
+	if !strings.Contains(joined, "Do not describe the edit") {
 		t.Fatalf("the session-end note never reached the DM:\n%s", joined)
 	}
 }
