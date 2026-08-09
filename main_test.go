@@ -952,3 +952,67 @@ func TestTheEndOfSessionAskGivesUpAfterTwo(t *testing.T) {
 		t.Errorf("the sheet was asked for %d times, want %d", asks, flushAttempts)
 	}
 }
+
+// The one bookkeeping error the harness can see for itself: a part left on its
+// own line after it went into the whole. Five wordings failed to fix this; the
+// check does not restate the rule, it names the two lines.
+func TestADoubledPartIsSeenAndNamed(t *testing.T) {
+	item, whole := doubledItem("### Inventory\n- Rope (7.5 m)\n- Iron spike\n- Grappling line (iron spike + 7.5 m rope)")
+	if item != "Iron spike" {
+		t.Errorf("item = %q, want Iron spike", item)
+	}
+	if whole != "Grappling line (iron spike + 7.5 m rope)" {
+		t.Errorf("whole = %q", whole)
+	}
+}
+
+// A false positive would tell the DM to delete a line the player still has, so
+// the check stays narrow: sizes, counts and unrelated brackets are not parts.
+func TestASheetThatIsFineIsLeftAlone(t *testing.T) {
+	for _, sheet := range []string{
+		"- Rope (7.5 m) ×2\n- Iron spike\n- Torches ×3",
+		"- Grappling line (iron spike + 7.5 m rope)\n- Rope (7.5 m)\n- Torches ×3",
+		"- Coin purse (6 silver) ×2\n- Bolts ×12",
+		"- Crossbow stock\n- Crossbow prod\n- Crossbow string",
+	} {
+		if item, whole := doubledItem(sheet); item != "" {
+			t.Errorf("%q: falsely flagged %q inside %q", sheet, item, whole)
+		}
+	}
+}
+
+// The note names the pair and rides the next player line, like every other
+// correction the harness makes without spending a request on it.
+func TestADoubledPartCarriesANoteNamingIt(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You tie it on." +
+		block("### Inventory\n- Rope (7.5 m)\n- Iron spike\n- Grappling line (iron spike + 7.5 m rope)")}),
+		&messages, "tie the rope to the spike")
+
+	if !strings.Contains(s.carried, "Iron spike") || !strings.Contains(s.carried, "Grappling line") {
+		t.Fatalf("the note does not name the two lines: %q", s.carried)
+	}
+}
+
+// Not a test of behaviour — a sweep of every sheet the runs have produced, so
+// the check's false-positive rate is a number and not a hope. Run with
+// `go test -run TestSweepCorpus -v`.
+func TestSweepCorpus(t *testing.T) {
+	paths, _ := filepath.Glob("consistency-out/*repro-item-bookkeeping/run*/charsheet.md")
+	if len(paths) == 0 {
+		t.Skip("no runs on disk")
+	}
+	flagged := 0
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if item, whole := doubledItem(string(b)); item != "" {
+			flagged++
+			t.Logf("FLAG %s\n     %s  |  %s", strings.TrimPrefix(p, "consistency-out/"), item, whole)
+		}
+	}
+	t.Logf("%d of %d sheets flagged", flagged, len(paths))
+}
