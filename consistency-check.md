@@ -34,7 +34,7 @@ never came at all shows up as a missing `charsheet.md`.
 
 - A working LLM backend — `llm_model.rec` plus an API key, as in the README.
 - Go, to build the binary.
-- Roughly 90 model calls for a full pass of all five. Nothing is written
+- Roughly 105 model calls for a full pass of all six. Nothing is written
   outside the repo.
 
 ## Running it
@@ -54,13 +54,13 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | `<run>/charsheet-log.md` | Every world update block the run produced, in order |
 | `<run>/log/context-*.json` | Every request as it went out, tool calls included |
 
-`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state` alone.
+`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state`, `items` alone.
 
-## The five runs
+## The six runs
 
 Setting and adventure are passed as `-setting`/`-adventure` rather than typed
 into the menus: the menus test nothing here, and answering them by name means a
-renamed option breaks all five scripts at once.
+renamed option breaks all six scripts at once.
 
 Each run is one session from character creation to `/quit`. They are separate
 because the paths are mutually exclusive: a dead character cannot loot the
@@ -85,6 +85,34 @@ improvises a character without rope has nothing to drop. Read it by asking, for
 each of the ten, whether the turn handed over a sheet and whether the final sheet
 agrees with what happened — those are different failures. Nothing in it depends
 on winning the fight, so no turn can fail for a reason other than bookkeeping.
+
+**`items`** — splitting and recombining, which is the one operation no prompt
+wording has fixed. Twelve actions, all in room 1, none touching the puzzle, the
+door or the kobold: a bookkeeping failure here cannot be blamed on the
+adventure. It works up in difficulty — one object of one kind, then two kinds
+joined and parted, then a three-part disassembly whose parts end up in an object
+that was in neither, then the same question with numbers instead of lengths.
+
+| # | Action | What the sheet must say afterwards |
+| --- | --- | --- |
+| 1 | cut the rope in two | `Rope (7.5 m) ×2`, and no 15 m rope anywhere |
+| 2 | tie one half to the spike | one grappling line; the spike and that half are inside it, not also beside it |
+| 3 | untie the spike | spike and `Rope (7.5 m)` separate again, the line gone |
+| 4 | tie the halves together | `Rope (15 m)`, one item, full length |
+| 5 | take the crossbow apart | stock, prod and string named; no whole crossbow |
+| 6 | pull a torch head off | torches down one, a bare shaft **and** a loose head |
+| 7 | string the shaft | a short bow; the shaft and string are in it, the stock and prod still loose |
+| 8 | restring the crossbow | crossbow whole; the short bow gone; the shaft loose again |
+| 9 | lash the head back on with cut rope | torch whole again, the rope shorter by what was cut |
+| 10 | split the silver into two purses | twelve silver in two sixes |
+| 11 | tip them back together | twelve silver in one |
+| 12 | drop the spike | spike out of the inventory, into World State |
+
+Measured 2026-08-09 against `oc/deepseek-v4-flash-free`, eleven of the twelve
+turns handed over a sheet. The split, the merge, the three-part disassembly and
+the coins were all correct; what failed was action 2, where the rope ended up
+both inside the grappling line and beside it, action 6, where the torch head
+stopped existing, and action 12, which is the known last-turn hole.
 
 **`probe`** — the open ones. Added after the first passes left three tests
 short, and aimed only at those: it demands the solution outright and restates an

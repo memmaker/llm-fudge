@@ -798,6 +798,19 @@ var worldUpdate = regexp.MustCompile("(?is)(?:```[a-z]*[ \t]*\r?\n)?" + openTag 
 // fragment can be dropped rather than printed as the scene.
 var worldUpdateOpen = regexp.MustCompile(`(?i)` + openTag)
 
+// textToolCall is a tool call the model wrote as prose instead of making it.
+// Some chat templates leak their own call syntax into the content when the
+// provider fails to parse it — deepseek's DSML markers are the case seen here —
+// and the whole charsheet arrives inside it. Untreated the player is shown the
+// markup and the turn loses its sheet, which are the two failures the block
+// handling exists to prevent, so it is treated as one more tolerated form.
+//
+// ponytail: matched loosely on the marker name rather than on any one
+// provider's punctuation, which is the cheap half of the fix. If a second
+// template shows up with a different shape, parse the call properly instead of
+// widening this.
+var textToolCall = regexp.MustCompile(`(?is)<[^>]*tool_calls[^>]*>.*?name="sheet"[^>]*>(.*?)</[^>]*parameter[^>]*>.*?</[^>]*tool_calls[^>]*>`)
+
 // fenceLine is a code fence on a line of its own. The sheet is markdown and
 // never contains one, so removing them all is how a block written inside a
 // fence comes out clean.
@@ -812,6 +825,14 @@ func splitReply(reply string) scene {
 	// emits two, and the last is the one it meant — while any block left behind
 	// would be printed to the player as a raw charsheet, which is the one
 	// failure this whole design exists to make impossible.
+	// The written-out call is read first: its sheet is a real handover, and what
+	// is left of the reply is the scene the player was owed.
+	if match := textToolCall.FindStringSubmatch(reply); match != nil {
+		told.sheet = strings.TrimSpace(match[1])
+		told.tolerated = true
+		reply = textToolCall.ReplaceAllString(reply, "")
+	}
+
 	if matches := worldUpdate.FindAllStringSubmatchIndex(reply, -1); matches != nil {
 		last := matches[len(matches)-1]
 		told.sheet = strings.TrimSpace(fenceLine.ReplaceAllString(reply[last[2]:last[3]], ""))

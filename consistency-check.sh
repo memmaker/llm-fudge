@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Live smoke test of the DM against settings/en/medieval-fantasy/adventures/The-Hall-of-Colors.md.
-# Plays five scripted sessions and records what each one did. It renders no
+# Plays six scripted sessions and records what each one did. It renders no
 # verdict and matches no text: whether the DM stayed consistent is a question
 # about meaning, and reading is a job for an LLM, not for a pattern — see the
 # rule in AGENTS.md. Hand the artifacts to a model with consistency-check.md as
 # the rubric.
 #
-# Usage: ./consistency-check.sh [rules|win|death|probe|state]...  (default: all five)
+# Usage: ./consistency-check.sh [rules|win|death|probe|state|items]...  (default: all six)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -160,6 +160,42 @@ script_state() {
 	EOF
 }
 
+# The items run needs a kit with parts to it, so its opening names one. One line,
+# for the reason above.
+ITEMS_OPENING='A cautious mercenary called Testa. Give her a 15 m rope, a crossbow with twelve bolts, three torches, a dagger, an iron spike and twelve silver coins, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.'
+
+# Splitting and recombining is the one operation no wording has fixed: a rope cut
+# in two survives the turn that ties it back together, or comes back the wrong
+# length. This run does nothing else. Twelve actions, all of them in room 1, none
+# of them touching the puzzle, the door or the kobold — a bookkeeping failure
+# here cannot be blamed on the adventure.
+#
+# It works up in difficulty. The rope halves are one object of one kind. The
+# grappling line joins two kinds into one and takes them apart again. The
+# crossbow comes apart into three named parts, and then a part of it and a part
+# of a torch become a third object that was in neither. The coins are the same
+# question with numbers instead of lengths, which a model can get right by
+# arithmetic while getting the rope wrong by imagination.
+script_items() {
+	cat <<-EOF
+		$ITEMS_OPENING
+		I cut the rope into two equal halves with my dagger.
+		I tie one half to the iron spike to make a grappling line.
+		I untie the spike from that rope half again.
+		I tie the two rope halves back together into one rope.
+		I take my crossbow apart into stock, prod and string.
+		I pull the head off one torch and keep the bare wooden shaft.
+		I string the crossbow's string onto the bare shaft to make a short bow.
+		I take the string off the shaft and put the crossbow back together.
+		I lash the torch head back onto its shaft with a short length cut from my rope.
+		I split my silver coins into two purses of six.
+		I tip both purses back into one.
+		I drop the iron spike and leave it lying there.
+		/quit
+	EOF
+}
+
 run() {
 	local name=$1
 	echo "=== $name ==="
@@ -184,9 +220,9 @@ run() {
 }
 
 go build -o fudge .
-# Unquoted on purpose: the default has to split into five words, and a run name
+# Unquoted on purpose: the default has to split into six words, and a run name
 # is a single word either way.
-for name in ${@:-rules win death probe state}; do run "$name"; done
+for name in ${@:-rules win death probe state items}; do run "$name"; done
 
 cat <<EOF
 

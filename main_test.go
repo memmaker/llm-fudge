@@ -844,3 +844,24 @@ func TestASheetAloneDoesNotStallTheResolvePhase(t *testing.T) {
 		t.Fatalf("the handover was lost: %q", sheet)
 	}
 }
+
+// A model whose chat template leaks its own call syntax hands the sheet over as
+// prose. The player must not be shown the markup, and the turn must not lose the
+// sheet — the same two failures the block handling exists to prevent.
+func TestSplitReplyReadsACallWrittenOutAsText(t *testing.T) {
+	reply := "You cut the rope in two.\n\n" +
+		"<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"world_update\">\n" +
+		"<｜｜DSML｜｜parameter name=\"sheet\" string=\"true\">## Identity\n\n- Name: Testa</｜｜DSML｜｜parameter>\n" +
+		"</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>"
+
+	told := splitReply(reply)
+	if told.sheet != "## Identity\n\n- Name: Testa" {
+		t.Fatalf("the sheet was not recovered: %q", told.sheet)
+	}
+	if told.prose != "You cut the rope in two." {
+		t.Fatalf("markup reached the player: %q", told.prose)
+	}
+	if !told.tolerated {
+		t.Fatal("a repaired form earned no note")
+	}
+}
