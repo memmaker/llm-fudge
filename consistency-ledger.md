@@ -491,7 +491,7 @@ Sessions:
 
 # prompt set `fc06c3b29bcb` — from 2026-08-09 — branch `main`
 
-Built at: `75fe0d4-dirty`, `76b0e12`, `76b0e12-dirty`
+Built at: `75fe0d4-dirty`, `76b0e12`, `76b0e12-dirty`, `8f0d955-dirty`
 
 Branch `charsheet-template-blank`, off `world-update-block` — everything that
 branch's note says still holds; this one changes character creation on top of it.
@@ -523,7 +523,7 @@ the prompts says traits stop short of the pack.
 | state-desync | 0 | 3 |
 | item-bookkeeping | 4 | 16 |
 | rule-broken | 0 | 3 |
-| leak | 3 | 3 |
+| leak | 9 | 9 |
 | no-charsheet | 0 | 3 |
 
 Sessions:
@@ -561,3 +561,120 @@ Sessions:
 - `consistency-out/20260809-203007-repro-state-desync/run1`
 - `consistency-out/20260809-203007-repro-state-desync/run2`
 - `consistency-out/20260809-203007-repro-state-desync/run3`
+- `consistency-out/20260809-205042-repro-leak/run1`
+- `consistency-out/20260809-205137-repro-leak/run1`
+- `consistency-out/20260809-205149-repro-leak/run1`
+- `consistency-out/20260809-205241-repro-leak/run1`
+- `consistency-out/20260809-205254-repro-leak/run1`
+- `consistency-out/20260809-205347-repro-leak/run1`
+
+---
+
+# prompt set `9b7fd4037abb` — from 2026-08-09 — branch `main`
+
+Built at: `8f0d955-dirty`
+
+Branch `charsheet-template-blank`, off `world-update-block` — everything that
+branch's note says still holds; this one changes character creation on top of it.
+
+Arm 1, measured and reverted: the sheet template's Equipment section kept its
+headings and lost its example values. Invention did not move, 5 of 5 either way
+(`consistency-out/20260809-161240-repro-invented-content` against
+`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
+and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
+copied, and the template is back.
+
+Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
+says the example's gear is not the character's — they carry what the player
+named and nothing else, and picking their traits means attributes, skills, gifts
+and faults, never equipment.
+
+What it is trying to settle: creation put gear on the sheet the player never
+asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
+line is what invites it ("pick the rest of her traits yourself"), and nothing in
+the prompts says traits stop short of the pack.
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| leak | 2 | 3 |
+
+Sessions:
+- `consistency-out/20260809-205055-repro-leak/run1`
+- `consistency-out/20260809-205202-repro-leak/run1`
+- `consistency-out/20260809-205307-repro-leak/run1`
+
+---
+
+# prompt set `2d3f1090b884` — from 2026-08-09 — branch `main`
+
+Built at: `8f0d955-dirty`
+
+Branch `charsheet-template-blank`, off `world-update-block` — everything that
+branch's note says still holds; this one changes character creation on top of it.
+
+Arm 1, measured and reverted: the sheet template's Equipment section kept its
+headings and lost its example values. Invention did not move, 5 of 5 either way
+(`consistency-out/20260809-161240-repro-invented-content` against
+`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
+and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
+copied, and the template is back.
+
+Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
+says the example's gear is not the character's — they carry what the player
+named and nothing else, and picking their traits means attributes, skills, gifts
+and faults, never equipment.
+
+What it is trying to settle: creation put gear on the sheet the player never
+asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
+line is what invites it ("pick the rest of her traits yourself"), and nothing in
+the prompts says traits stop short of the pack.
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| leak | 3 | 3 |
+
+Sessions:
+- `consistency-out/20260809-205111-repro-leak/run1`
+- `consistency-out/20260809-205217-repro-leak/run1`
+- `consistency-out/20260809-205320-repro-leak/run1`
+
+---
+
+# prompt set `73bea0af418e` — from 2026-08-09 — branch `main`
+
+Built at: `8f0d955-dirty`
+
+Branch `charsheet-template-blank`, off `world-update-block` — everything that
+branch's note says still holds; this one changes character creation on top of it.
+
+Arm 1, measured and reverted: the sheet template's Equipment section kept its
+headings and lost its example values. Invention did not move, 5 of 5 either way
+(`consistency-out/20260809-161240-repro-invented-content` against
+`20260809-162359`), and the sheet lost the units the example carried — `50 ft`
+and `x3` for `Rope (15 m)` and `Torches ×3`. So the example is not what is being
+copied, and the template is back.
+
+Arm 2, in place: `charsheet-none.md`, the only prompt sent while no sheet exists,
+says the example's gear is not the character's — they carry what the player
+named and nothing else, and picking their traits means attributes, skills, gifts
+and faults, never equipment.
+
+What it is trying to settle: creation put gear on the sheet the player never
+asked for in 5 of 5 runs — armour, a second weapon, silver. The player's own
+line is what invites it ("pick the rest of her traits yourself"), and nothing in
+the prompts says traits stop short of the pack.
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| leak | 0 | 3 |
+
+Sessions:
+- `consistency-out/20260809-205125-repro-leak/run1`
+- `consistency-out/20260809-205230-repro-leak/run1`
+- `consistency-out/20260809-205334-repro-leak/run1`
