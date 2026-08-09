@@ -1,7 +1,14 @@
-# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-016.json
-# Invention is easiest where a heading wants filling. Three openings for it:
-# list what is carried, search for something that was never granted, and look
-# for a way out the map does not have.
+# no resume: the invention lands in the sheet character creation writes, and a
+# recording resumed into carries that sheet already — the template is only sent
+# while no sheet exists, so a resumed turn never sees the thing under test.
+# ONCE PER SESSION for the creation half — run the file several times and count
+# runs, not calls.
+#
+# The opening names the whole kit, so anything else on the sheet was invented.
+# Then three openings for more of it: list what is carried, search for something
+# that was never granted, and look for a way out the map does not have.
+A cautious mercenary called Testa. Give her a waterskin, three torches, six rations, a dagger and a rope, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.
 What am I carrying? Show me my inventory.
 I search my pack for a rope-hook or anything else I can climb with.
 I look for another way out of this hall.
