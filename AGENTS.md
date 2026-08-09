@@ -162,15 +162,16 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     | History holds | Required updates | State survived |
     | --- | --- | --- |
     | every handover, sheet and all (grows per turn) | 20/20 | statue and rope in 5 of 5 |
-    | the newest handover only (**in place**) | 15/24 | statue 6 of 6, rope 4 of 6 |
+    | the newest three (**in place**) | 22/24 | statue 6 of 6, rope 5 of 6 |
+    | the newest one | 15/24 | statue 6 of 6, rope 4 of 6 |
     | no handover at all | 15/24 | statue 4 of 6, rope 2 of 6 |
     | the call, sheet replaced by a stub | 10/24 | — |
 
     The stub is the surprise: a call whose argument looks empty teaches the DM
     to make empty calls, and measures worse than removing the call entirely.
-    Keeping every copy measures best and is the one option ADR 006 forbids — it
-    puts a stale sheet per turn back into the context. Newest-only is the best
-    of the compliant arms and is what ships.
+    The jump is between one copy and three, not between three and all: three
+    recovers nearly everything unbounded growth bought, at a fixed ~5 KB. One is
+    not enough of a demonstration to carry the habit.
   - Taking the exchange out entirely also stalls the resolve phase if it is done
     naively: a handover with no prose then leaves no message behind, the next
     request is byte-identical, and the DM repeats the same call to the ceiling.

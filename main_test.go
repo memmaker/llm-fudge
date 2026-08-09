@@ -769,42 +769,43 @@ func TestASheetHandedOverBeforeTheSceneStillCounts(t *testing.T) {
 	}
 }
 
-// One sheet lives in the history at a time: the newest handover stays whole,
-// because writing a real sheet last turn is what keeps the DM writing one this
-// turn, and every earlier one is taken out as it is superseded. No orphan
-// results are left behind either.
-func TestOnlyTheNewestSheetStaysInTheHistory(t *testing.T) {
+// Handovers are capped, not banned: the newest few keep their sheets and the
+// oldest are taken out as they are superseded, results and all, so the history
+// stops growing by a charsheet a turn.
+func TestOnlyTheNewestSheetsStayInTheHistory(t *testing.T) {
 	s, messages := played(t)
 
-	s.processGameTurn(replies(
-		llm.Message{Content: "You step into the cellar.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the cellar")}},
-	), &messages, "go through the door")
-	s.processGameTurn(replies(
-		llm.Message{Content: "You climb the stair.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the stair")}},
-	), &messages, "climb")
+	places := []string{"the cellar", "the stair", "the gallery", "the roof"}
+	for _, place := range places {
+		s.processGameTurn(replies(
+			llm.Message{Content: "You walk on.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: " + place)}},
+		), &messages, "walk on")
+	}
 
-	var handovers int
+	var kept []string
 	live := map[string]bool{}
 	for _, msg := range messages {
 		for _, call := range msg.ToolCalls {
 			live[call.ID] = true
-			if call.Function.Name != worldUpdateTool {
-				continue
-			}
-			handovers++
-			if strings.Contains(call.Function.Arguments, "the cellar") {
-				t.Fatal("a superseded sheet stayed in the history")
-			}
-			if !strings.Contains(call.Function.Arguments, "the stair") {
-				t.Fatalf("the newest sheet was not kept whole: %s", call.Function.Arguments)
+			if call.Function.Name == worldUpdateTool {
+				kept = append(kept, call.Function.Arguments)
 			}
 		}
 		if msg.Role == llm.RoleTool && !live[msg.ToolCallID] {
 			t.Fatalf("a result was left for a call that is gone: %q", msg.Content)
 		}
 	}
-	if handovers != 1 {
-		t.Fatalf("the history holds %d sheets, want 1", handovers)
+
+	if len(kept) != sheetsKeptInHistory {
+		t.Fatalf("the history holds %d sheets, want %d", len(kept), sheetsKeptInHistory)
+	}
+	for i, place := range places[len(places)-sheetsKeptInHistory:] {
+		if !strings.Contains(kept[i], place) {
+			t.Fatalf("sheet %d is not %q: %s", i, place, kept[i])
+		}
+	}
+	if strings.Contains(strings.Join(kept, "\n"), "the cellar") {
+		t.Fatal("the oldest sheet outlived its cap")
 	}
 }
 

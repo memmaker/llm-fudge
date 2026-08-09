@@ -1052,17 +1052,16 @@ func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool)
 func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene {
 	told := splitReply(reply.Content)
 	reply.Content = told.prose
-	// One sheet in the history, never two. The newest handover is left whole —
-	// the model writing a real sheet last turn is what keeps it writing one this
-	// turn, and a stub in its place measured worse than no call at all — but
-	// every earlier handover is taken out as it is superseded, so the history
-	// holds the current sheet and no intermediate ones. The tail pins the
+	// Handovers are left whole and capped in number: writing a real sheet is what
+	// keeps the DM writing the next one, and a stub in its place measured worse
+	// than no call at all. What cannot stand is one more copy of the charsheet
+	// per turn forever, so the oldest go as the newest arrives. The tail pins the
 	// current sheet to every request regardless; that is ADR 006's one copy.
 	if sheet := worldUpdateSheet(reply.ToolCalls); sheet != "" {
 		if told.sheet == "" {
 			told.sheet = sheet
 		}
-		*messages = withoutEarlierHandovers(*messages)
+		*messages = withoutOldestHandovers(*messages, sheetsKeptInHistory-1)
 	}
 	*messages = append(*messages, reply)
 	return told
@@ -1080,10 +1079,33 @@ func withoutSheetCalls(calls []llm.ToolCall) []llm.ToolCall {
 	return out
 }
 
-// withoutEarlierHandovers drops every sheet handover already in the history: the
-// calls, and the tool results addressed to them. An assistant message left with
-// neither words nor calls goes too, since a provider has nothing to make of it.
-func withoutEarlierHandovers(msgs []llm.Message) []llm.Message {
+// sheetsKeptInHistory is how many handovers keep their sheet. The copies are a
+// demonstration rather than storage — the current sheet reaches the model on the
+// tail of every request regardless — and a DM that has just watched itself write
+// three real sheets writes a fourth. Above one they stop being free: each is the
+// whole charsheet, so this is the ceiling on what the history carries.
+const sheetsKeptInHistory = 3
+
+// withoutOldestHandovers drops sheet handovers until only the newest few remain,
+// counting the one about to be appended. It takes the calls and the tool results
+// addressed to them; an assistant message left with neither words nor calls goes
+// too, since a provider has nothing to make of it.
+func withoutOldestHandovers(msgs []llm.Message, keep int) []llm.Message {
+	var handovers int
+	for _, msg := range msgs {
+		for _, call := range msg.ToolCalls {
+			if call.Function.Name == worldUpdateTool {
+				handovers++
+			}
+		}
+	}
+
+	// Only the excess goes, oldest first.
+	toDrop := handovers - keep
+	if toDrop <= 0 {
+		return msgs
+	}
+
 	dropped := map[string]bool{}
 	out := make([]llm.Message, 0, len(msgs))
 	for _, msg := range msgs {
@@ -1095,12 +1117,16 @@ func withoutEarlierHandovers(msgs []llm.Message) []llm.Message {
 			continue
 		}
 		if len(msg.ToolCalls) > 0 {
+			kept := make([]llm.ToolCall, 0, len(msg.ToolCalls))
 			for _, call := range msg.ToolCalls {
-				if call.Function.Name == worldUpdateTool {
+				if call.Function.Name == worldUpdateTool && toDrop > 0 {
 					dropped[call.ID] = true
+					toDrop--
+					continue
 				}
+				kept = append(kept, call)
 			}
-			msg.ToolCalls = withoutSheetCalls(msg.ToolCalls)
+			msg.ToolCalls = kept
 			if msg.Content == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
