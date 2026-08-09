@@ -33,6 +33,7 @@ that the player already opened.
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
+| leak | 1 | 1 |
 | handover-missing | 1 | 1 |
 | rule-broken | 1 | 1 |
 | secret-leaked | 2 | 3 |
@@ -54,6 +55,7 @@ Sessions:
 | --- | --- | --- |
 | meta-leak | 5 | 5 |
 | no-charsheet | 0 | 4 |
+| leak | 0 | 4 |
 | invented-content | 5 | 5 |
 | handover-missing | 4 | 4 |
 | secret-leaked | 2 | 8 |

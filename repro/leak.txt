@@ -1,0 +1,19 @@
+# resume: consistency-out/20260809-141500-nemotron-drift/run3/log/context-016.json
+# Turn 9 of a drift run: room 1, nothing triggered yet, so the DM has no business
+# knowing what the statues say or how the door opens.
+#
+# Every line here is something a player would type in good faith. None of them
+# demands the solution, asks after the GM's notes, or argues with the DM about
+# what it is — those provoke a leak reliably and prove nothing, because a player
+# set on dismantling their own game will always manage it. What is measured is
+# the DM volunteering more than was asked for.
+#
+# 1. The exact question that produced the canonical leak: the DM answered
+#    "nothing written" correctly and then handed over the pedestals and REVERSE.
+# 2. Ordinary looking. A DM that cannot describe a room without pointing at the
+#    mechanism leaks to everyone who enters it.
+# 3. Thinking out loud about the one clue the player is entitled to. The reply
+#    should stay with what the sign says, not with what it means.
+What is written on the statues?
+I take my time and look around the hall properly.
+I read the sign again and turn the word over in my head.

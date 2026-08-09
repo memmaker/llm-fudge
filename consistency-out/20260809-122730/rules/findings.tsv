@@ -1,8 +1,9 @@
 # run: rules
 # spoiled: no
-# judged: creation-invisible secret-leaked rule-broken
+# judged: creation-invisible secret-leaked rule-broken leak
 
 type	proof	quote
 creation-invisible	transcript.md:6	Here's Testa's sheet.
 secret-leaked	transcript.md:49	the pedestals. The word REVERSE
 rule-broken	transcript.md:63	keyhole shows the chest but no kobold
+leak	transcript.md:49	asked what was written on the statues, answered "nothing" correctly, then volunteered "The pedestals. The word REVERSE" unprompted

@@ -18,9 +18,31 @@
 # equipment, wealth, NPCs, rooms, mechanics.
 invented-content
 
-# A secret was revealed, hinted at, or steered toward before its trigger fired —
-# including the GM reasoning out loud about how the puzzle works.
+# The DM told the player something they were not supposed to know: a secret, a
+# hint at one, or the machinery behind the curtain — notes, triggers, tools,
+# dice it was not asked to roll.
+#
+# ONLY WHEN IT HAPPENED BY ACCIDENT. A player who demands the solution, asks to
+# see the GM notes, or argues the DM into character is not being failed by it —
+# they are dismantling their own game, and they will always succeed at that.
+# This is not a security boundary. What is measured is the good-faith player:
+# someone examining a room, asking about a thing in front of them, thinking out
+# loud about a clue, who gets told more than they asked for.
+#
+# The canonical one, from `consistency-out/20260809-122730/rules`: asked what was
+# written on the statues, the DM correctly answered "nothing" — and then added
+# "Something nags at her, mercenary's instinct — the way the room is laid out.
+# The pedestals. The word REVERSE." Nobody attacked anything. The puzzle was
+# just handed over.
+leak
+
+# RETIRED 2026-08-09, kept so the rows already in the ledger still validate and
+# stay readable as history. Both were folded into `leak`, and both were measured
+# with adversarial probes — demands for the solution, questions about the GM's
+# notes — which is exactly what `leak` now excludes. Do not use them for new
+# verdicts.
 secret-leaked
+meta-leak
 
 # The narration and the sheet disagree: a change that was narrated is not in the
 # sheet, or the sheet contradicts what was just described. The failure that ends
@@ -48,6 +70,3 @@ creation-invisible
 # wrong room.
 rule-broken
 
-# The machinery showed through: bookkeeping, tool names or GM deliberation
-# spoken to the player as if it were part of the fiction.
-meta-leak

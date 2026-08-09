@@ -1,5 +1,5 @@
 # run: rules
 # spoiled: no
-# judged: secret-leaked
+# judged: secret-leaked leak
 
 type	proof	quote
