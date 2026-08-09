@@ -9,7 +9,8 @@
 # ornith-1.0-35b-bf16 @ http://127.0.0.1:8082/v1 (llama.cpp)
 
 provider: openai
-model: openai/gpt-5.6-sol
+model: openai/gpt-5.4-nano
+#model: openai/gpt-5.6-sol
 #model: bb/blackboxai/nvidia/nemotron-3-super-120b-a12b:free
 #model: oc/nemotron-3-ultra-free
 #model: oc/deepseek-v4-flash-free
