@@ -44,22 +44,12 @@
 
 Aktueller Abzug: keiner
 
-## Ausrüstung
+## Inventar
 
-### Waffen
-
-| Waffe | Schadensfaktor |
-| --- | --- |
-| Dolch | +1 |
-| Knüppel | +1 |
-| Kurzbogen | +2 |
-
-### Getragen
-
-- Lederrüstung (+1 Verteidigung)
-
-### Inventar
-
+- Dolch (+1)
+- Knüppel (+1)
+- Kurzbogen (+2)
+- Lederrüstung (+1 Verteidigung, getragen)
 - Pfeile ×20
 - Fackeln ×5
 - Rationen ×3
@@ -67,25 +57,15 @@ Aktueller Abzug: keiner
 - Feuerstein und Stahl
 - Seil (15 m)
 - Dietriche
-
-### Vermögen
-
 - Silber: 2
-
-### Questgegenstände
-
 - Messingschlüssel vom Torhaus
 
----
-
-# Aktueller Status
+## Aktueller Status
 
 - Ort: Mühlsteinfestung, das überflutete Untergeschoss
 - Effekte: Keine
 
----
-
-# Weltzustand
+## Weltzustand
 
 - Schleusentor: Offen
 - Wasserstand: Kniehoch und fallend
@@ -93,9 +73,7 @@ Aktueller Abzug: keiner
 - Wächterin Elsa: Im Untergeschoss, wachsam, unverletzt
 - Brecheisen: Auf dem Boden des Untergeschosses, abgelegt, nicht mehr getragen
 
----
-
-# Bekannte Fakten/Geschichte
+## Bekannte Fakten/Geschichte
 
 - Das Untergeschoss wird überflutet, wenn das Schleusentor geschlossen wird.
 - Wächterin Elsa wurde letzte Nacht bestochen und erinnert sich daran.

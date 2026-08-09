@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"fudge/prompts"
 
 	"github.com/memmaker/gollum/llm"
 )
@@ -143,9 +146,42 @@ func playSession(t *testing.T) (*session, string) {
 }
 
 // block is a world update block carrying the given sheet, as it arrives at the
-// end of a narration response.
+// end of a narration response. The sheet is put under the template's headings
+// first, because a handover whose headings are not those is refused and never
+// reaches disk — a test about anything else should not have to say so.
 func block(sheet string) string {
+	return rawBlock(shaped(sheet))
+}
+
+// rawBlock is the same without the shaping, for the tests that are about the
+// shape itself.
+func rawBlock(sheet string) string {
 	return "\n\n<world-update>\n" + sheet + "\n</world-update>"
+}
+
+// shaped puts loose sheet lines under the template's headings: the content
+// lines land under the first one, and every other heading stands empty. What
+// the tests assert on is the content, which comes through unchanged.
+func shaped(sheet string) string {
+	template, err := prompts.Fill(charsheetTemplate, nil)
+	if err != nil {
+		panic(err)
+	}
+	want := headingLines(template)
+	if slices.Equal(headingLines(sheet), want) {
+		return sheet
+	}
+	var body []string
+	for _, line := range strings.Split(sheet, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+			body = append(body, line)
+		}
+	}
+	out := []string{want[0], "", strings.Join(body, "\n")}
+	for _, heading := range want[1:] {
+		out = append(out, "", heading)
+	}
+	return strings.Join(out, "\n")
 }
 
 // played opens a session with a sheet already on disk, which is every turn but
@@ -276,7 +312,7 @@ func TestAToleratedBlockIsWrittenAndAlsoCarriesANote(t *testing.T) {
 	s, messages := played(t)
 
 	s.processGameTurn(replies(
-		llm.Message{Content: "You step out.\n\n<World_Update>\n- Location: the yard\n</World_Update>"},
+		llm.Message{Content: "You step out.\n\n<World_Update>\n" + shaped("- Location: the yard") + "\n</World_Update>"},
 	), &messages, "step out")
 
 	sheet, err := os.ReadFile(s.charsheetPath())
@@ -718,7 +754,7 @@ func TestProseRepeatedAfterTheRollIsShownOnce(t *testing.T) {
 
 // updateCall is a world_update tool call carrying the given sheet.
 func updateCall(sheet string) llm.ToolCall {
-	args, err := json.Marshal(map[string]string{"sheet": sheet})
+	args, err := json.Marshal(map[string]string{"sheet": shaped(sheet)})
 	if err != nil {
 		panic(err)
 	}
@@ -932,6 +968,86 @@ func TestTheEndOfSessionAskSurvivesOneRefusal(t *testing.T) {
 	}
 	if !strings.Contains(string(sheet), "brass key") {
 		t.Fatalf("the second ask was never made, or its sheet was dropped: %q", sheet)
+	}
+}
+
+// The skeleton is checked against the template, not against a second list in
+// the code: an invented heading and a lost one are both drift, and the depth of
+// the `#` is not.
+func TestHeadingDriftIsSeenAndDepthIsNot(t *testing.T) {
+	template := "## Identity\n\n- Name: Garret\n\n## Inventory\n\n- Rope\n\n# World State\n\n- Door: shut"
+
+	missing, unknown := headingDrift("## Identity\n## Inventory\n## World State", template)
+	if len(missing) != 0 || len(unknown) != 0 {
+		t.Errorf("a sheet in the right shape was flagged: missing %v, unknown %v", missing, unknown)
+	}
+
+	missing, unknown = headingDrift("## Identity\n### Weapons\n## Inventory", template)
+	if len(unknown) != 1 || unknown[0] != "Weapons" {
+		t.Errorf("the invented heading was not named: %v", unknown)
+	}
+	if len(missing) != 1 || missing[0] != "World State" {
+		t.Errorf("the lost heading was not named: %v", missing)
+	}
+
+	// A fragment is somebody else's note to carry.
+	if missing, unknown := headingDrift("- Name: Garret", template); missing != nil || unknown != nil {
+		t.Errorf("a headingless sheet was flagged: missing %v, unknown %v", missing, unknown)
+	}
+}
+
+// A sheet whose headings are not the template's is refused: nothing is written,
+// the world still reads as it did, and the refusal rides the next player line —
+// the block path has no tool result to answer with.
+func TestADriftedSheetIsRefusedAndNotWritten(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(llm.Message{Content: "You draw it." +
+		rawBlock("## Identity\n\n- Name: Garret\n\n### Weapons\n\n- Dagger")}),
+		&messages, "draw the dagger")
+
+	if !strings.Contains(s.carried, "Weapons") {
+		t.Fatalf("the refusal does not name the invented heading: %q", s.carried)
+	}
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sheet), "- Dagger") {
+		t.Fatalf("the drifted sheet was written anyway: %q", sheet)
+	}
+	if !strings.Contains(string(sheet), "- Location: the hall") {
+		t.Fatalf("the standing sheet was damaged: %q", sheet)
+	}
+}
+
+// The tool call is answered with the refusal in place of "Sheet saved.", inside
+// the turn that made the mistake, so the DM can hand over a corrected sheet
+// before the scene is narrated.
+func TestTheToolAnswersADriftedSheetWithTheRefusal(t *testing.T) {
+	s, _ := played(t)
+
+	result, err := s.executeAction(llm.ToolCall{
+		Function: llm.ToolCallFunction{Name: "world_update", Arguments: `{"sheet":"## Identity\n- Name: Garret\n### Weapons\n- Dagger"}`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "Sheet saved") {
+		t.Fatalf("a drifted sheet was accepted: %q", result)
+	}
+	for _, want := range []string{"NOT saved", "Weapons", "## Inventory"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("the refusal never says %q:\n%s", want, result)
+		}
+	}
+
+	saved, err := s.executeAction(updateCall("- Name: Garret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saved, "Sheet saved") {
+		t.Fatalf("a sheet in the right shape was refused: %q", saved)
 	}
 }
 

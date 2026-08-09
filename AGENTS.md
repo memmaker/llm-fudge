@@ -43,6 +43,27 @@ left standing beside its whole — and it is deleted, along with
 `note-doubled-item.md`. A pattern that reads the sheet teaches whoever finds it
 that reading the sheet by pattern is allowed.
 
+## The headings are not the content
+
+The rule above is about what a sheet *says*. Its skeleton is a different thing,
+and `headingDrift` in `main.go` does read it: the heading lines, compared as a
+set against the ones in `charsheet_template.md`, which is where the skeleton is
+declared and is per-language so a German sheet is checked against German
+headings. No item, count, length or wound is looked at, and nothing it finds
+becomes a verdict — a drifted sheet is still written, and the harness carries a
+note naming what was invented and what was lost.
+
+The distinction that makes this safe: the content is the model's to write and
+can be right in a hundred wordings, so a pattern over it is a guess. The
+skeleton is the harness's own, has exactly one correct form, and every
+cross-section doubling this project has measured started with the model deciding
+there was a second place to put something. The `### Weapons` table and the
+`### Wealth` section are gone for the same reason: a section that exists is a
+section an item can be written in twice.
+
+If you find yourself widening this to look at what is *under* a heading, stop.
+That is the rule above, and the answer there is a human or an LLM judge.
+
 # Working on a model-behaviour issue
 
 The DM is a model, so its failures are not bugs that reproduce on demand — they

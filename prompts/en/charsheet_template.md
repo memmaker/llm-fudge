@@ -44,22 +44,12 @@
 
 Current penalty: none
 
-## Equipment
+## Inventory
 
-### Weapons
-
-| Weapon | Damage factor |
-| --- | --- |
-| Dagger | +1 |
-| Club | +1 |
-| Shortbow | +2 |
-
-### Worn
-
-- Leather armor (+1 defensive)
-
-### Inventory
-
+- Dagger (+1)
+- Club (+1)
+- Shortbow (+2)
+- Leather armor (+1 defensive, worn)
 - Arrows ×20
 - Torches ×5
 - Rations ×3
@@ -67,27 +57,15 @@ Current penalty: none
 - Flint and steel
 - Rope (15 m)
 - Lockpicks
-
-### Wealth
-
 - Silver: 2
-
-### Quest Items
-
 - Brass key from the gatehouse
 
-
----
-
-# Current Status
+## Current Status
 
 - Location: Millstone Keep, the flooded undercroft
 - Effects: None
 
-
----
-
-# World State
+## World State
 
 - Sluice gate: Open
 - Water level: Knee-deep and falling
@@ -95,10 +73,7 @@ Current penalty: none
 - Warden Elsa: In the undercroft, wary, unhurt
 - Crowbar: On the floor of the undercroft, dropped, no longer carried
 
-
----
-
-# Known Facts/History
+## Known Facts/History
 
 - The undercroft floods when the sluice gate is shut.
 - Warden Elsa was bribed last night and remembers it.

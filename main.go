@@ -1007,9 +1007,125 @@ func (s *session) recordSheet(told scene) {
 	if told.tolerated {
 		s.carried = s.prompts.noteForm
 	}
+	// The block path has no tool result to answer with, so a refusal here rides
+	// the next player line. A sheet handed over by tool call was already refused
+	// where it arrived and never reaches this point.
+	if refusal := s.rejectSheet(told.sheet); refusal != "" {
+		s.carried = strings.TrimSpace(s.carried + "\n\n" + refusal)
+		if debug {
+			fmt.Println("\033[90m[the sheet's headings are not the template's; it was not written]\033[0m")
+		}
+		return
+	}
 	if err := s.writeCharsheet(told.sheet); err != nil {
 		fmt.Println("\nCharsheet error:", err)
 	}
+}
+
+// The sheet's headings are its skeleton, and they are the one part of it the
+// harness reads. Everything under a heading is the model's prose and is never
+// pattern-matched — see the rule in AGENTS.md. The skeleton is different in
+// kind: it is a fixed list, the harness supplies it in `charsheet_template.md`,
+// and a sheet that grew an `### Equipment on floor` or lost `## Wounds` is
+// wrong about its own shape without anyone having to read a single item.
+//
+// Drift is what invents a second place to write something. Measured 2026-08-09:
+// a crossbow standing in a `### Weapons` table and again in `### Inventory`, a
+// dropped spike filed under a heading the model made up on the spot. Both were
+// caught only by a human reading the whole sheet.
+func headingNames(md string) []string {
+	var names []string
+	for _, raw := range strings.Split(md, "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "#") {
+			continue
+		}
+		if name := strings.TrimSpace(strings.TrimLeft(line, "#")); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// headingLines are the heading lines as written, `#` and all, in order. This is
+// what a sheet is checked against, and what it is shown when it fails.
+func headingLines(md string) []string {
+	var lines []string
+	for _, raw := range strings.Split(md, "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "#") && strings.TrimSpace(strings.TrimLeft(line, "#")) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// rejectSheet is the gate on every handover: a sheet whose headings are not the
+// template's, line for line and in order, is not written and does not become
+// the world. It returns the sentence the DM is given instead, or "" when the
+// sheet is in shape.
+//
+// Refusing is a change from carrying a note. A note rides the *next* player
+// line, so a drifted sheet was the world for a turn — and the turn after it, a
+// model looking at its own last handover copies the shape it just invented.
+// Refusing costs one more request inside the same turn and nothing else.
+func (s *session) rejectSheet(sheet string) string {
+	want, got := headingLines(s.prompts.charsheetShape), headingLines(sheet)
+	if slices.Equal(want, got) {
+		return ""
+	}
+	missing, unknown := headingDrift(sheet, s.prompts.charsheetShape)
+	note, err := prompts.Fill("note-sheet-headings.md", map[string]string{
+		"MISSING": nameList(missing), "UNKNOWN": nameList(unknown),
+		"REQUIRED": strings.Join(want, "\n"),
+	})
+	if err != nil {
+		// A prompt that will not load must not silently turn the gate off: the
+		// sheet is still refused, in the plainest words available.
+		return "The sheet was not saved: its headings are not the ones a sheet has."
+	}
+	return note
+}
+
+// headingDrift names the headings the template has and the sheet does not, and
+// the ones the sheet has and the template does not — the two lists the DM is
+// shown when a sheet is refused. Depth and order are not part of *this*
+// comparison, only membership; rejectSheet is what insists on the exact lines.
+// The template is the authority because it is per-language — a German sheet is
+// checked against German headings without a second list to keep in step.
+// A sheet with no headings at all is not drift and is not reported: it is
+// either a fragment the block machinery already has a note for, or a shape this
+// check cannot reason about, and a note listing every heading as missing would
+// bury the one that matters.
+func headingDrift(sheet, template string) (missing, unknown []string) {
+	if len(headingNames(sheet)) == 0 {
+		return nil, nil
+	}
+	want := map[string]bool{}
+	for _, name := range headingNames(template) {
+		want[strings.ToLower(name)] = true
+	}
+	seen := map[string]bool{}
+	for _, name := range headingNames(sheet) {
+		lower := strings.ToLower(name)
+		if !want[lower] && !seen[lower] {
+			unknown = append(unknown, name)
+		}
+		seen[lower] = true
+	}
+	for _, name := range headingNames(template) {
+		if !seen[strings.ToLower(name)] {
+			missing = append(missing, name)
+		}
+	}
+	return missing, unknown
+}
+
+func nameList(names []string) string {
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
 }
 
 // flushSheet spends one request, at the end of a session, on a last turn that
@@ -1169,7 +1285,7 @@ func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene 
 	// than no call at all. What cannot stand is one more copy of the charsheet
 	// per turn forever, so the oldest go as the newest arrives. The tail pins the
 	// current sheet to every request regardless; that is ADR 006's one copy.
-	if sheet := worldUpdateSheet(reply.ToolCalls); sheet != "" {
+	if sheet := worldUpdateSheet(reply.ToolCalls); sheet != "" && s.rejectSheet(sheet) == "" {
 		if told.sheet == "" {
 			told.sheet = sheet
 		}

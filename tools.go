@@ -205,6 +205,14 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		// The turn loop has already taken the sheet out of the call and written
 		// it. All that is owed here is a result: a tool call needs one, and a
 		// silent one reads as a failure.
+		//
+		// Unless the headings are not the template's, in which case nothing was
+		// written and the result is the refusal — the one place the DM can be
+		// told inside the turn that made the mistake, while it still has the
+		// sheet in hand and can hand over a corrected one.
+		if refusal := s.rejectSheet(strings.TrimSpace(str("sheet"))); refusal != "" {
+			return refusal, nil
+		}
 		return "Sheet saved.", nil
 	case "check":
 		mod := 0

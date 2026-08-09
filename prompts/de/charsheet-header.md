@@ -15,21 +15,20 @@ Ausgeführt, in den Zeilen des Bogens selbst:
 - eine Hälfte an den Eisenhaken binden – diese Hälfte und `Eisenhaken` gehen
   beide, ein `Enterleine (Eisenhaken + 7,5 m Seil)` kommt, die andere Hälfte
   bleibt
-- das Silber auf zwei Beutel aufteilen – `Silber: 12` geht aus `### Vermögen`,
-  `Geldbeutel (6 Silber) ×2` kommt in `### Inventar`, und `### Vermögen` nennt
-  danach überhaupt kein Silber mehr
-- die Armbrust zerlegen – `Armbrust` geht aus der Tabelle `### Waffen`, und
-  `Armbrustschaft`, `Armbrustbogen` und `Armbrustsehne` kommen in `### Inventar`;
-  das Zusammenbauen ist genau das rückwärts
+- das Silber auf zwei Beutel aufteilen – `Silber: 12` geht, `Geldbeutel
+  (6 Silber) ×2` kommt, und danach nennt keine Zeile mehr loses Silber
+- die Armbrust zerlegen – `Armbrust (+2)` geht, und `Armbrustschaft`,
+  `Armbrustbogen` und `Armbrustsehne` kommen; das Zusammenbauen ist genau das
+  rückwärts
 - einer Fackel den Kopf abziehen – aus `Fackeln ×3` wird `Fackeln ×2`, und es
   kommen `Fackelschaft (blank)` und `Fackelkopf (lose)`
 - den Fackelkopf wieder anbinden – `Fackelschaft (blank)` und `Fackelkopf (lose)`
   gehen beide, aus `Fackeln ×2` wird `Fackeln ×3`, und das Seil ist um das
   kürzer, was abgeschnitten wurde
-- das Seil ablegen – `### Inventar` verliert `Seil (15 m)`, `# Weltzustand`
+- das Seil ablegen – `## Inventar` verliert `Seil (15 m)`, `## Weltzustand`
   gewinnt `Seil (15 m): liegt am Boden, wo es abgelegt wurde`, und kein anderer
   Abschnitt ändert sich
-- es wieder aufnehmen – `# Weltzustand` verliert diese Zeile, `### Inventar`
+- es wieder aufnehmen – `## Weltzustand` verliert diese Zeile, `## Inventar`
   gewinnt wieder `Seil (15 m)`
 
 Prüfe, bevor du schreibst:
