@@ -1,7 +1,9 @@
 (Not from the player. The session is over and the last turn handed over no
-sheet, so the sheet on disk still reads as it did before that turn — everything
-the last scene changed is missing from it.
+sheet. The narration and the sheet now disagree, and the sheet is the one that
+is wrong: every line the last scene changed still reads the way it did before.
 
-Write nothing to the player: they have stopped playing and will not see it. Call
-`world_update` and nothing else, with the whole sheet as it stands after that
-scene, its lines brought into line with what was narrated.)
+Go through what was just narrated and write the sheet that matches it — the
+line that was cut, joined, taken apart or counted is the line that has to
+change, and a line the scene did not touch stays exactly as it is. Either form
+reaches the same place: call `world_update` with the whole sheet, or write it
+here inside a `<world-update>` block. Do not describe the edit — make it.)

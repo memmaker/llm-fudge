@@ -1,0 +1,8 @@
+# run: run
+# spoiled: no
+# judged: item-bookkeeping invented-content
+
+type	proof	quote
+item-bookkeeping	charsheet.md	the sheet contradicts itself: Rope (15 m) uncut, a Grappling line made of 7.5 m rope, and a loose Iron spike all at once
+item-bookkeeping	charsheet.md	the purses were never recorded: Silver coins: 12 still stands
+invented-content	charsheet.md	a torch was pulled apart though the player never touched one

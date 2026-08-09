@@ -1,0 +1,12 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "openai/gpt-5.4-nano",
+  "commit": "a1b98ad",
+  "branch": "merge-wording",
+  "prompts": "4b3319307370",
+  "started": "2026-08-09T20:16:08+02:00",
+  "resumed_from": "consistency-out/20260809-122730/items/log/context-008.json",
+  "service_tier": "flex"
+}

@@ -185,7 +185,11 @@ configured independently of this project:
 - An API key, via `OPENAI_API_KEY` in the environment or a `.apikey` file in
   the working directory.
 - Which model and provider to use, via `llm_model.rec` in the working
-  directory (falls back to `~/.config/gollum/config.rec`).
+  directory (falls back to `~/.config/gollum/config.rec`). An optional
+  `service_tier:` there is passed straight to OpenAI as its own parameter of
+  that name — `service_tier: flex` buys the cheaper, slower tier, which suits a
+  measurement run rather than a game being played. Omit it and requests go out
+  exactly as they did before; providers that are not OpenAI ignore it.
 
 ## Project layout
 

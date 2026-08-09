@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	rec_files "github.com/memmaker/gollum/rec-files"
+
 	"fudge/prompts"
 
 	"github.com/memmaker/gollum/llm"
@@ -65,6 +67,10 @@ type session struct {
 
 	client *llm.Client
 	model  string
+	// serviceTier is OpenAI's processing tier, empty unless llm_model.rec asks
+	// for one. Flex is cheaper and slower, which suits a measurement run and
+	// not a game being played.
+	serviceTier llm.ServiceTier
 
 	settingName   string
 	settingDesc   string
@@ -158,7 +164,33 @@ func (s *session) connect() error {
 		return err
 	}
 	s.client, s.model = client, model
+	s.serviceTier = serviceTierFromConfig()
 	return nil
+}
+
+// serviceTierFromConfig reads the optional `service_tier` field out of the same
+// llm_model.rec the client was built from — OpenAI's own parameter name and its
+// own values, so a run asks for flex processing by writing `service_tier: flex`
+// beside the model.
+//
+// Read here rather than in InitClientFromHome because that returns a fixed four
+// values to every program that uses the library, and one project wanting a
+// cheaper tier is not a reason to change what all of them are handed. Providers
+// that are not OpenAI drop the field in transport, so passing it always is safe.
+//
+// A config that is missing, unreadable or silent about the tier means no tier,
+// which is exactly today's request.
+func serviceTierFromConfig() llm.ServiceTier {
+	f, err := os.Open("llm_model.rec")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	recs := rec_files.Read(f)
+	if len(recs) == 0 {
+		return ""
+	}
+	return llm.ServiceTier(recs[0].ToMap()["service_tier"])
 }
 
 // sessionMeta is what a session knows about itself before a word is played. It
@@ -170,6 +202,10 @@ type sessionMeta struct {
 	Adventure string `json:"adventure"`
 	Language  string `json:"language"`
 	Model     string `json:"model"`
+	// ServiceTier is the processing tier asked for, when one was. Two runs of
+	// the same model on different tiers are two measurements, and without this
+	// the ledger silently pools them under one heading.
+	ServiceTier string `json:"service_tier,omitempty"`
 	// Commit is the build's revision, `-dirty` when the tree it was built from
 	// had uncommitted changes. A measurement is only comparable against another
 	// if the prompts were the same, and the prompts are what the commit pins —
@@ -259,6 +295,7 @@ func (s *session) writeMetadata(adventure string) error {
 		Adventure:   adventure,
 		Language:    prompts.Language(),
 		Model:       s.model,
+		ServiceTier: string(s.serviceTier),
 		Commit:      buildCommit(),
 		Branch:      currentBranch(),
 		Prompts:     prompts.Fingerprint(),
