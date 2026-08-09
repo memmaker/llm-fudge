@@ -93,6 +93,7 @@ Current penalty: none
 - Water level: Knee-deep and falling
 - Strongbox: Closed, locked
 - Warden Elsa: In the undercroft, wary, unhurt
+- Crowbar: On the floor of the undercroft, dropped, no longer carried
 
 
 ---

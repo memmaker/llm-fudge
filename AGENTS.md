@@ -154,11 +154,35 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
   - An earlier note here said the tool was never called; that was a bad grep over
     a coloured terminal log, not a measurement. Count tool calls from
     `log/context-*.json`, never from the terminal capture.
-  - **Still open: the sheet can be written and still be wrong.** In 2 of the 5
-    tool-only runs the dropped rope stayed in `### Inventory` on a turn that did
-    hand over a sheet. Presence and correctness are different failures and the
-    second one is untouched — the template has no place for an item that is on
-    the ground rather than carried, which is the first thing to try.
+  - **How much of the handover stays in the history is itself a lever, and a
+    big one.** The sheet is pinned to the tail of every request, so the model
+    never lacks current state — what the history copies give it is a
+    *demonstration* of the behaviour. Six runs per arm, same script:
+
+    | History holds | Required updates | State survived |
+    | --- | --- | --- |
+    | every handover, sheet and all (grows per turn) | 20/20 | statue and rope in 5 of 5 |
+    | the newest handover only (**in place**) | 15/24 | statue 6 of 6, rope 4 of 6 |
+    | no handover at all | 15/24 | statue 4 of 6, rope 2 of 6 |
+    | the call, sheet replaced by a stub | 10/24 | — |
+
+    The stub is the surprise: a call whose argument looks empty teaches the DM
+    to make empty calls, and measures worse than removing the call entirely.
+    Keeping every copy measures best and is the one option ADR 006 forbids — it
+    puts a stale sheet per turn back into the context. Newest-only is the best
+    of the compliant arms and is what ships.
+  - Taking the exchange out entirely also stalls the resolve phase if it is done
+    naively: a handover with no prose then leaves no message behind, the next
+    request is byte-identical, and the DM repeats the same call to the ceiling.
+    A handover that resolved nothing has to end the phase and go to narration.
+  - **A sheet can be handed over and still be wrong.** In 2 of 5 tool-only runs
+    the dropped rope stayed in `### Inventory` on a turn that did hand one over.
+    Adding a dropped item to the template's World State example fixed nothing —
+    the template is only sent while no sheet exists, so a mid-session turn never
+    sees it. The rule had to go in `charsheet-header.md`, which is sent every
+    turn: with it, the resumed turn that had lost the rope three times running
+    put it on the floor three times running. **Anything that must hold
+    mid-session belongs in the header, not the template.**
 
 - **A sheet missed on the last turn of a session is lost for good.** The
   missing-block note fires on the next player line, so every other miss is

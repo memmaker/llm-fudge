@@ -978,16 +978,13 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 		}
 
 		// A sheet handed over by tool call belongs to whatever scene this turn
-		// ends up with, which may be this response or the narration phase's.
-		if sheet := worldUpdateSheet(response.Message.ToolCalls); sheet != "" {
-			s.pendingSheet = sheet
-			// Scene and sheet in one response is a finished turn. Asking again
-			// would only invite a second scene on top of the one already told.
-			if told.prose != "" {
-				told.sheet = sheet
-				*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
-				return told, true
-			}
+		// ends up with, which may be this response or the narration phase's. Read
+		// from the response rather than from told, which also carries a sheet
+		// written as a block — and a block beside a roll is written before the
+		// dice land, so it must not end the turn the way a call does.
+		handover := worldUpdateSheet(response.Message.ToolCalls) != ""
+		if handover {
+			s.pendingSheet = told.sheet
 		}
 
 		// Prose beside a tool call reaches the player like any other. It is
@@ -998,6 +995,19 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 		// written here, beside the call it belongs above.
 		s.showScene(told.prose, told.img)
 		*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+
+		if handover {
+			// Scene and sheet in one response is a finished turn; asking again
+			// would only invite a second scene on top of the one already told.
+			if told.prose != "" {
+				return told, true
+			}
+			// A handover on its own resolved nothing, so there is nothing left to
+			// roll for. The DM has updated the world and now owes a scene.
+			if len(withoutSheetCalls(response.Message.ToolCalls)) == 0 {
+				return scene{}, false
+			}
+		}
 	}
 
 	if debug {
@@ -1042,8 +1052,62 @@ func (s *session) narrate(chat chatRound, messages *[]llm.Message) (scene, bool)
 func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene {
 	told := splitReply(reply.Content)
 	reply.Content = told.prose
+	// One sheet in the history, never two. The newest handover is left whole —
+	// the model writing a real sheet last turn is what keeps it writing one this
+	// turn, and a stub in its place measured worse than no call at all — but
+	// every earlier handover is taken out as it is superseded, so the history
+	// holds the current sheet and no intermediate ones. The tail pins the
+	// current sheet to every request regardless; that is ADR 006's one copy.
+	if sheet := worldUpdateSheet(reply.ToolCalls); sheet != "" {
+		if told.sheet == "" {
+			told.sheet = sheet
+		}
+		*messages = withoutEarlierHandovers(*messages)
+	}
 	*messages = append(*messages, reply)
 	return told
+}
+
+// withoutSheetCalls copies the calls with the sheet handovers dropped. A copy,
+// because the caller still reads the originals.
+func withoutSheetCalls(calls []llm.ToolCall) []llm.ToolCall {
+	out := make([]llm.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		if call.Function.Name != worldUpdateTool {
+			out = append(out, call)
+		}
+	}
+	return out
+}
+
+// withoutEarlierHandovers drops every sheet handover already in the history: the
+// calls, and the tool results addressed to them. An assistant message left with
+// neither words nor calls goes too, since a provider has nothing to make of it.
+func withoutEarlierHandovers(msgs []llm.Message) []llm.Message {
+	dropped := map[string]bool{}
+	out := make([]llm.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Role == llm.RoleTool {
+			if dropped[msg.ToolCallID] {
+				continue
+			}
+			out = append(out, msg)
+			continue
+		}
+		if len(msg.ToolCalls) > 0 {
+			for _, call := range msg.ToolCalls {
+				if call.Function.Name == worldUpdateTool {
+					dropped[call.ID] = true
+				}
+			}
+			msg.ToolCalls = withoutSheetCalls(msg.ToolCalls)
+			if msg.Content == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 // showScene puts the prose in front of the player and leaves it where the image

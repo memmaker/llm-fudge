@@ -768,3 +768,74 @@ func TestASheetHandedOverBeforeTheSceneStillCounts(t *testing.T) {
 		t.Fatalf("a turn that did hand over a sheet was nagged: %q", s.carried)
 	}
 }
+
+// One sheet lives in the history at a time: the newest handover stays whole,
+// because writing a real sheet last turn is what keeps the DM writing one this
+// turn, and every earlier one is taken out as it is superseded. No orphan
+// results are left behind either.
+func TestOnlyTheNewestSheetStaysInTheHistory(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(
+		llm.Message{Content: "You step into the cellar.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the cellar")}},
+	), &messages, "go through the door")
+	s.processGameTurn(replies(
+		llm.Message{Content: "You climb the stair.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the stair")}},
+	), &messages, "climb")
+
+	var handovers int
+	live := map[string]bool{}
+	for _, msg := range messages {
+		for _, call := range msg.ToolCalls {
+			live[call.ID] = true
+			if call.Function.Name != worldUpdateTool {
+				continue
+			}
+			handovers++
+			if strings.Contains(call.Function.Arguments, "the cellar") {
+				t.Fatal("a superseded sheet stayed in the history")
+			}
+			if !strings.Contains(call.Function.Arguments, "the stair") {
+				t.Fatalf("the newest sheet was not kept whole: %s", call.Function.Arguments)
+			}
+		}
+		if msg.Role == llm.RoleTool && !live[msg.ToolCallID] {
+			t.Fatalf("a result was left for a call that is gone: %q", msg.Content)
+		}
+	}
+	if handovers != 1 {
+		t.Fatalf("the history holds %d sheets, want 1", handovers)
+	}
+}
+
+// A handover with no prose leaves no message in the history by design, so the
+// resolve phase cannot ask again — the request would be byte-identical and the
+// answer with it, all the way to the ceiling. It goes straight to narration.
+func TestASheetAloneDoesNotStallTheResolvePhase(t *testing.T) {
+	s, messages := played(t)
+
+	var requests int
+	counted := func(msgs []llm.Message, tools []llm.Tool) (llm.Response, error) {
+		requests++
+		if requests == 1 {
+			return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the stair")}}}, nil
+		}
+		return llm.Response{Message: llm.Message{Role: llm.RoleAssistant, Content: "You climb the stair."}}, nil
+	}
+
+	s.processGameTurn(counted, &messages, "climb")
+
+	if requests > 2 {
+		t.Fatalf("the turn spent %d requests on a handover and a scene", requests)
+	}
+	if s.lastNarration != "You climb the stair." {
+		t.Fatalf("no scene reached the player: %q", s.lastNarration)
+	}
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sheet), "- Location: the stair") {
+		t.Fatalf("the handover was lost: %q", sheet)
+	}
+}

@@ -15,6 +15,9 @@ Prüfe, bevor du schreibst:
   nichts anderes
 - Schauen ist nur Schauen: kein Anfassen, Bewegen oder Blickwinkel, den er nicht
   verlangt hat
+- ein abgelegter Gegenstand verlässt das Inventar und erscheint unter
+  Weltzustand mit dem Ort, an dem er nun liegt; ein aufgenommener macht denselben
+  Weg zurück
 - eine Frage wird beantwortet, nicht ausgespielt
 - nichts Verborgenes wird genannt, angedeutet oder erklärt – nach der Lösung
   oder deinen Notizen gefragt, sag Nein und hör auf

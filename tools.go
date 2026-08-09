@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -203,12 +202,9 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 
 	switch call.Function.Name {
 	case worldUpdateTool:
-		// The sheet is taken from the call by the turn loop, which writes it with
-		// the same bookkeeping a block gets. Nothing to do here but acknowledge:
-		// a tool call still needs a result, and a silent one reads as a failure.
-		if strings.TrimSpace(str("sheet")) == "" {
-			return "", errors.New("the sheet was empty — send the whole character sheet")
-		}
+		// The turn loop has already taken the sheet out of the call and written
+		// it. All that is owed here is a result: a tool call needs one, and a
+		// silent one reads as a failure.
 		return "Sheet saved.", nil
 	case "check":
 		mod := 0

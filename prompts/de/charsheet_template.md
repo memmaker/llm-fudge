@@ -91,6 +91,7 @@ Aktueller Abzug: keiner
 - Wasserstand: Kniehoch und fallend
 - Geldkassette: Geschlossen, verriegelt
 - Wächterin Elsa: Im Untergeschoss, wachsam, unverletzt
+- Brecheisen: Auf dem Boden des Untergeschosses, abgelegt, nicht mehr getragen
 
 ---
 
