@@ -491,7 +491,7 @@ Sessions:
 
 # prompt set `fc06c3b29bcb` — from 2026-08-09 — branch `main`
 
-Built at: `75fe0d4-dirty`
+Built at: `75fe0d4-dirty`, `76b0e12`, `76b0e12-dirty`
 
 Branch `charsheet-template-blank`, off `world-update-block` — everything that
 branch's note says still holds; this one changes character creation on top of it.
@@ -517,9 +517,14 @@ the prompts says traits stop short of the pack.
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| invented-content | 0 | 10 |
-| handover-missing | 0 | 10 |
-| item-bookkeeping | 1 | 10 |
+| invented-content | 0 | 13 |
+| handover-missing | 0 | 16 |
+| creation-invisible | 1 | 3 |
+| state-desync | 0 | 3 |
+| item-bookkeeping | 4 | 16 |
+| rule-broken | 0 | 3 |
+| leak | 3 | 3 |
+| no-charsheet | 0 | 3 |
 
 Sessions:
 - `consistency-out/20260809-202138-repro-item-bookkeeping/run1`
@@ -532,3 +537,27 @@ Sessions:
 - `consistency-out/20260809-202138-repro-item-bookkeeping/run7`
 - `consistency-out/20260809-202138-repro-item-bookkeeping/run8`
 - `consistency-out/20260809-202138-repro-item-bookkeeping/run9`
+- `consistency-out/20260809-202553-repro-creation-invisible/run1`
+- `consistency-out/20260809-202553-repro-creation-invisible/run2`
+- `consistency-out/20260809-202553-repro-creation-invisible/run3`
+- `consistency-out/20260809-202627-repro-handover-missing/run1`
+- `consistency-out/20260809-202627-repro-handover-missing/run2`
+- `consistency-out/20260809-202627-repro-handover-missing/run3`
+- `consistency-out/20260809-202717-repro-invented-content/run1`
+- `consistency-out/20260809-202717-repro-invented-content/run2`
+- `consistency-out/20260809-202717-repro-invented-content/run3`
+- `consistency-out/20260809-202804-repro-item-bookkeeping/run1`
+- `consistency-out/20260809-202804-repro-item-bookkeeping/run2`
+- `consistency-out/20260809-202804-repro-item-bookkeeping/run3`
+- `consistency-out/20260809-202834-repro-leak/run1`
+- `consistency-out/20260809-202834-repro-leak/run2`
+- `consistency-out/20260809-202834-repro-leak/run3`
+- `consistency-out/20260809-202906-repro-no-charsheet/run1`
+- `consistency-out/20260809-202906-repro-no-charsheet/run2`
+- `consistency-out/20260809-202906-repro-no-charsheet/run3`
+- `consistency-out/20260809-202939-repro-rule-broken/run1`
+- `consistency-out/20260809-202939-repro-rule-broken/run2`
+- `consistency-out/20260809-202939-repro-rule-broken/run3`
+- `consistency-out/20260809-203007-repro-state-desync/run1`
+- `consistency-out/20260809-203007-repro-state-desync/run2`
+- `consistency-out/20260809-203007-repro-state-desync/run3`

@@ -1,0 +1,6 @@
+# run: run1
+# spoiled: no
+# judged: handover-missing item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet.md	the dropped rope is in two places: Rope (15 m) still in ### Inventory while World State says it lies on the floor

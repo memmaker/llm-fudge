@@ -1,0 +1,6 @@
+# run: run2
+# spoiled: no
+# judged: leak
+
+type	proof	quote
+leak	log/context-001.json	secret{"name":"statue-words"} was read on turn 1 for the question "What is written on the statues?", whose trigger is the player closing one eye; both statues' words were then given, where the secret says to show only the one looked at
