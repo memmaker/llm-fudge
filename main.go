@@ -22,6 +22,9 @@ import (
 	"github.com/memmaker/gollum/llm"
 )
 
+// inputLogFile is where a debug run records the player's side of the session.
+const inputLogFile = "input-log.txt"
+
 var debug bool
 var imgGen bool
 
@@ -67,7 +70,7 @@ func requestTokens(messages []llm.Message, response llm.Response) int {
 }
 
 func main() {
-	flag.BoolVar(&debug, "debug", false, "Enable debug mode to show tool usage")
+	flag.BoolVar(&debug, "debug", false, "Enable debug mode: show tool usage, and record every answer to "+inputLogFile+" so the session can be replayed with -script")
 	flag.BoolVar(&imgGen, "img-gen", false, "Enable image generation feature")
 	language := flag.String("lang", "en", "Language for prompts (for example: en or de)")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
@@ -95,6 +98,18 @@ func main() {
 			fmt.Println("Error reading script:", err)
 			return
 		}
+	}
+
+	// A debug run writes down everything the player typed, in -script format, so
+	// a bug found by playing is reproduced by replaying: fudge -script input-log.txt
+	if debug {
+		f, err := os.Create(inputLogFile)
+		if err != nil {
+			fmt.Println("Error opening input log:", err)
+			return
+		}
+		defer f.Close()
+		ui.LogInputs(f)
 	}
 
 	ui.ClearScreen()

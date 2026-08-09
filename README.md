@@ -43,7 +43,7 @@ An API key is required — see [Configuration](#configuration) below.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `-debug` | off | Show tool calls, their arguments and results, and what each reply cost — and write every request and response in full to `log/` in the session directory. |
+| `-debug` | off | Show tool calls, their arguments and results, and what each reply cost — and write every request and response in full to `log/` in the session directory. Also records every answer typed to `input-log.txt`, in `-script` format, so a session that hit a bug can be replayed. |
 | `-img-gen` | off | Ask the DM for an image prompt each turn, written to `img-gen.md`. |
 | `-lang` | `en` | Select the prompt language, such as `en` or `de`. |
 | `-script` | — | Play non-interactively from a file of answers, one per line. See [Scripted play](#scripted-play). |
@@ -74,6 +74,10 @@ One answer per line; `#` comments and blank lines are skipped. A menu is
 answered by naming the option text exactly; anything else is typed as-is.
 `-script -` reads from stdin. The session ends cleanly when the script runs out.
 See [scripts/dryfall.txt](scripts/dryfall.txt) for a worked example.
+
+A script does not have to be written by hand: `-debug` writes every answer of a
+live session to `input-log.txt` in exactly this format, so a bug found by
+playing is reproduced with `./fudge -script input-log.txt`.
 
 ## How a turn works
 

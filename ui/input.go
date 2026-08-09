@@ -54,6 +54,31 @@ func nextScripted() (string, bool) {
 	return line, true
 }
 
+// inputLog records what the player answered, one line per answer, in exactly
+// the format LoadScript reads back — a debug run's log is a script that replays
+// the session. It is written unbuffered so a crash still leaves the input that
+// caused it on disk, which is the whole point.
+var inputLog io.Writer
+
+func LogInputs(w io.Writer) { inputLog = w }
+
+func logInput(line string) {
+	if inputLog != nil {
+		fmt.Fprintln(inputLog, line)
+	}
+}
+
+// chose logs a menu pick the way a script spells it: naming the option. Picking
+// "type your answer" is not written, because a script does not spell it either —
+// the free text that follows is what selects it, and the prompt asking for that
+// text logs the line itself.
+func chose(opt string) string {
+	if opt != typeYourAnswer {
+		logInput(opt)
+	}
+	return opt
+}
+
 // GetInput never returns a blank line: an empty answer is not an answer, and it
 // goes straight back to the prompt without costing a request. The guard lives
 // here rather than at the call sites so it covers the setup questions too,
@@ -61,8 +86,15 @@ func nextScripted() (string, bool) {
 func GetInput(rl *readline.Instance, prompt string) (string, error) {
 	for {
 		line, err := readOnce(rl, prompt)
-		if err != nil || strings.TrimSpace(line) != "" {
+		if err != nil {
 			return line, err
+		}
+		if strings.TrimSpace(line) != "" {
+			// Logged here and not in readOnce so the blank answers the loop
+			// swallows stay out: LoadScript drops blank lines anyway, and a log
+			// that replays has to hold only what was actually answered.
+			logInput(line)
+			return line, nil
 		}
 	}
 }
@@ -145,7 +177,7 @@ func ShowChoiceMenu(options []string) (string, error) {
 		for _, opt := range allOptions {
 			if line == opt {
 				fmt.Printf("[menu] %s\n", opt)
-				return opt, nil
+				return chose(opt), nil
 			}
 		}
 		script = append([]string{line}, script...)
@@ -214,10 +246,10 @@ func ShowChoiceMenu(options []string) (string, error) {
 			}
 		case "enter":
 			fmt.Println()
-			return allOptions[selected], nil
+			return chose(allOptions[selected]), nil
 		case "escape":
 			fmt.Println()
-			return allOptions[len(allOptions)-1], nil
+			return chose(allOptions[len(allOptions)-1]), nil
 		}
 	}
 }
