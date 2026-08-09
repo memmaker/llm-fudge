@@ -3,4 +3,4 @@
 
 type	occurred	proof	quote
 creation-invisible	yes	transcript.md:5	nothing shown at all
-stale-sheet-repair	yes	charsheet-log.md:91	Door: closed, locked, room 2 never reached
+state-desync	yes	charsheet-log.md:91	Door: closed, locked — room 2 never reachable, so the character could not die

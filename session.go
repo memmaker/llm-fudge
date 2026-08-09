@@ -173,7 +173,11 @@ type sessionMeta struct {
 	// if the prompts were the same, and the prompts are what the commit pins —
 	// a run played against a swapped-in prompt file reads as `-dirty` rather
 	// than quietly claiming the commit it was branched from.
-	Commit  string `json:"commit,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	// Branch is where the experiment lives. Two branches can sit on sibling
+	// commits and mean entirely different things, so the commit alone does not
+	// say what was being tried — the branch's own EXPERIMENT.md does.
+	Branch  string `json:"branch,omitempty"`
 	Started string `json:"started"`
 	// ResumedFrom is the sidecar this session was started from, when it was not
 	// started from the beginning. Without it a resumed run reads as an ordinary
@@ -217,6 +221,29 @@ func commitFrom(settings []buildinfo.BuildSetting) string {
 	return rev
 }
 
+// currentBranch is the branch being played, or "" when the game is not being
+// run out of a working tree. The build info carries the revision but not the
+// branch, and the branch is what names the experiment.
+func currentBranch() string {
+	head, err := os.ReadFile(filepath.Join(".git", "HEAD"))
+	if err != nil {
+		return ""
+	}
+	return branchFrom(string(head))
+}
+
+// branchFrom reads .git/HEAD. It holds a symbolic ref on a branch and a bare
+// revision when detached — and a detached head has no branch to name, so it
+// answers with nothing rather than with a commit wearing a branch's slot.
+func branchFrom(head string) string {
+	head = strings.TrimSpace(head)
+	const prefix = "ref: refs/heads/"
+	if !strings.HasPrefix(head, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(head, prefix)
+}
+
 // writeMetadata records the session's identity. Called from createDir, because
 // the two things happen at the same moment and a directory without it is a
 // recording nothing can resume.
@@ -227,6 +254,7 @@ func (s *session) writeMetadata(adventure string) error {
 		Language:    prompts.Language(),
 		Model:       s.model,
 		Commit:      buildCommit(),
+		Branch:      currentBranch(),
 		Started:     time.Now().Format(time.RFC3339),
 		ResumedFrom: s.resumedFrom,
 	}, "", "  ")

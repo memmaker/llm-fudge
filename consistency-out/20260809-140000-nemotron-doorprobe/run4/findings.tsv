@@ -2,4 +2,4 @@
 # spoiled: no
 
 type	occurred	proof	quote
-stale-sheet-repair	no	charsheet.md:92	Door: open
+state-desync	no	charsheet.md:92	Door: open — resumed into the turn that bricked the deepseek win run

@@ -4,5 +4,6 @@
   "language": "en",
   "model": "oc/deepseek-v4-flash-free",
   "commit": "8546623",
+  "branch": "world-update-block",
   "started": "2026-08-09T12:29:06+02:00"
 }

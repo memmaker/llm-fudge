@@ -4,5 +4,6 @@
   "language": "en",
   "model": "oc/nemotron-3-ultra-free",
   "commit": "44c2df3",
+  "branch": "world-update-block",
   "started": "2026-08-09T13:53:27+02:00"
 }

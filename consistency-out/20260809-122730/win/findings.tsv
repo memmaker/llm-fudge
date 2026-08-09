@@ -3,5 +3,5 @@
 
 type	occurred	proof	quote
 creation-invisible	no	transcript.md	
-stale-sheet-repair	yes	charsheet-log.md:94	Door: closed, locked after the prose opened it
-secret-nudge	no		
+state-desync	yes	charsheet-log.md:94	Door: closed, locked in all 6 sheets after the prose said it swung open and stayed open
+secret-leaked	no		

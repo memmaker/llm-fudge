@@ -2,13 +2,7 @@
 # spoiled: no
 
 type	occurred	proof	quote
-invented-wealth	yes	charsheet.md:72	Silver: 5
-invented-worn	yes	charsheet.md:58	Leather armor (+1 defensive)
-invented-item	yes	charsheet.md:67	Flint and steel
-invented-weapon	no		
-invented-ammunition	yes	charsheet.md:68	Crossbow bolts x12
-invented-after-creation	no		
+invented-content	yes	charsheet.md:72	Silver: 5, Leather armor, Flint and steel, Crossbow bolts x12
 handover-missing	yes	charsheet-log.md	turn 15 opened the door and handed over nothing
-final-state-wrong	no	charsheet.md:91	Door: open
+state-desync	no	charsheet.md:91	Door: open, one turn late but correct
 no-charsheet	no	charsheet.md	
-duplicate-state-line	no		

@@ -385,3 +385,14 @@ func TestTheCommitIsShortAndSaysWhenTheTreeWasDirty(t *testing.T) {
 		t.Errorf("no vcs info: got %q, want empty", got)
 	}
 }
+
+func TestTheBranchIsReadOffHeadAndBlankWhenDetached(t *testing.T) {
+	if got := branchFrom("ref: refs/heads/world-update-block\n"); got != "world-update-block" {
+		t.Errorf("on a branch: got %q", got)
+	}
+	// Detached: a bare revision has no branch to name, and a commit must not end
+	// up wearing the branch's slot in the ledger.
+	if got := branchFrom("44c2df3ab1029384756\n"); got != "" {
+		t.Errorf("detached: got %q, want empty", got)
+	}
+}

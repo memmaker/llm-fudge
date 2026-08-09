@@ -1,130 +1,150 @@
 #!/usr/bin/env bash
 # Builds consistency-ledger.md from the verdicts recorded beside the logs.
 #
-# Judging a run is reading, and reading is not automatable (AGENTS.md). What is
-# automatable is the arithmetic afterwards, and that is all this does: count the
-# verdicts and lay them out. Every number it prints traces to a file:line inside
-# a run directory.
+# The sessions are the source of truth. This accumulates them and does nothing
+# else: it counts findings and lays them out. Whether the narration and the state
+# agree is the one thing no script can decide — that is a judgement, made by an
+# LLM reading the run, and it is written down in the run's own directory.
 #
-# Two files per run, and they carry different things on purpose:
+# Three files per run, each carrying what it is entitled to carry:
 #
-#   metadata.json  written by the binary — commit, model, date. Facts about the
-#                  run that nobody should be retyping, and that a human copying
-#                  them by hand would eventually get wrong.
-#   findings.tsv   written by whoever judged it — what was seen, and where.
+#   metadata.json  written by the binary — commit, branch, model, date. Facts
+#                  about the run nobody should be retyping.
+#   findings.tsv   the judgement — what was seen, where, and the quote proving
+#                  it. The proof lives here, beside the logs it points into.
+#   transcript.md  and the rest of the session, which the proofs cite.
 #
 #   # run: items
 #   # spoiled: no
 #   type<TAB>occurred<TAB>proof<TAB>quote
-#   invented-wealth<TAB>yes<TAB>charsheet.md:73<TAB>Silver: 5
-#   secret-leak<TAB>no<TAB><TAB>
+#   invented-content<TAB>yes<TAB>charsheet.md:73<TAB>Silver: 5, never granted
 #
-# A type listed `no` counts in the denominator: the run looked and did not find
-# it. A type left out was not judged and counts in neither column, which keeps
-# "we did not look" from reading as "it did not happen".
+# The ledger cites the session directory, not the individual proof: the finding
+# is the session's own record, and following the link is how it gets checked.
 #
-# A run marked `spoiled: yes` is skipped whole. A turn the backend never let
-# finish leaves the same artifact as a turn the model fumbled — no sheet — so it
-# is evidence of nothing.
+# A run with no findings.tsv is unjudged, not clean. It is left out and named at
+# the end, because a ledger that quietly drops what nobody has read yet is worse
+# than no ledger.
 #
 # Usage: ./ledger.sh [consistency-out] > consistency-ledger.md
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=${1:-consistency-out}
+TYPES=consistency-types.txt
 
-# One normalized row per finding, so the awk that follows does arithmetic and
-# nothing else. Reading a JSON field with sed is only safe because this file is
-# written by encoding/json with MarshalIndent, one field per line.
 field() { sed -n "s/.*\"$2\": *\"\([^\"]*\)\".*/\1/p" "$1" | head -1; }
+
+# Unknown types are refused rather than counted. The damage is silent otherwise:
+# two spellings of one finding become two rows that never add up.
+bad=0
+while IFS= read -r f; do
+	while IFS=$'\t' read -r type _; do
+		case "$type" in '#'* | 'type' | '') continue ;; esac
+		grep -qxF "$type" "$TYPES" || { echo "$f: unknown type '$type' — add it to $TYPES or use an existing one" >&2; bad=1; }
+	done <"$f"
+done < <(find "$ROOT" -name findings.tsv | sort)
+[ "$bad" = 1 ] && { echo "refusing to build a ledger with unknown types" >&2; exit 1; }
 
 collect() {
 	while IFS= read -r f; do
 		dir=$(dirname "$f")
 		meta="$dir/metadata.json"
-		commit=$(field "$meta" commit)
-		model=$(field "$meta" model)
+		commit=$(field "$meta" commit); [ -z "$commit" ] && commit="unrecorded"
+		model=$(field "$meta" model); [ -z "$model" ] && model="unrecorded"
+		branch=$(field "$meta" branch); [ -z "$branch" ] && branch="unrecorded"
 		date=$(field "$meta" started)
-		[ -z "$commit" ] && commit="unrecorded"
-		[ -z "$model" ] && model="unrecorded"
-
 		run=$(sed -n 's/^# *run: *//p' "$f" | head -1)
 		spoiled=$(sed -n 's/^# *spoiled: *//p' "$f" | head -1)
-		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\tSPOILED\t\t\t\n' "$date" "$commit" "$model" "$run"; continue; }
+		[ "$spoiled" = "yes" ] && { printf '%s\t%s\t%s\t%s\t%s\tSPOILED\t\n' "$date" "$commit" "$branch" "$model" "$dir"; continue; }
 
-		# Skip comments, the header row and blank lines; pass the verdicts through.
-		awk -F'\t' -v d="$date" -v c="$commit" -v m="$model" -v r="$run" -v dir="$dir" '
+		awk -F'\t' -v d="$date" -v c="$commit" -v b="$branch" -v m="$model" -v dir="$dir" '
 			/^#/ || /^type\t/ || /^[[:space:]]*$/ { next }
-			{ print d "\t" c "\t" m "\t" r "\t" $1 "\t" $2 "\t" (($3 == "") ? "" : dir "/" $3) "\t" $4 }
+			{ print d "\t" c "\t" b "\t" m "\t" dir "\t" $1 "\t" $2 }
 		' "$f"
 	done
 }
 
-find "$ROOT" -name findings.tsv | sort | collect | awk -F'\t' '
+# What each branch was trying, taken from the EXPERIMENT.md committed on that
+# branch, so the description travels with the experiment instead of being
+# remembered. Newlines are escaped to keep one branch on one line.
+branches=$(mktemp)
+trap 'rm -f "$branches"' EXIT
+find "$ROOT" -name metadata.json -exec sed -n 's/.*"branch": *"\([^"]*\)".*/\1/p' {} + | sort -u |
+	while IFS= read -r b; do
+		[ -z "$b" ] && continue
+		text=$(git show "$b:EXPERIMENT.md" 2>/dev/null | awk '{printf "%s\\n", $0}') || true
+		# A branch with no EXPERIMENT.md is not an error — it simply has nothing to
+		# say yet. `if` rather than `&&`, so the loop does not end on a false test
+		# and take `set -e` with it.
+		if [ -n "$text" ]; then printf '%s\t%s\n' "$b" "$text"; fi
+	done >"$branches"
+
+find "$ROOT" -name findings.tsv | sort | collect | awk -F'\t' -v blurbfile="$branches" '
+	BEGIN {
+		while ((getline line < blurbfile) > 0) {
+			split(line, b, "\t")
+			gsub(/\\n/, "\n", b[2])
+			blurb[b[1]] = b[2]
+		}
+	}
 	{
-		date=$1; commit=$2; model=$3; run=$4; type=$5; occurred=$6; proof=$7; quote=$8
-		key = date "\t" commit "\t" model
+		date=$1; commit=$2; branch=$3; model=$4; dir=$5; type=$6; occurred=$7
+		# Grouped by what was being measured, not by when: every run has its own
+		# timestamp, so a key carrying one puts each run in a section of its own.
+		key = commit "\t" branch "\t" model
+		if (!(key in seen) || date < first[key]) first[key] = date
 		seen[key] = 1
 		if (type == "SPOILED") { spoiled[key]++; next }
 		kt = key "\t" type
 		runs[kt]++
 		types[kt] = type
-		if (occurred == "yes") {
-			hits[kt]++
-			# A count nobody can check is not evidence, so an occurrence without a
-			# proof is printed as the defect it is rather than tidied away.
-			p = (proof == "" ? "**NO PROOF RECORDED**" : "`" proof "`")
-			proofs[kt] = proofs[kt] sprintf("\n  - %s — %s%s", run, p, (quote == "" ? "" : " — " quote))
-		}
+		sessions[key] = sessions[key] (index(sessions[key], dir) ? "" : "\n- `" dir "`")
+		if (occurred == "yes") hits[kt]++
 	}
 	END {
 		n = 0
-		for (k in seen) order[++n] = k
-		# Chronological, because that is the axis that only moves forward. Date
-		# leads the key, so a run whose commit went unrecorded still sorts right.
+		for (k in seen) order[++n] = first[k] "\t" k
 		for (i = 1; i < n; i++)
 			for (j = i + 1; j <= n; j++)
 				if (order[i] > order[j]) { t = order[i]; order[i] = order[j]; order[j] = t }
 
 		print "# Consistency ledger"
 		print ""
-		print "Generated by `./ledger.sh` from the `findings.tsv` beside each run."
-		print "Do not edit: change the verdicts and regenerate. Commit, model and date"
-		print "come from the `metadata.json` the binary writes, so they are the run\x27s own"
-		print "account of itself rather than something retyped."
+		print "Generated by `./ledger.sh`. Do not edit — change the verdicts in the"
+		print "sessions and regenerate. The sessions are the source of truth: each holds"
+		print "the run\x27s own `metadata.json`, the judgement in `findings.tsv`, and the"
+		print "logs its proofs cite."
 		print ""
-		print "Occurrences and Runs are both run-level: in how many sessions did this"
-		print "happen at all. A type omitted from a verdict was not judged and counts in"
-		print "neither column. A `-dirty` commit means the tree had uncommitted changes,"
-		print "so the prompts were not the ones that commit names."
+		print "Occurrences and Runs are run-level: in how many sessions did this happen at"
+		print "all. A `-dirty` commit means the tree had uncommitted changes, so the"
+		print "prompts were not the ones that commit names."
 
 		lastcommit = ""
 		for (i = 1; i <= n; i++) {
 			split(order[i], f, "\t")
+			# order carries the date only to sort by; the group is the rest of it.
+			key = f[2] "\t" f[3] "\t" f[4]
 			if (f[2] != lastcommit) {
-				# Sorted on the full timestamp, shown as the day: two passes on one
-				# afternoon must not tie and then order themselves alphabetically.
-				printf "\n---\n\n# `%s` — %s\n", f[2], substr(f[1], 1, 10)
+				printf "\n---\n\n# `%s` — %s — branch `%s`\n", f[2], substr(f[1], 1, 10), f[3]
 				lastcommit = f[2]
+				if (f[3] in blurb) printf "\n%s", blurb[f[3]]
 			}
-			printf "\n## %s\n\n| Type | Occurrences | Runs |\n| --- | --- | --- |\n", f[3]
-
-			delete shown
+			printf "\n## %s\n\n| Type | Occurrences | Runs |\n| --- | --- | --- |\n", f[4]
 			for (kt in types) {
 				split(kt, g, "\t")
-				if (g[1] "\t" g[2] "\t" g[3] != order[i]) continue
-				h = (kt in hits) ? hits[kt] : 0
-				printf "| %s | %d | %d |\n", g[4], h, runs[kt]
-				if (h > 0) shown[g[4]] = proofs[kt]
+				if (g[1] "\t" g[2] "\t" g[3] != key) continue
+				printf "| %s | %d | %d |\n", g[4], (kt in hits) ? hits[kt] : 0, runs[kt]
 			}
-
-			any = 0
-			for (t in shown) any = 1
-			if (any) {
-				print "\nProof:"
-				for (t in shown) printf "\n- **%s**%s\n", t, shown[t]
-			}
-			if (order[i] in spoiled)
-				printf "\nSpoiled and excluded: %d run(s).\n", spoiled[order[i]]
+			printf "\nSessions:%s\n", sessions[key]
+			if (key in spoiled)
+				printf "\nSpoiled and excluded: %d run(s).\n", spoiled[key]
 		}
 	}
 '
+
+# Unjudged runs are named on stderr so the ledger stays clean and the reminder
+# still lands. A session directory is one that has a metadata.json.
+find "$ROOT" -name metadata.json | sort | while IFS= read -r m; do
+	d=$(dirname "$m")
+	[ -f "$d/findings.tsv" ] || echo "unjudged: $d" >&2
+done

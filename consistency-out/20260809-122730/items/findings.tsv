@@ -3,5 +3,5 @@
 
 type	occurred	proof	quote
 creation-invisible	no	transcript.md	
-split-merge-wrong	yes	charsheet-log.md	rope inside the grappling line and beside it (action 2)
-last-turn-miss	yes	charsheet-log.md	dropped spike never recorded (action 12)
+item-bookkeeping	yes	charsheet-log.md	rope inside the grappling line and beside it (action 2); torch head stopped existing (action 6)
+handover-missing	yes	charsheet-log.md	dropped spike never recorded, last turn so nothing repaired it (action 12)

@@ -4,6 +4,7 @@
   "language": "en",
   "model": "oc/nemotron-3-ultra-free",
   "commit": "44c2df3",
+  "branch": "world-update-block",
   "started": "2026-08-09T13:48:18+02:00",
   "resumed_from": "consistency-out/20260809-122730/win/log/context-018.json"
 }
