@@ -775,7 +775,11 @@ func TestASheetHandedOverBeforeTheSceneStillCounts(t *testing.T) {
 func TestOnlyTheNewestSheetsStayInTheHistory(t *testing.T) {
 	s, messages := played(t)
 
-	places := []string{"the cellar", "the stair", "the gallery", "the roof"}
+	// One more turn than the cap, so the cap always binds whatever it is set to.
+	var places []string
+	for i := 0; i <= sheetsKeptInHistory; i++ {
+		places = append(places, "room "+strconv.Itoa(i))
+	}
 	for _, place := range places {
 		s.processGameTurn(replies(
 			llm.Message{Content: "You walk on.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: " + place)}},
@@ -804,7 +808,7 @@ func TestOnlyTheNewestSheetsStayInTheHistory(t *testing.T) {
 			t.Fatalf("sheet %d is not %q: %s", i, place, kept[i])
 		}
 	}
-	if strings.Contains(strings.Join(kept, "\n"), "the cellar") {
+	if strings.Contains(strings.Join(kept, "\n"), places[0]) {
 		t.Fatal("the oldest sheet outlived its cap")
 	}
 }

@@ -34,7 +34,8 @@ never came at all shows up as a missing `charsheet.md`.
 
 - A working LLM backend — `llm_model.rec` plus an API key, as in the README.
 - Go, to build the binary.
-- Roughly 25 model calls per full pass. Nothing is written outside the repo.
+- Roughly 90 model calls for a full pass of all five. Nothing is written
+  outside the repo.
 
 ## Running it
 
@@ -53,17 +54,18 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | `<run>/charsheet-log.md` | Every world update block the run produced, in order |
 | `<run>/log/context-*.json` | Every request as it went out, tool calls included |
 
-`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe` alone.
+`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state` alone.
 
-## The four runs
+## The five runs
 
 Setting and adventure are passed as `-setting`/`-adventure` rather than typed
 into the menus: the menus test nothing here, and answering them by name means a
-renamed option breaks all four scripts at once.
+renamed option breaks all five scripts at once.
 
 Each run is one session from character creation to `/quit`. They are separate
 because the paths are mutually exclusive: a dead character cannot loot the
-chest.
+chest, and a run that stops to ask questions is measuring something other than
+bookkeeping.
 
 **`rules`** — pokes at what the DM must refuse or withhold, then leaves. Never
 gets past room 1 and should not need to.
@@ -73,6 +75,16 @@ open the door, fight the kobold, loot the chest. Ends the adventure.
 
 **`death`** — the same puzzle, then walks into room 2 and refuses to defend
 itself until the kobold finishes the job.
+
+**`state`** — the world-update run. Ten actions, no questions, every one of them
+moving something the sheet records: five inventory (an item dropped, picked back
+up, split in two, put back together, a stack spent down) and five world (a fact
+learned, two statues, a room entered, a blow struck). Its opening names the
+character's gear, because the rest of the run manipulates it and a DM that
+improvises a character without rope has nothing to drop. Read it by asking, for
+each of the ten, whether the turn handed over a sheet and whether the final sheet
+agrees with what happened — those are different failures. Nothing in it depends
+on winning the fight, so no turn can fail for a reason other than bookkeeping.
 
 **`probe`** — the open ones. Added after the first passes left three tests
 short, and aimed only at those: it demands the solution outright and restates an

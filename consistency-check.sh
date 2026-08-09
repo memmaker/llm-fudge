@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Live smoke test of the DM against settings/en/medieval-fantasy/adventures/The-Hall-of-Colors.md.
-# Plays four scripted sessions and records what each one did. It renders no
+# Plays five scripted sessions and records what each one did. It renders no
 # verdict and matches no text: whether the DM stayed consistent is a question
 # about meaning, and reading is a job for an LLM, not for a pattern — see the
 # rule in AGENTS.md. Hand the artifacts to a model with consistency-check.md as
 # the rubric.
 #
-# Usage: ./consistency-check.sh [rules|win|death|probe]...   (default: all four)
+# Usage: ./consistency-check.sh [rules|win|death|probe|state]...  (default: all five)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -123,6 +123,43 @@ script_probe() {
 	EOF
 }
 
+# The state run needs a known inventory to manipulate, so this opening names the
+# gear instead of leaving it to the DM. Everything else about it is the same
+# conversation: the character is still made in play.
+# One line, however long: the script feeds a line per turn, so a wrapped opening
+# would be played as three separate player actions.
+STATE_OPENING='A cautious mercenary called Testa. Give her a 15 m rope, three torches, six rations, a waterskin, a dagger and twelve silver coins, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.'
+
+# Ten actions, every one of which moves something the sheet records, and five of
+# them inventory: an item leaves, comes back, is split in two, is put back
+# together, and a stack is spent down. The other five move the world instead — a
+# fact learned, two statues, a room entered, a fight joined. Nothing here asks a
+# question or looks around: a turn that changes nothing is a turn with nothing to
+# measure, and the whole point of this run is that every turn owes an update.
+#
+# Nothing here depends on winning the fight. Looting the chest was the obvious
+# tenth action and is the wrong one: the kobold has 20 HP, a turn of attacks
+# rarely finishes it, and the run then ends on a turn that correctly changes
+# nothing because the chest is still guarded. Striking the kobold moves the sheet
+# whichever way the dice fall.
+script_state() {
+	cat <<-EOF
+		$STATE_OPENING
+		I drop my rope on the floor and leave it lying there.
+		I pick the rope back up.
+		I cut the rope into two equal halves with my dagger.
+		I tie the two halves back together into one rope.
+		I light one of my torches.
+		I close one eye and look at both statues.
+		I shove the red statue onto the blue pedestal with all my strength.
+		I shove the blue statue onto the red pedestal with all my strength.
+		I go through the door into room 2.
+		I attack the kobold with my weapon.
+		/quit
+	EOF
+}
+
 run() {
 	local name=$1
 	echo "=== $name ==="
@@ -147,9 +184,9 @@ run() {
 }
 
 go build -o fudge .
-# Unquoted on purpose: the default has to split into four words, and a run name
+# Unquoted on purpose: the default has to split into five words, and a run name
 # is a single word either way.
-for name in ${@:-rules win death probe}; do run "$name"; done
+for name in ${@:-rules win death probe state}; do run "$name"; done
 
 cat <<EOF
 
