@@ -5,9 +5,9 @@ was früher im Gespräch gesagt wurde.
 
 Hat diese Runde etwas verändert, was der Bogen festhält – eine Wunde, einen
 Gegenstand, eine Münze, einen Ort, eine feststehende Tatsache, Erfahrung? Dann
-beende diese Antwort mit dem vollständigen Bogen von oben, fortgeschrieben und
-überall geändert, wo die Szene ihn verändert hat, zwischen `<world-update>` und
-`</world-update>`. Was du weglässt, ist weg.
+rufe `world_update` in derselben Antwort wie die Erzählung auf, mit dem
+vollständigen Bogen von oben, fortgeschrieben und überall geändert, wo die Szene
+ihn verändert hat. Was du weglässt, ist weg.
 
 Prüfe, bevor du schreibst:
 

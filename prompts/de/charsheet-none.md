@@ -3,9 +3,9 @@ ausgefüllt mit einer fremden Figur als Beispiel.
 
 ---
 
-Sobald die Figur der spielenden Person einen Namen hat, beende diese Antwort mit
-ihrem vollständigen Bogen in dieser Form, zwischen `<world-update>` und
-`</world-update>` – und ebenso jede Antwort, die danach etwas erzählt. Was du
+Sobald die Figur der spielenden Person einen Namen hat, rufe `world_update` in
+derselben Antwort mit ihrem vollständigen Bogen in dieser Form auf – und ebenso
+in jeder späteren Antwort, die etwas verändert, was der Bogen festhält. Was du
 weglässt, ist weg.
 
 Prüfe, bevor du schreibst:

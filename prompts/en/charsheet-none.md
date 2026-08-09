@@ -3,10 +3,9 @@ in with somebody else's character as an example.
 
 ---
 
-As soon as the player's character has a name, end that reply with their whole
-sheet in this shape, between `<world-update>` and `</world-update>` — and end
-every reply that narrates anything from then on the same way. Anything you leave
-out is gone.
+As soon as the player's character has a name, call `world_update` in that same
+reply with their whole sheet in this shape — and call it again in every later
+reply that changes anything the sheet records. Anything you leave out is gone.
 
 Check before you write:
 

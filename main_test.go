@@ -238,7 +238,7 @@ func TestAMissingBlockLeavesTheSheetAndCarriesANote(t *testing.T) {
 	s.processGameTurn(replies(llm.Message{Content: "You go north." + block("- Location: the stair")}), &messages, "go north")
 
 	joined := strings.Join(contents(messages), "\n")
-	if !strings.Contains(joined, "carried no world update block") {
+	if !strings.Contains(joined, "handed over no sheet") {
 		t.Fatalf("the note never reached the DM:\n%s", joined)
 	}
 	if s.carried != "" {
@@ -264,7 +264,7 @@ func TestACarriedNoteSurvivesAFailedTurn(t *testing.T) {
 	}
 
 	s.processGameTurn(replies(llm.Message{Content: "You go north." + block("- Location: the stair")}), &messages, "go north")
-	if !strings.Contains(strings.Join(contents(messages), "\n"), "carried no world update block") {
+	if !strings.Contains(strings.Join(contents(messages), "\n"), "handed over no sheet") {
 		t.Fatal("the note never reached the DM")
 	}
 }

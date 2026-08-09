@@ -348,12 +348,12 @@ func TestNoCharsheetYetSendsTheShapeInstead(t *testing.T) {
 		t.Fatalf("the shape was not sent: %d messages", len(got))
 	}
 	tail := got[len(got)-1].Content
-	for _, want := range []string{"<world-update>", "## Identity", "## Wounds"} {
+	for _, want := range []string{"world_update", "## Identity", "## Wounds"} {
 		if !strings.Contains(tail, want) {
 			t.Fatalf("the empty-handed tail is missing %q:\n%s", want, tail)
 		}
 	}
-	if strings.Count(tail, "<world-update>") != 1 {
+	if strings.Count(tail, "world_update") != 1 {
 		t.Fatalf("the demand was stated more than once:\n%s", tail)
 	}
 }

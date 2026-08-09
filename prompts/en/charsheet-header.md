@@ -4,9 +4,9 @@ said earlier in the conversation.
 ---
 
 Did this turn change anything the sheet records — a wound, an item, a coin, a
-place, a fact established, experience earned? Then end this reply with the whole
-sheet above, copied forward and changed wherever the scene changed it, between
-`<world-update>` and `</world-update>`. Anything you leave out is gone.
+place, a fact established, experience earned? Then call `world_update` in the
+same reply as the narration, with the whole sheet above copied forward and
+changed wherever the scene changed it. Anything you leave out is gone.
 
 Check before you write:
 

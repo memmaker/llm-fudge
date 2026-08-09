@@ -129,11 +129,37 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     matches how the result is judged. Consequence framing — telling the model
     the scene is not remembered — measured worst of the four despite reading as
     the most convincing.
-  - The `world_update` tool went in at the same time and is now the path this
-    model actually uses: 4 to 6 calls per five-turn session, with the prose
-    block near zero. An earlier note here said the tool was never called; that
-    was a bad grep over a coloured terminal log, not a measurement. Count tool
-    calls from `log/context-*.json`, never from the terminal capture.
+  - **The tool is what fixed this, not the wording.** Measured 2026-08-09 on the
+    same five-turn script, one binary, `world_update` present or absent in
+    `gameTools`, interleaved so provider drift hit both arms alike:
+
+    | Prompting | Tool | Runs that wrote a sheet |
+    | --- | --- | --- |
+    | block, five sites, `dm.md` format section (pre-2026-08-09) | no | 2 of 4, and only 1 of 4 tracked the changes |
+    | block, consolidated to one site | no | 1 of 5 |
+    | block wording, tool also offered | yes | 5 of 5 |
+    | tail names `world_update`, tags gone (**in place**) | yes | 5 of 5, 20 of 20 required updates |
+
+    Consolidating the wording neither caused the problem nor fixed it: the block
+    path is weak for this model either way. The four wordings compared in the
+    table above were all measured with the tool present, so they were tuning a
+    second-order effect — treat those numbers as tie-breakers, not as the reason
+    this works.
+  - **The prompt names one path, never two.** With both the tag pair and the tool
+    described, the model chose per turn and skipped the statue-move update in 4
+    of 5 runs, recovering it a turn later. Naming only `world_update` took that
+    to 20 of 20 with no prose block emitted at all. `splitReply` still parses a
+    block, as a silent fallback for a model that writes one anyway — nothing
+    tells the DM it exists.
+  - An earlier note here said the tool was never called; that was a bad grep over
+    a coloured terminal log, not a measurement. Count tool calls from
+    `log/context-*.json`, never from the terminal capture.
+  - **Still open: the sheet can be written and still be wrong.** In 2 of the 5
+    tool-only runs the dropped rope stayed in `### Inventory` on a turn that did
+    hand over a sheet. Presence and correctness are different failures and the
+    second one is untouched — the template has no place for an item that is on
+    the ground rather than carried, which is the first thing to try.
+
 - **A sheet missed on the last turn of a session is lost for good.** The
   missing-block note fires on the next player line, so every other miss is
   repaired by the next full restatement; the final turn has no next line. Two of
