@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,15 +69,11 @@ func adventureCreationTools() []llm.Tool {
 	}
 }
 
-// gameTools is everything the DM can do during a turn: roll a check and ask the
-// player a question. The sheet is written by the world update block instead of
-// by a tool, the session directory is derived rather than created, and a
-// milestone costs no request — so nothing else has a consumer left. A tool the
-// DM is never shown is one it cannot reach for by mistake. See docs/adr/007.
-//
-// A `world_update` tool was tried on 2026-08-09 and taken out again: offered to
-// nvidia/nemotron-3-ultra it was never once called, on five turns across fresh
-// and resumed sessions, while the same model wrote the block in prose.
+// gameTools is everything the DM can do during a turn: roll a check, read a
+// secret, hand over the sheet and ask the player a question. The session
+// directory is derived rather than created and a milestone costs no request, so
+// nothing else has a consumer left. A tool the DM is never shown is one it
+// cannot reach for by mistake. See docs/adr/007.
 func gameTools() []llm.Tool {
 	checkDescription := prompts.MustFill("tool-check.md", nil)
 	levelDescription := prompts.MustFill("tool-check-level.md", nil)
@@ -103,8 +100,38 @@ func gameTools() []llm.Tool {
 				"name": map[string]any{"type": "string", "description": secretNameDescription},
 			}, "required": []string{"name"}},
 		}},
+		{Type: "function", Function: llm.ToolFunction{
+			Name:        worldUpdateTool,
+			Description: prompts.MustFill("tool-world-update.md", nil),
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{
+				"sheet": map[string]any{"type": "string", "description": prompts.MustFill("tool-world-update-sheet.md", nil)},
+			}, "required": []string{"sheet"}},
+		}},
 		userChoiceTool(),
 	}
+}
+
+// worldUpdateTool is the other way a turn hands over its sheet, and for this
+// model the only one it uses: offered the tool, nvidia/nemotron-3-ultra stopped
+// writing the block in prose entirely. The block stays supported because a
+// different model may do the opposite. Whichever arrives is the sheet.
+const worldUpdateTool = "world_update"
+
+// worldUpdateSheet returns the sheet a response handed over by tool call, if any.
+func worldUpdateSheet(calls []llm.ToolCall) string {
+	for _, call := range calls {
+		if call.Function.Name != worldUpdateTool {
+			continue
+		}
+		var args struct {
+			Sheet string `json:"sheet"`
+		}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			continue
+		}
+		return strings.TrimSpace(args.Sheet)
+	}
+	return ""
 }
 
 // secretsDir is where an adventure keeps what the DM is not told up front: one
@@ -175,6 +202,14 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 	}
 
 	switch call.Function.Name {
+	case worldUpdateTool:
+		// The sheet is taken from the call by the turn loop, which writes it with
+		// the same bookkeeping a block gets. Nothing to do here but acknowledge:
+		// a tool call still needs a result, and a silent one reads as a failure.
+		if strings.TrimSpace(str("sheet")) == "" {
+			return "", errors.New("the sheet was empty — send the whole character sheet")
+		}
+		return "Sheet saved.", nil
 	case "check":
 		mod := 0
 		if f, ok := args["modifier"].(float64); ok {

@@ -80,6 +80,10 @@ type session struct {
 	// nothing to restate, and asking for one mid-character-creation produces a
 	// half-made sheet that then gets copied forward as truth.
 	sheetWritten bool
+	// pendingSheet is a sheet handed over by `world_update` earlier in the turn,
+	// waiting for the scene that turn ends on. It is cleared at the start of
+	// every turn, so a sheet never outlives the turn that produced it.
+	pendingSheet string
 	// spoken is everything the player has read this turn, in the order they
 	// read it. A turn can speak more than once, and the scene is all of it.
 	spoken []string

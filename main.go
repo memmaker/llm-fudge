@@ -886,7 +886,7 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 		*messages = append(*messages, llm.Message{Role: llm.RoleUser, Content: playerInput})
 	}
 
-	s.spoken = nil
+	s.spoken, s.pendingSheet = nil, ""
 	told, narrated := s.resolvePhase(chat, messages)
 	if !narrated {
 		told, _ = s.narrate(chat, messages)
@@ -916,6 +916,11 @@ func (s *session) processGameTurn(chat chatRound, messages *[]llm.Message, playe
 // whatever happened while it was missing, so the whole correction is a note on
 // the next player line.
 func (s *session) recordSheet(told scene) {
+	// A tool call earlier in the turn counts, even when the scene that closed the
+	// turn carried no block of its own.
+	if told.sheet == "" {
+		told.sheet = s.pendingSheet
+	}
 	if told.sheet == "" {
 		// The note waits for a sheet to exist, not for a directory — the
 		// directory is opened at startup now and is evidence of nothing.
@@ -970,6 +975,19 @@ func (s *session) resolvePhase(chat chatRound, messages *[]llm.Message) (scene, 
 			// Nothing left to resolve. Prose here was written with every result
 			// already in hand, so it is the scene and phase two is not needed.
 			return told, told.prose != ""
+		}
+
+		// A sheet handed over by tool call belongs to whatever scene this turn
+		// ends up with, which may be this response or the narration phase's.
+		if sheet := worldUpdateSheet(response.Message.ToolCalls); sheet != "" {
+			s.pendingSheet = sheet
+			// Scene and sheet in one response is a finished turn. Asking again
+			// would only invite a second scene on top of the one already told.
+			if told.prose != "" {
+				told.sheet = sheet
+				*messages = append(*messages, s.runToolCalls(response.Message.ToolCalls, false)...)
+				return told, true
+			}
 		}
 
 		// Prose beside a tool call reaches the player like any other. It is

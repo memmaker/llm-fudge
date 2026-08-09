@@ -106,11 +106,39 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     and the tail checklist reach every turn including the first. The demand
     itself is no longer stated anywhere else — `dm.md`, `scene-demand.md` and
     `opening-briefing.md` each used to repeat it in their own wording.
-    Measured against `nvidia/nemotron-3-ultra-550b-a55b` right after: `win` went
-    from 20-of-25 turns blockless to 12-of-25, `rules` from 5-of-11 to 7-of-11,
-    and `death` stayed at 19-of-19 with no `charsheet.md` at all. Prose demands
-    do not carry this model; the next variation to try is making the block a
-    tool call, which is the one thing it never fails to produce.
+  - **Count blockless turns only where the turn changed something.** A turn that
+    answers a question or restates the room changes nothing the sheet records,
+    and no block is the right answer to it; counting those as failures made the
+    problem look about twice its size. The measurement that matters is narrower
+    still: did the change reach the *final* sheet? A miss mid-session is
+    recovered, because the note fires on the next player line and the next block
+    restates everything. A miss on the **last** turn of a session is not — there
+    is no next turn — and that is where the two losses below happened.
+  - Measured 2026-08-09 against `nvidia/nemotron-3-ultra-550b-a55b`, five-turn
+    sessions in which four turns must update the sheet (character made, fact
+    learned, statue moved, item dropped):
+
+    | Wording of the demand at the tail | Updates | Runs that lost state |
+    | --- | --- | --- |
+    | "every reply that narrates anything" | 10/12 | 0 of 3 |
+    | keyed to what changed (**in place**) | 19/20 | 0 of 8 |
+    | names `world_update` as the only way | 11/12 | 1 of 3 |
+    | consequence framing ("it did not happen") | 10/12 | 1 of 3 |
+
+    Keying the demand to what changed won, and it is also the wording that
+    matches how the result is judged. Consequence framing — telling the model
+    the scene is not remembered — measured worst of the four despite reading as
+    the most convincing.
+  - The `world_update` tool went in at the same time and is now the path this
+    model actually uses: 4 to 6 calls per five-turn session, with the prose
+    block near zero. An earlier note here said the tool was never called; that
+    was a bad grep over a coloured terminal log, not a measurement. Count tool
+    calls from `log/context-*.json`, never from the terminal capture.
+- **A sheet missed on the last turn of a session is lost for good.** The
+  missing-block note fires on the next player line, so every other miss is
+  repaired by the next full restatement; the final turn has no next line. Two of
+  the fourteen runs measured on 2026-08-09 lost a change this way. A cheap fix
+  would be one request at `/quit` when the last turn handed over nothing.
 - **Both check scripts grade by grepping prose, which the rule above forbids.**
   `secrets-check.sh` matches leak phrases against the terminal capture;
   `consistency-check.sh` has a red-flags grep over the same. Every number either

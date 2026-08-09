@@ -3,7 +3,9 @@ was früher im Gespräch gesagt wurde.
 
 ---
 
-Beende diese Antwort mit dem vollständigen Bogen von oben, fortgeschrieben und
+Hat diese Runde etwas verändert, was der Bogen festhält – eine Wunde, einen
+Gegenstand, eine Münze, einen Ort, eine feststehende Tatsache, Erfahrung? Dann
+beende diese Antwort mit dem vollständigen Bogen von oben, fortgeschrieben und
 überall geändert, wo die Szene ihn verändert hat, zwischen `<world-update>` und
 `</world-update>`. Was du weglässt, ist weg.
 

@@ -45,6 +45,8 @@ func TestEveryNamedPromptLoadsFilled(t *testing.T) {
 		{"tool-check-what.md", nil},
 		{"tool-secret.md", nil},
 		{"tool-secret-name.md", nil},
+		{"tool-world-update.md", nil},
+		{"tool-world-update-sheet.md", nil},
 		{"adventure-briefing.md", map[string]string{"ADVENTURE": "x"}},
 		{"opening-briefing.md", map[string]string{"ADVENTURE_BRIEFING": "x"}},
 		{"dm.md", nil},

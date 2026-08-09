@@ -537,12 +537,12 @@ func TestDebugLogsEveryRequestWholeOnceThereIsADirectory(t *testing.T) {
 // A tool the DM is never shown is one it cannot reach for by mistake. Every
 // other game tool lost its consumer when the block took over the sheet — what
 // is left is the dice, the secrets the briefing withheld, and the menu.
-func TestATurnOffersOnlyTheDiceTheSecretsAndTheMenu(t *testing.T) {
+func TestATurnOffersOnlyTheDiceTheSecretsTheSheetAndTheMenu(t *testing.T) {
 	var names []string
 	for _, tool := range gameTools() {
 		names = append(names, tool.Function.Name)
 	}
-	if strings.Join(names, ",") != "check,secret,user_choice" {
+	if strings.Join(names, ",") != "check,secret,world_update,user_choice" {
 		t.Fatalf("a turn offers %v", names)
 	}
 }
@@ -713,5 +713,58 @@ func TestProseRepeatedAfterTheRollIsShownOnce(t *testing.T) {
 	}
 	if strings.Count(string(played), scene) != 1 {
 		t.Fatalf("the transcript carries the scene twice:\n%s", played)
+	}
+}
+
+// updateCall is a world_update tool call carrying the given sheet.
+func updateCall(sheet string) llm.ToolCall {
+	args, err := json.Marshal(map[string]string{"sheet": sheet})
+	if err != nil {
+		panic(err)
+	}
+	return llm.ToolCall{ID: "u", Function: llm.ToolCallFunction{Name: "world_update", Arguments: string(args)}}
+}
+
+// The tool is the other way in. A scene and a world_update in one response is a
+// finished turn: the sheet is written and the turn does not ask again.
+func TestASheetHandedOverByToolIsWritten(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(
+		llm.Message{Content: "You step into the cellar.", ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the cellar")}},
+		llm.Message{Content: "A second scene nobody asked for."},
+	), &messages, "go through the door")
+
+	if s.lastNarration != "You step into the cellar." {
+		t.Fatalf("the turn did not end on its own scene: %q", s.lastNarration)
+	}
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sheet), "- Location: the cellar") {
+		t.Fatalf("the tool's sheet did not reach disk: %q", sheet)
+	}
+}
+
+// A sheet handed over before the scene exists still belongs to the turn, even
+// when the narration that closes it carries no block of its own.
+func TestASheetHandedOverBeforeTheSceneStillCounts(t *testing.T) {
+	s, messages := played(t)
+
+	s.processGameTurn(replies(
+		llm.Message{ToolCalls: []llm.ToolCall{updateCall("- Name: Garret\n- Location: the stair")}},
+		llm.Message{Content: "You climb the stair."},
+	), &messages, "climb")
+
+	sheet, err := os.ReadFile(s.charsheetPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(sheet), "- Location: the stair") {
+		t.Fatalf("a sheet sent before the scene was lost: %q", sheet)
+	}
+	if s.carried != "" {
+		t.Fatalf("a turn that did hand over a sheet was nagged: %q", s.carried)
 	}
 }
