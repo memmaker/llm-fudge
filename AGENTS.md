@@ -190,6 +190,32 @@ what was only observed; ADRs 008 and 009 are what that looks like written down.
     naively: a handover with no prose then leaves no message behind, the next
     request is byte-identical, and the DM repeats the same call to the ceiling.
     A handover that resolved nothing has to end the phase and go to narration.
+  - **Worked examples beat rules, for bookkeeping.** Seven wordings of the
+    bookkeeping instruction were tried against the two interactions that had
+    produced wrong state — picking a dropped item back up, and tying two halves
+    of a rope together — resumed from three different recordings, three rounds
+    each, 18 probes per wording:
+
+    | Wording | Pick-up correct | Merge correct |
+    | --- | --- | --- |
+    | the elaborate rule that was committed | 5/9 | 5/9 |
+    | four worked examples in the sheet's own lines (**in place**) | 9/9 | 6/9 |
+    | "every object is written in exactly one place" | 6/9 | 8/9 |
+    | both of the above together | 9/9 | 6/9 |
+    | nothing but "call it when the turn changed the sheet" | one round only |
+    | "count what left, what arrived" / "a ledger, not a log" / "where is it now?" | one round each |
+
+    Showing the four line edits fixed pick-up outright and nothing else came
+    close. Stating the principle instead read better and measured worse. Adding
+    the principle *to* the examples bought nothing, so it is not there.
+  - **Merges are still unsolved.** Best measured is 8 of 9 and the shipped
+    wording gets 6 of 9: `Rope (7.5 m) ×2` survives the turn that ties it back
+    together, or the length comes back wrong. Splitting and recombining an item
+    is the one operation no wording has fixed.
+  - A single round of six probes is not a result. The first round put the
+    committed wording at 2 of 6 and one variation at 6 of 6; over three rounds
+    those became 10 of 18 and 14 of 18. Resume makes a round cost six requests,
+    so there is no excuse for reporting one.
   - **A sheet can be handed over and still be wrong.** In 2 of 5 tool-only runs
     the dropped rope stayed in `### Inventory` on a turn that did hand one over.
     Adding a dropped item to the template's World State example fixed nothing —
