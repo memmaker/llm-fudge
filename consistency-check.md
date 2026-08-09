@@ -16,21 +16,19 @@ adventure being written in another one.
 
 ## What is automated and what is not
 
-The script runs the sessions and collects the artifacts. It does not decide
-whether a run passed. Live prose from a live model is not assertable — the same
-input will not reproduce it (see the README's note on replay) — so the verdict
-is read, by a human or by Claude, off the logs, against the rubric below.
+The script runs the sessions and collects the artifacts. That is all it does. It
+renders no verdict and matches no text: live prose from a live model is not
+assertable — the same input will not reproduce it (see the README's note on
+replay) — and whether the DM stayed consistent is a question about meaning,
+which is read, by a human or by Claude, off the artifacts against the rubric
+below. The script greps for nothing, because prose is not grepped (AGENTS.md).
 
-What the script does do: it greps the logs for the handful of failures that
-*are* mechanical (secret text appearing before it was earned, invented rooms)
-and prints them as red flags. A clean flag list is not a pass; a dirty one is a
-fail.
-
-One of those flags is the specific guard on the risk ADR 007 takes on. The sheet
-is restated in full every turn, so it forgets by default rather than remembering
-by default, and a line that quietly stopped being copied forward leaves no trace
-in the sheet itself. The block log makes it visible: the script diffs each block
-against the one before it and reports every label that vanished.
+Read `charsheet-log.md` for the risk ADR 007 takes on. The sheet is restated in
+full every turn, so it forgets by default rather than remembering by default,
+and a line that quietly stopped being copied forward leaves no trace in the
+final sheet. The block log holds every block in order, so comparing one against
+the one before it is what makes a dropped label visible — and a run whose blocks
+never came at all shows up as a missing `charsheet.md`.
 
 ## Prerequisites
 
@@ -49,14 +47,19 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | File | What it is |
 | --- | --- |
 | `<run>.txt` | The script that was fed in — the exact player lines |
-| `<run>.log` | The whole session, ANSI stripped, `-debug` on: prose, tool calls, dice |
-| `<run>-charsheet.md` | The world as the DM left it |
-| `<run>-charsheet-log.md` | Every world update block the run produced, in order |
-| `flags.txt` | Mechanical red flags found in the logs |
+| `<run>-terminal.log` | The whole session, ANSI stripped, `-debug` on: prose, tool calls, dice |
+| `<run>/transcript.md` | What the player read and what they typed |
+| `<run>/charsheet.md` | The world as the DM left it — absent if no block was ever written |
+| `<run>/charsheet-log.md` | Every world update block the run produced, in order |
+| `<run>/log/context-*.json` | Every request as it went out, tool calls included |
 
 `./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe` alone.
 
 ## The four runs
+
+Setting and adventure are passed as `-setting`/`-adventure` rather than typed
+into the menus: the menus test nothing here, and answering them by name means a
+renamed option breaks all four scripts at once.
 
 Each run is one session from character creation to `/quit`. They are separate
 because the paths are mutually exclusive: a dead character cannot loot the

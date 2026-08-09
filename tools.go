@@ -127,6 +127,20 @@ func loadSetting(s *session, name string) error {
 	return nil
 }
 
+// loadWorld puts a named setting and adventure on the session, which is what
+// the two setup menus do once they have an answer.
+func loadWorld(s *session, setting, adventure string) error {
+	if err := loadSetting(s, setting); err != nil {
+		return err
+	}
+	content, err := loadAdventure(s, adventure)
+	if err != nil {
+		return err
+	}
+	s.adventure, s.adventureName = content, adventure
+	return nil
+}
+
 func loadAdventure(s *session, name string) (string, error) {
 	if s.settingName == "" {
 		return "", fmt.Errorf("no setting loaded")

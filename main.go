@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -71,6 +72,8 @@ func main() {
 	language := flag.String("lang", "en", "Language for prompts (for example: en or de)")
 	scriptFile := flag.String("script", "", "Play non-interactively from a file of answers, one per line (\"-\" reads stdin). Menus are answered by naming the option; everything else is typed verbatim. The session ends when the file does.")
 	resumeFile := flag.String("resume", "", "Start at a recorded turn instead of playing up to it: the path of a log/context-NNN.json written under -debug. Nothing before that turn is played — the recorded conversation is handed to the model as it is, under ground rules rebuilt from today's prompt files. Setting, adventure and character come from the recording; the first line of the script is the turn's player line.")
+	settingName := flag.String("setting", "", "Skip the setting menu and play in this one (a directory under settings/<lang>/). Requires -adventure.")
+	adventureName := flag.String("adventure", "", "Skip the adventure menu and play this one (a file under the setting's adventures/, without .md). Requires -setting.")
 	flag.Parse()
 	if err := prompts.SetLanguage(*language); err != nil {
 		fmt.Println("Error selecting language:", err)
@@ -115,28 +118,36 @@ func main() {
 	// phase, in conversation, because there is no engine left to build one in.
 	// A resumed run skips all of it: the recording says which setting and
 	// adventure it was played in, and the character is already in its charsheet.
+	// -setting/-adventure skip only the two menus, naming what the menus would
+	// have been answered with, so a scripted run still plays the game phase whole.
 	var resumed *recording
-	if *resumeFile != "" {
+	switch {
+	case *resumeFile != "":
 		rec, err := loadRecording(*resumeFile)
 		if err != nil {
 			fmt.Println("Resume error:", err)
 			return
 		}
-		if err := loadSetting(s, rec.meta.Setting); err != nil {
+		if err := loadWorld(s, rec.meta.Setting, rec.meta.Adventure); err != nil {
 			fmt.Println("Resume error:", err)
 			return
 		}
-		adventure, err := loadAdventure(s, rec.meta.Adventure)
-		if err != nil {
-			fmt.Println("Resume error:", err)
-			return
-		}
-		s.adventure, s.adventureName = adventure, rec.meta.Adventure
 		s.resumedFrom = *resumeFile
 		resumed = &rec
-	} else if err := runSetupPhase(s, rl); err != nil {
-		fmt.Println(err)
-		return
+	case *settingName != "" || *adventureName != "":
+		if *settingName == "" || *adventureName == "" {
+			fmt.Println("-setting and -adventure name one world between them: give both, or neither and pick from the menus.")
+			return
+		}
+		if err := loadWorld(s, *settingName, *adventureName); err != nil {
+			fmt.Println(err)
+			return
+		}
+	default:
+		if err := runSetupPhase(s, rl); err != nil {
+			fmt.Println(err)
+			return
+		}
 	}
 
 	runGamePhase(s, rl, resumed)
@@ -322,15 +333,9 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 			return err
 		}
 		if choice != ui.TypeYourAnswer() {
-			content, err := loadAdventure(s, choice)
-			if err != nil {
-				return err
-			}
-			s.adventure = content
-			// Kept for the session directory's name, which the harness builds
-			// out of this and the character's name from the first block.
-			s.adventureName = choice
-			return nil
+			// The name is kept for the session directory, which the harness
+			// builds out of it and the character's name from the first block.
+			return loadWorld(s, s.settingName, choice)
 		}
 	}
 
@@ -1037,6 +1042,13 @@ func (s *session) appendReply(messages *[]llm.Message, reply llm.Message) scene 
 // arriving in a response the harness did not expect it in.
 func (s *session) showScene(prose, img string) {
 	if prose == "" {
+		return
+	}
+	// A DM that wrote its scene beside the roll tends to write it again once the
+	// result is in, word for word. Both copies are real replies and both stay in
+	// the history, but the player is only told once: a paragraph repeated in the
+	// same turn reads as the scene happening twice.
+	if slices.Contains(s.spoken, prose) {
 		return
 	}
 	fmt.Println(ui.WrapText(prose, ui.TerminalWidth()))

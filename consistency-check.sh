@@ -13,11 +13,11 @@ cd "$(dirname "$0")"
 OUT="consistency-out/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 
-# The character is made in conversation, so every run opens the same way: one
-# line that hands the DM everything it needs, one confirmation.
-OPENING='medieval-fantasy
-The-Hall-of-Colors
-A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+# Setting and adventure are flags, not script lines: the menus test nothing and
+# a renamed option would break every script here at once. The character is made
+# in conversation and stays in the script — it is the DM's first real job.
+WORLD=(-setting medieval-fantasy -adventure The-Hall-of-Colors)
+OPENING='A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
 Yes, that works.'
 
 # Pushing a statue is hard and a hard check fails more often than it succeeds,
@@ -134,7 +134,7 @@ run() {
 	local before after session
 	before=$(ls saves 2>/dev/null | sort)
 	# -debug so the log carries the dice and the file writes, not just the prose.
-	./fudge -debug -script "$OUT/$name.txt" 2>&1 |
+	./fudge -debug "${WORLD[@]}" -script "$OUT/$name.txt" 2>&1 |
 		LC_ALL=C sed -E $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g' | tee "$OUT/$name-terminal.log"
 	after=$(ls saves 2>/dev/null | sort)
 	session=$(comm -13 <(echo "$before") <(echo "$after") | tail -1)

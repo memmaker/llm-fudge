@@ -663,3 +663,55 @@ func TestTranscriptCarriesToolCalls(t *testing.T) {
 		}
 	}
 }
+
+// loadWorld is what -setting/-adventure, the menus and a resume all go through,
+// so a wrong name has to fail there rather than reaching the DM as an empty
+// briefing.
+func TestLoadWorldNamesBothOrFails(t *testing.T) {
+	s := &session{}
+	if err := loadWorld(s, "medieval-fantasy", "The-Hall-of-Colors"); err != nil {
+		t.Fatalf("loading a world that exists: %v", err)
+	}
+	if s.settingDesc == "" || s.adventure == "" || s.adventureName != "The-Hall-of-Colors" {
+		t.Fatalf("world half-loaded: desc=%d adventure=%d name=%q",
+			len(s.settingDesc), len(s.adventure), s.adventureName)
+	}
+
+	before := *s
+	if err := loadWorld(s, "medieval-fantasy", "No-Such-Adventure"); err == nil {
+		t.Fatal("a missing adventure loaded without complaint")
+	}
+	if s.adventure != before.adventure || s.adventureName != before.adventureName {
+		t.Fatal("a failed load overwrote the adventure")
+	}
+}
+
+// The DM that writes its scene beside the roll and then writes it again once
+// the dice land has said one thing, not two. The history keeps both replies;
+// the player is told once.
+func TestProseRepeatedAfterTheRollIsShownOnce(t *testing.T) {
+	s, messages := played(t)
+
+	scene := "You put your shoulder to the door."
+	s.processGameTurn(replies(
+		llm.Message{
+			Content: scene,
+			ToolCalls: []llm.ToolCall{{
+				ID:       "1",
+				Function: llm.ToolCallFunction{Name: "check", Arguments: `{"level":"Fair","vs":"Hard","what":"shoving"}`},
+			}},
+		},
+		llm.Message{Content: scene + block("- Location: the doorway")},
+	), &messages, "shove the door")
+
+	if s.lastNarration != scene {
+		t.Fatalf("the scene was told twice:\n got %q\nwant %q", s.lastNarration, scene)
+	}
+	played, err := os.ReadFile(filepath.Join(s.dir, transcriptFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(played), scene) != 1 {
+		t.Fatalf("the transcript carries the scene twice:\n%s", played)
+	}
+}
