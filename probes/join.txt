@@ -1,0 +1,22 @@
+# Three joins, three kinds, one turn each. Joining is the operation no wording
+# has fixed: measured 2026-08-09 on the flat sheet, the crossbow was narrated as
+# reassembled and the sheet still held its three parts in 2 of 4 `items` runs.
+#
+# The `items` run reaches a join after seven other transformations, so it has
+# never been measured on its own. This is that measurement: resume into a turn
+# where the parts are already loose and ask only for the joins.
+#
+# resume: consistency-out/20260809-231148/items/log/context-019.json
+# resume: consistency-out/20260809-231506/items/log/context-019.json
+#
+# Two recordings on purpose, and they differ: in the first the crossbow string
+# is inside a short bow and has to come back out, in the second it is loose. Use
+# both — a fix that only works from one history is a fix for that history.
+#
+# What the sheet must say after each line:
+#   1  one `Crossbow (+2)`, and no stock, prod, string or short bow anywhere
+#   2  `Torches ×3`, and no bare shaft and no loose head
+#   3  one grappling line naming the spike and the rope, and no separate spike
+I put my crossbow back together from its parts.
+I lash the loose torch head back onto the bare shaft.
+I tie the iron spike to my rope to make a grappling line.

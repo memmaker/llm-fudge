@@ -7,6 +7,9 @@ Call `world_update` with the whole sheet whenever this turn changed it.
 
 Every object on this sheet is written in exactly one place.
 
+When things are joined, the parts go and one line takes their place, naming what
+it is made of. A part still on the sheet is a part that did not go in.
+
 Worked, in the sheet's own lines:
 
 - cut the 15 m rope in two — `Rope (15 m)` goes, `Rope (7.5 m) ×2` arrives

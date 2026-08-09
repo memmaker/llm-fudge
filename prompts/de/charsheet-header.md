@@ -8,6 +8,10 @@ verändert hat.
 
 Jeder Gegenstand steht auf diesem Bogen an genau einer Stelle.
 
+Wird etwas verbunden, gehen die Teile und eine Zeile tritt an ihre Stelle, die
+nennt, woraus sie besteht. Ein Teil, das noch auf dem Bogen steht, ist ein Teil,
+das nicht hineingegangen ist.
+
 Ausgeführt, in den Zeilen des Bogens selbst:
 
 - das 15-m-Seil in zwei Teile schneiden – `Seil (15 m)` geht, `Seil (7,5 m) ×2`
