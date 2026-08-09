@@ -1387,6 +1387,7 @@ func (s *session) chatInternal(messages []llm.Message, tools []llm.Tool, printOu
 		Messages:        messages,
 		Tools:           tools,
 		ReasoningEffort: llm.ReasoningEffortNone,
+		ServiceTier:     s.serviceTier,
 	})
 	stopSpinner()
 	// Every request goes through here, so this is the one place that sees both

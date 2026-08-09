@@ -396,3 +396,28 @@ func TestTheBranchIsReadOffHeadAndBlankWhenDetached(t *testing.T) {
 		t.Errorf("detached: got %q, want empty", got)
 	}
 }
+
+// The tier is optional and its absence has to mean today's request: a config
+// that does not mention it, or is not there at all, asks for no tier.
+func TestServiceTierIsReadFromTheConfigAndOptional(t *testing.T) {
+	for _, c := range []struct {
+		name, config string
+		want         llm.ServiceTier
+	}{
+		{"flex asked for", "provider: openai\nmodel: gpt-5.4-nano\nservice_tier: flex\n", llm.ServiceTierFlex},
+		{"silent about the tier", "provider: openai\nmodel: gpt-5.4-nano\n", ""},
+		{"no config at all", "", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if c.config != "" {
+				if err := os.WriteFile("llm_model.rec", []byte(c.config), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := serviceTierFromConfig(); got != c.want {
+				t.Errorf("serviceTierFromConfig() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
