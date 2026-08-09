@@ -8,6 +8,9 @@ require (
 	golang.org/x/term v0.45.0
 )
 
-require golang.org/x/sys v0.47.0 // indirect
+require (
+	github.com/yuin/goldmark v1.8.5 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+)
 
 replace github.com/memmaker/gollum => /Users/felix/Projects/gollum
