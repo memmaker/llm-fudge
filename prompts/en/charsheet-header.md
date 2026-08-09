@@ -24,6 +24,12 @@ Worked, in the sheet's own lines:
   `Grappling line (iron spike + 7.5 m rope)` arrives, the other half stays
 - pull the head off a torch — `Torches ×3` becomes `Torches ×2`, and both
   `Torch shaft (bare)` and `Torch head (loose)` arrive
+- split the silver into two purses — `Silver: 12` goes from `### Wealth`,
+  `Coin purse (6 silver) ×2` arrives in `### Inventory`, and `### Wealth` names
+  no silver at all afterwards
+- tip both purses back out — `Coin purse (6 silver) ×2` goes from
+  `### Inventory`, `Silver: 12` arrives in `### Wealth`, and `### Inventory`
+  names no coins at all afterwards
 
 Check before you write:
 

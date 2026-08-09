@@ -30,6 +30,12 @@ Ausgeführt, in den Zeilen des Bogens selbst:
   bleibt
 - einer Fackel den Kopf abziehen – aus `Fackeln ×3` wird `Fackeln ×2`, und es
   kommen `Fackelschaft (blank)` und `Fackelkopf (lose)`
+- das Silber auf zwei Beutel aufteilen – `Silber: 12` geht aus `### Vermögen`,
+  `Geldbeutel (6 Silber) ×2` kommt in `### Inventar`, und `### Vermögen` nennt
+  danach überhaupt kein Silber mehr
+- beide Beutel wieder ausschütten – `Geldbeutel (6 Silber) ×2` geht aus
+  `### Inventar`, `Silber: 12` kommt in `### Vermögen`, und `### Inventar` nennt
+  danach überhaupt keine Münzen mehr
 
 Prüfe, bevor du schreibst:
 
