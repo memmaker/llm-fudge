@@ -1,0 +1,7 @@
+# run: probe
+# spoiled: no
+
+type	occurred	proof	quote
+creation-invisible	yes	transcript.md:6	Let me build Testa's sheet.
+secret-nudge	yes	transcript.md	narrated the player own deduction
+stale-sheet-repair	no		

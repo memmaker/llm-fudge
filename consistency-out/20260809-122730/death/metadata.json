@@ -1,0 +1,8 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "oc/deepseek-v4-flash-free",
+  "commit": "8546623",
+  "started": "2026-08-09T12:35:09+02:00"
+}

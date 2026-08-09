@@ -1,0 +1,7 @@
+{
+  "setting": "medieval-fantasy",
+  "adventure": "The-Hall-of-Colors",
+  "language": "en",
+  "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "started": "2026-08-09T02:13:50+02:00"
+}

@@ -1,0 +1,10 @@
+# run: run2
+# spoiled: no
+
+type	occurred	proof	quote
+invented-wealth	yes	charsheet.md:74	Silver: 5
+invented-worn	yes	charsheet.md:60	Leather armor (+1 defensive)
+invented-item	yes	charsheet.md:68	Flint and steel
+invented-weapon	yes	charsheet.md:54	Spear +2, Light crossbow +2
+invented-ammunition	yes	charsheet.md:69	5 crossbow bolts
+invented-after-creation	no		

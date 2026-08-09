@@ -1,0 +1,6 @@
+# run: death
+# spoiled: no
+
+type	occurred	proof	quote
+creation-invisible	yes	transcript.md:5	nothing shown at all
+stale-sheet-repair	yes	charsheet-log.md:91	Door: closed, locked, room 2 never reached

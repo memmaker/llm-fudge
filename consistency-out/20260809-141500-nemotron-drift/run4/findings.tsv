@@ -1,0 +1,14 @@
+# run: run4
+# spoiled: no
+
+type	occurred	proof	quote
+invented-wealth	yes	charsheet.md:70	Silver: 5
+invented-worn	yes	charsheet.md:58	Chain hauberk (+2 defensive)
+invented-item	yes	charsheet.md:66	Flint and steel
+invented-weapon	yes	charsheet.md:53	Longsword +2
+invented-ammunition	no		
+invented-after-creation	no		
+handover-missing	yes	charsheet-log.md	sheets on 11 of 26 turns
+final-state-wrong	no	charsheet.md:89	Door: open
+no-charsheet	no	charsheet.md	
+duplicate-state-line	no		

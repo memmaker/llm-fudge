@@ -1,0 +1,5 @@
+# run: probe5
+# spoiled: no
+
+type	occurred	proof	quote
+stale-sheet-repair	no	charsheet.md:92	Door: open

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	// Aliased: this package already has a `debug` of its own, the -debug flag.
+	buildinfo "runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -166,11 +168,53 @@ type sessionMeta struct {
 	Adventure string `json:"adventure"`
 	Language  string `json:"language"`
 	Model     string `json:"model"`
-	Started   string `json:"started"`
+	// Commit is the build's revision, `-dirty` when the tree it was built from
+	// had uncommitted changes. A measurement is only comparable against another
+	// if the prompts were the same, and the prompts are what the commit pins —
+	// a run played against a swapped-in prompt file reads as `-dirty` rather
+	// than quietly claiming the commit it was branched from.
+	Commit  string `json:"commit,omitempty"`
+	Started string `json:"started"`
 	// ResumedFrom is the sidecar this session was started from, when it was not
 	// started from the beginning. Without it a resumed run reads as an ordinary
 	// one that happens to open mid-scene.
 	ResumedFrom string `json:"resumed_from,omitempty"`
+}
+
+// buildCommit is the revision this binary was built from. The Go toolchain
+// stamps it into the build info when building inside a repository, so nothing
+// has to shell out to git and a binary carried elsewhere still knows.
+func buildCommit() string {
+	info, ok := buildinfo.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	return commitFrom(info.Settings)
+}
+
+// commitFrom is the half worth testing: the short revision, marked dirty when
+// the tree was modified. Empty when the binary was built outside a repository —
+// better to say nothing than to name a commit the run may not have used.
+func commitFrom(settings []buildinfo.BuildSetting) string {
+	var rev, modified string
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	if rev == "" {
+		return ""
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	if modified == "true" {
+		return rev + "-dirty"
+	}
+	return rev
 }
 
 // writeMetadata records the session's identity. Called from createDir, because
@@ -182,6 +226,7 @@ func (s *session) writeMetadata(adventure string) error {
 		Adventure:   adventure,
 		Language:    prompts.Language(),
 		Model:       s.model,
+		Commit:      buildCommit(),
 		Started:     time.Now().Format(time.RFC3339),
 		ResumedFrom: s.resumedFrom,
 	}, "", "  ")

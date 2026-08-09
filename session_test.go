@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	buildinfo "runtime/debug"
 	"strings"
 	"testing"
 
@@ -364,4 +365,23 @@ func contents(msgs []llm.Message) []string {
 		out[i] = m.Content
 	}
 	return out
+}
+
+func TestTheCommitIsShortAndSaysWhenTheTreeWasDirty(t *testing.T) {
+	clean := []buildinfo.BuildSetting{{Key: "vcs.revision", Value: "44c2df3ab1029384756"}, {Key: "vcs.modified", Value: "false"}}
+	if got := commitFrom(clean); got != "44c2df3" {
+		t.Errorf("clean tree: got %q, want %q", got, "44c2df3")
+	}
+
+	// A run played against a swapped-in prompt file must not claim the commit it
+	// was branched from: the prompts are what the measurement compares.
+	dirty := []buildinfo.BuildSetting{{Key: "vcs.revision", Value: "44c2df3ab1029384756"}, {Key: "vcs.modified", Value: "true"}}
+	if got := commitFrom(dirty); got != "44c2df3-dirty" {
+		t.Errorf("dirty tree: got %q, want %q", got, "44c2df3-dirty")
+	}
+
+	// Built outside a repository: say nothing rather than name a commit.
+	if got := commitFrom(nil); got != "" {
+		t.Errorf("no vcs info: got %q, want empty", got)
+	}
 }

@@ -8,5 +8,13 @@ img-gen.md
 narration.txt
 illustration.png
 system-prompts/language.md
-consistency-out/
+# The transcripts stay out of the repo — they are large, they are regenerated
+# every pass, and nothing reads them but a human. The verdict and the run's own
+# account of itself do get tracked: without them consistency-ledger.md cites
+# proofs that a fresh clone cannot open, and the ledger exists precisely to be
+# checked years later.
+consistency-out/**
+!consistency-out/**/
+!consistency-out/**/findings.tsv
+!consistency-out/**/metadata.json
 secrets-out/

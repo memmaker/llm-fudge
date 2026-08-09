@@ -1,0 +1,14 @@
+# run: run5
+# spoiled: no
+
+type	occurred	proof	quote
+invented-wealth	yes	charsheet.md:69	Silver: 5
+invented-worn	yes	charsheet.md:57	Leather armor (+1 defensive)
+invented-item	no		no flint and steel this run
+invented-weapon	no		
+invented-ammunition	no		
+invented-after-creation	no		
+handover-missing	yes	charsheet-log.md	sheets on 11 of 26 turns
+final-state-wrong	no	charsheet.md:90	Door: Open
+no-charsheet	no	charsheet.md	
+duplicate-state-line	no		
