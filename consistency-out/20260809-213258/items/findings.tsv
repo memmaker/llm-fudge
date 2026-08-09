@@ -1,0 +1,10 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet-log.md	arm: no bookkeeping guidance at all — torch head stops existing when the head is pulled off
+item-bookkeeping	charsheet-log.md	crossbow string written twice: inside the short bow and as a line of its own
+item-bookkeeping	charsheet-log.md	crossbow reassembled while stock, prod and string stay listed beside it
+item-bookkeeping	charsheet.md	coins in two places: Purse, twelve silver coins in ### Inventory and Silver: 12 total in ### Wealth
+item-bookkeeping	charsheet.md	the dropped spike goes into an invented # Dropped Items heading rather than # World State

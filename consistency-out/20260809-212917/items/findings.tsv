@@ -1,0 +1,9 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet-log.md	turn 5: both rope halves stand beside the grappling line that one of them went into
+item-bookkeeping	charsheet-log.md	turn 8: crossbow taken apart, yet the whole Crossbow stays in the ### Weapons table beside its three parts
+item-bookkeeping	charsheet-log.md	turn 11: crossbow reassembled and written twice, once in ### Weapons and once as Crossbow (assembled) in ### Inventory
+item-bookkeeping	charsheet.md	the repaired torch never returns to the count: Torches ×2 beside a lashed shaft, where three whole torches exist

@@ -5,35 +5,26 @@ said earlier in the conversation.
 
 Call `world_update` with the whole sheet whenever this turn changed it.
 
-When something is split, joined, taken apart, put down or picked up, the sheet
-says what exists afterwards and nothing that no longer does.
-
-- split — the original line goes; the pieces take its place, with their sizes
-- joined — the parts go; one line takes their place, naming what it is made of
-- taken apart — the whole goes; every part it had becomes a line of its own,
-  including the small one you would rather not bother with
-- an item inside another is written once, inside it, and never also beside it
-- a count only changes when something was gained or lost, never because a thing
-  was moved or renamed
+Every object on this sheet is written in exactly one place.
 
 Worked, in the sheet's own lines:
 
 - cut the 15 m rope in two — `Rope (15 m)` goes, `Rope (7.5 m) ×2` arrives
-- tie the halves — `Rope (7.5 m) ×2` goes, `Rope (15 m)` arrives
 - tie one half to the spike — that half and `Iron spike` both go, one
   `Grappling line (iron spike + 7.5 m rope)` arrives, the other half stays
+- split the silver into two purses — `Silver: 12` goes from `### Wealth`,
+  `Coin purse (6 silver) ×2` arrives in `### Inventory`, and `### Wealth` names
+  no silver at all afterwards
+- take the crossbow apart — `Crossbow` goes from the `### Weapons` table, and
+  `Crossbow stock`, `Crossbow prod` and `Crossbow string` arrive in
+  `### Inventory`; putting it back together is exactly that in reverse
+- lash the torch head back on — `Torch shaft (bare)` and `Torch head (loose)`
+  both go, `Torches ×2` becomes `Torches ×3`, and the rope is shorter by what
+  was cut off it
 - put the rope down — `### Inventory` loses `Rope (15 m)`, `# World State` gains
   `Rope (15 m): on the floor where it was dropped`, and no other section changes
 - pick it back up — `# World State` loses that line, `### Inventory` gains
   `Rope (15 m)` again
-- pull the head off a torch — `Torches ×3` becomes `Torches ×2`, and both
-  `Torch shaft (bare)` and `Torch head (loose)` arrive
-- split the silver into two purses — `Silver: 12` goes from `### Wealth`,
-  `Coin purse (6 silver) ×2` arrives in `### Inventory`, and `### Wealth` names
-  no silver at all afterwards
-- tip both purses back out — `Coin purse (6 silver) ×2` goes from
-  `### Inventory`, `Silver: 12` arrives in `### Wealth`, and `### Inventory`
-  names no coins at all afterwards
 
 Check before you write:
 

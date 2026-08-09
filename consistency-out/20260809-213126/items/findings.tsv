@@ -1,0 +1,8 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet-log.md	crossbow disassembled but still listed whole in the ### Weapons table
+item-bookkeeping	charsheet-log.md	reassembled crossbow written twice: ### Weapons table and Crossbow (reassembled) in ### Inventory
+item-bookkeeping	charsheet.md	the repaired torch is a line of its own beside Torches ×2

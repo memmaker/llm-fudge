@@ -720,15 +720,42 @@ Sessions:
 
 ---
 
-# prompt set `bfa4f4b8ccfe` — from 2026-08-09 — branch `unrecorded`
+# prompt set `bfa4f4b8ccfe` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
 
 Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
 
 ## openai/gpt-5.6-luna (flex)
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
 | rule-broken | 0 | 1 |
+| item-bookkeeping | 8 | 8 |
 | no-charsheet | 0 | 1 |
 | creation-invisible | 0 | 1 |
 | invented-content | 1 | 1 |
@@ -737,3 +764,221 @@ Built at: `c63381c`
 
 Sessions:
 - `consistency-out/20260809-211610/win`
+- `consistency-out/20260809-212713-repro-item-bookkeeping/run1`
+- `consistency-out/20260809-212713-repro-item-bookkeeping/run2`
+- `consistency-out/20260809-212713-repro-item-bookkeeping/run3`
+- `consistency-out/20260809-212713-repro-item-bookkeeping/run4`
+- `consistency-out/20260809-212713-repro-item-bookkeeping/run5`
+- `consistency-out/20260809-212917/items`
+- `consistency-out/20260809-213017/items`
+- `consistency-out/20260809-213126/items`
+
+---
+
+# prompt set `4a176d4e2977` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+
+Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 7 | 2 |
+
+Sessions:
+- `consistency-out/20260809-213258/items`
+- `consistency-out/20260809-213825/items`
+
+---
+
+# prompt set `84d59878a565` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+
+Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 4 | 2 |
+
+Sessions:
+- `consistency-out/20260809-213406/items`
+- `consistency-out/20260809-213937/items`
+
+---
+
+# prompt set `2ce0c2bc4fc0` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+
+Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 4 | 2 |
+
+Sessions:
+- `consistency-out/20260809-213512/items`
+- `consistency-out/20260809-214045/items`
+
+---
+
+# prompt set `539008b38c68` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+
+Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 3 | 2 |
+
+Sessions:
+- `consistency-out/20260809-214340/items`
+- `consistency-out/20260809-214449/items`
+
+---
+
+# prompt set `613a99a6d3ba` — from 2026-08-09 — branch `claude/caveman-ultra-e87a7e`
+
+Built at: `c63381c`
+
+Branch `claude/caveman-ultra-e87a7e`, off `main` — everything the branches before
+it settled still holds; this one closes the last two failures the luna survey
+left standing, both by prompt wording only.
+
+Arm 1, in place: the put-down and pick-up worked examples are back in
+`charsheet-header.md`. They were measured at 9 of 9 in `263641f` and dropped by
+`8546623`, which replaced the whole worked list with the split/join/apart one —
+so the rule AGENTS.md says "had to go in the header" has not been in the header
+since. `### Inventory` loses the line, `# World State` gains it with where it
+lies, and no other section changes.
+
+An earlier wording of the same arm also widened the intro sentence to "what
+exists afterwards, and where". Reverted: in one run of three the DM answered it
+by inventing an `### Equipment on floor` section under Equipment and writing all
+three dropped items there, which is a new way to be wrong.
+
+Arm 2, in place: `charsheet-none.md` says the call is not the reply — the player
+never sees the tool call, so the same reply names every attribute, skill, gift
+and fault before the first scene.
+
+What it is trying to settle: an item the player put down stayed in `###
+Inventory` while `# World State` said it lay on the floor (3 of 3 on the
+handover-missing fixture, 2026-08-09), and character creation went straight from
+the player's line to the opening scene, showing nothing of the character it had
+just made (2 of 3 on its own fixture).
+
+## openai/gpt-5.6-luna (flex)
+
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 1 | 2 |
+
+Sessions:
+- `consistency-out/20260809-214658/items`
+- `consistency-out/20260809-214806/items`

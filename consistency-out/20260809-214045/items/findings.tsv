@@ -1,0 +1,7 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping
+
+type	proof	quote
+item-bookkeeping	charsheet-log.md	arm: sentence and three examples — the loose torch head stops existing
+item-bookkeeping	charsheet.md	the torch count never recovers: one torch and a bare shaft where three torches existed
