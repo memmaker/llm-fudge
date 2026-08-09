@@ -1,0 +1,8 @@
+# run: win
+# spoiled: no
+# judged: invented-content leak rule-broken creation-invisible state-desync item-bookkeeping no-charsheet
+
+type	proof	quote
+state-desync	charsheet.md	Location: Hall of Colors, Room 2 after the last turn narrated "Testa steps back through the open doorway into Room 1" (transcript.md:219)
+rule-broken	transcript.md:83	"It scrapes back to its starting spot with a grinding screech" — a repeat push moved the statue back to undo itself; the adventure says a moved statue stays where it was moved to
+creation-invisible	transcript.md:3-16	the reply to "pick her traits yourself" narrates the hall and names gear; no attribute, skill, gift or fault is ever shown

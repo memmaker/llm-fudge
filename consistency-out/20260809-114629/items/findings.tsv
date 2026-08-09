@@ -1,0 +1,6 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping invented-content state-desync handover-missing creation-invisible leak
+
+type	proof	quote
+invented-content	charsheet.md	Leather armor (+1 defensive), Flint and steel and Waterskin, none of them in the kit the player named

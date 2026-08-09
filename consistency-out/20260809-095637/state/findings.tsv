@@ -1,0 +1,7 @@
+# run: state
+# spoiled: no
+# judged: invented-content leak item-bookkeeping state-desync creation-invisible handover-missing rule-broken
+
+type	proof	quote
+leak	transcript.md:38-135	the whole world_update call was printed to the player as text — "<tool_call><function=world_update><parameter=sheet>" and the sheet inside it; nobody asked for it
+invented-content	charsheet.md	Spear +2, Leather armor (+1 defensive) and Flint and steel, none of them in the kit the player named

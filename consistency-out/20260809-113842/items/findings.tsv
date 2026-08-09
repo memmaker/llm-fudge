@@ -1,0 +1,8 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping invented-content state-desync handover-missing creation-invisible leak
+
+type	proof	quote
+item-bookkeeping	charsheet.md	"Iron spike" still in Inventory after the last turn narrated "She leaves it lying there" (transcript.md:106), and nothing on the floor in World State
+item-bookkeeping	charsheet.md	"Rope: one coil + 1 short lashed segment (torch head fix)" — the 15 m is gone as a number and the lashing is written beside the torch rather than in it, so no length exists anywhere
+invented-content	charsheet.md	Leather armor (+1 defensive), Rations x3, Waterskin and Flint and steel, none of them in the kit the player named

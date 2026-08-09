@@ -1,0 +1,7 @@
+# run: state
+# spoiled: no
+# judged: invented-content leak item-bookkeeping state-desync creation-invisible handover-missing
+
+type	proof	quote
+leak	transcript.md:55-157	the world_update call was printed to the player as text, "<tool_call><function=world_update><parameter=sheet>" and the whole sheet under it
+invented-content	charsheet.md	Longsword, Light Crossbow, Chain shirt, Shield and Bolts x20, none named; Silver: 6 and Rations x3 against the twelve coins and six rations that were — note the opening line arrived split across four player turns (transcript.md:3-19), so creation read a broken instruction

@@ -1,0 +1,9 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping invented-content leak state-desync handover-missing creation-invisible
+
+type	proof	quote
+item-bookkeeping	charsheet.md	"Torch head (loose)" and "Torch shaft (bare)" still listed beside "Torches x2" after the narration said "A whole torch again" and counted three (transcript.md:103-107)
+item-bookkeeping	charsheet.md	Rope (15 m) unchanged after a short length was cut from it and the narration itself said "I am counting it Rope (c. 14.5 m)"
+leak	transcript.md:105	"**Sheet after:** `Torch head (loose)` and `Torch shaft (bare)` — joined back into `Torches x1`" — the sheet edits narrated to the player, unasked, in several turns
+invented-content	charsheet.md	Leather armor (+1 defensive) and Flint and steel, neither of them in the kit the player named

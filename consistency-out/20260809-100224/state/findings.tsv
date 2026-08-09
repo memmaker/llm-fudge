@@ -1,0 +1,7 @@
+# run: state
+# spoiled: no
+# judged: invented-content item-bookkeeping state-desync creation-invisible handover-missing rule-broken
+
+type	proof	quote
+invented-content	charsheet.md	Longsword +2, Light Crossbow +2, Chain shirt (+2 defensive) and Flint and steel, none of them in the kit the player named
+creation-invisible	transcript.md:5	the reply to the creation line opens the scene; no attribute, skill, gift or fault is ever shown, and "Yes, that works." answers "Nothing changed. Sheet stands." (19)

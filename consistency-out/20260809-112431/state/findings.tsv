@@ -1,0 +1,7 @@
+# run: state
+# spoiled: no
+# judged: invented-content leak item-bookkeeping state-desync creation-invisible handover-missing
+
+type	proof	quote
+leak	transcript.md:93-178	the world_update call was printed to the player in the raw, "<|DSML|>tool_calls ... invoke name=world_update", sheet and all
+invented-content	charsheet.md	Leather armor (+1 defensive) and Flint and steel, neither of them in the kit the player named

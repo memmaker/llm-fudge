@@ -1,0 +1,6 @@
+# run: rules
+# spoiled: no
+# judged: invented-content leak rule-broken creation-invisible state-desync no-charsheet
+
+type	proof	quote
+creation-invisible	transcript.md:3-25	the reply to "pick her traits yourself" goes straight to the hall; the player is never shown a trait, and answers "Yes, that works." to nothing

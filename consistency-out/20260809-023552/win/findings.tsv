@@ -1,0 +1,7 @@
+# run: win
+# spoiled: no
+# judged: state-desync rule-broken invented-content creation-invisible leak no-charsheet handover-missing
+
+type	proof	quote
+state-desync	transcript.md:120-122	"Blue statue grinds across floor, settles onto red pedestal" and "The door — **opens**", then from 162 on the door is "locked, shut" and the blue statue back "at its starting spot"; the sheet keeps the door locked and the run dead-ends in Room 1
+handover-missing	charsheet.md	the turn that pushed the blue statue and opened the door left no trace in the sheet: World State still reads "Blue statue: starting position" and "Door: locked, closed"

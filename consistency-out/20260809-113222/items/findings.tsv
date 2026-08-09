@@ -1,0 +1,8 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping invented-content leak state-desync handover-missing creation-invisible
+
+type	proof	quote
+leak	transcript.md:41-43	the world_update call printed to the player in the raw, "<|DSML|>tool_calls ... invoke name=world_update", repeated across turns
+item-bookkeeping	charsheet.md	Rope (15 m) after a length was cut off it — the narration says so itself, "rope now a bit shorter — still a solid 15 m coil, just trimmed" (transcript.md:414)
+invented-content	charsheet.md	Leather armor (+1 defensive), Flint and steel and Waterskin, none of them in the kit the player named

@@ -1,0 +1,6 @@
+# run: death
+# spoiled: no
+# judged: no-charsheet creation-invisible invented-content state-desync rule-broken leak
+
+type	proof	quote
+no-charsheet	charsheet.md	the run never wrote one; the whole sheet was printed into the narration at death (transcript.md:184-243) and handed over nowhere

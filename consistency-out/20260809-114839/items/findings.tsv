@@ -1,0 +1,7 @@
+# run: items
+# spoiled: no
+# judged: item-bookkeeping invented-content leak state-desync handover-missing creation-invisible
+
+type	proof	quote
+leak	transcript.md	"Your sheet still says two purses of six — that's a slip. Fixing it." — the bookkeeping behind the curtain narrated to the player, unasked
+invented-content	charsheet.md	Leather armor (+1 defensive), Flint and steel and Waterskin, none of them in the kit the player named

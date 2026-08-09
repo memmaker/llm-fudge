@@ -1,0 +1,7 @@
+# run: probe
+# spoiled: no
+# judged: no-charsheet state-desync leak invented-content rule-broken creation-invisible item-bookkeeping
+
+type	proof	quote
+no-charsheet	charsheet.md	the run never wrote one; the sheet was shown in prose at creation (transcript.md:7-51) and handed over nowhere
+state-desync	transcript.md:91	"Blue statue still on red pedestal" after only the red statue was pushed, later "Has been since the start. You didn't move it" (208) — the door opened on a swap that never happened (117)

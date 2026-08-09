@@ -11,43 +11,63 @@ prompts were not the ones that commit names.
 
 ---
 
-# prompt set `60ab5c233eae` — from 2026-08-09 — branch `world-update-block`
+# prompt set `60ab5c233eae` — from 2026-08-09 — branch `unrecorded`
 
-Built at: `8546623`
+Built at: `unrecorded`
 
-Branch `world-update-block`.
+## openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
 
-Replaces the `<world-update>` prose block with a `world_update` tool call, and
-chases what happens after the handover rather than the handover itself. The
-sheet is pinned to the tail of every request, only the newest few calls stay in
-the history, and the missing-sheet note is the repair path when a turn changes
-the world and hands over nothing.
+| Type | Occurrences | Runs |
+| --- | --- | --- |
+| item-bookkeeping | 0 | 5 |
+| no-charsheet | 3 | 7 |
+| leak | 2 | 9 |
+| rule-broken | 1 | 9 |
+| invented-content | 3 | 10 |
+| handover-missing | 1 | 4 |
+| creation-invisible | 3 | 10 |
+| state-desync | 4 | 10 |
 
-What it is trying to settle: a turn that narrates a change and records nothing
-is common on every model tried and is usually repaired a turn later. The failure
-that ends adventures is the repair — a model that restates the pinned sheet
-instead of reconciling it against what it just narrated will keep a door locked
-that the player already opened.
+Sessions:
+- `consistency-out/20260809-020457/death`
+- `consistency-out/20260809-020457/probe`
+- `consistency-out/20260809-020457/rules`
+- `consistency-out/20260809-020457/win`
+- `consistency-out/20260809-023552/death`
+- `consistency-out/20260809-023552/rules`
+- `consistency-out/20260809-023552/win`
+- `consistency-out/20260809-095038/state`
+- `consistency-out/20260809-095637/state`
+- `consistency-out/20260809-100224/state`
 
 ## oc/deepseek-v4-flash-free
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| leak | 1 | 1 |
-| handover-missing | 1 | 1 |
+| leak | 5 | 7 |
+| invented-content | 6 | 6 |
+| handover-missing | 1 | 7 |
 | rule-broken | 1 | 1 |
 | secret-leaked | 2 | 3 |
-| item-bookkeeping | 1 | 1 |
-| creation-invisible | 4 | 6 |
-| state-desync | 2 | 4 |
+| item-bookkeeping | 6 | 7 |
+| creation-invisible | 4 | 12 |
+| state-desync | 2 | 10 |
 
 Sessions:
+- `consistency-out/20260809-112431/state`
+- `consistency-out/20260809-113222/items`
+- `consistency-out/20260809-113842/items`
+- `consistency-out/20260809-114629/items`
+- `consistency-out/20260809-114839/items`
+- `consistency-out/20260809-121106/items`
 - `consistency-out/20260809-122730/death`
 - `consistency-out/20260809-122730/items`
 - `consistency-out/20260809-122730/probe`
 - `consistency-out/20260809-122730/rules`
 - `consistency-out/20260809-122730/state`
 - `consistency-out/20260809-122730/win`
+
+Spoiled and excluded: 1 run(s).
 
 ## oc/nemotron-3-ultra-free
 

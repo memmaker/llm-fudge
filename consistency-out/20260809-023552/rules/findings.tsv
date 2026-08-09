@@ -1,0 +1,6 @@
+# run: rules
+# spoiled: no
+# judged: invented-content leak rule-broken creation-invisible state-desync no-charsheet
+
+type	proof	quote
+state-desync	transcript.md:218	"Just this hall, the two statues on pedestals" while the sheet has both statues at their starting position and both pedestals empty
