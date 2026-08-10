@@ -102,8 +102,8 @@ that was in neither, then the same question with numbers instead of lengths.
 | 5 | take the crossbow apart | stock, prod and string named; no whole crossbow |
 | 6 | pull a torch head off | torches down one, a bare shaft **and** a loose head |
 | — | ask what is carried | not scored: the one turn that names no object, so a part the sheet dropped at 6 cannot be handed back by the question itself |
-| 7 | string the shaft | a short bow; the shaft and string are in it, the stock and prod still loose |
-| 8 | restring the crossbow | crossbow whole; the short bow gone; the shaft loose again |
+| 7 | lash the dagger to the shaft with the crossbow string | a short spear; the dagger, the shaft and the string are in it, the stock and prod still loose |
+| 8 | take the spear apart, rebuild the crossbow | crossbow whole; the spear gone; the dagger and the bare shaft loose again |
 | 9 | lash the head back on with cut rope | torch whole again, the rope shorter by what was cut |
 | 10 | split the silver into two purses | twelve silver in two sixes |
 | 11 | tip them back together | twelve silver in one |

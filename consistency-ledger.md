@@ -1609,7 +1609,7 @@ Sessions:
 
 # prompt set `1146ff764773` — from 2026-08-10 — branch `main`
 
-Built at: `c5b0c08`, `c5b0c08-dirty`
+Built at: `c5b0c08`, `c5b0c08-dirty`, `00c7083-dirty`
 
 Branch `claude/caveman-ultra-e87a7e`, off `main`. Two rounds of work: the two
 failures the luna survey left standing, and then the bookkeeping block itself,
@@ -1667,9 +1667,12 @@ wrong.
 
 | Type | Occurrences | Runs |
 | --- | --- | --- |
-| item-bookkeeping | 1 | 3 |
+| item-bookkeeping | 3 | 6 |
 
 Sessions:
 - `consistency-out/20260810-090729/items`
 - `consistency-out/20260810-090840/items`
 - `consistency-out/20260810-090947/items`
+- `consistency-out/20260810-091639/items`
+- `consistency-out/20260810-091749/items`
+- `consistency-out/20260810-091906/items`

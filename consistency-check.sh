@@ -178,6 +178,15 @@ Yes, that works.'
 # question with numbers instead of lengths, which a model can get right by
 # arithmetic while getting the rope wrong by imagination.
 #
+# Action 7 was a short bow made from a torch shaft and the crossbow string until
+# 2026-08-10. The DM refused it in 5 of 5 runs — a bare torch shaft is not a bow
+# stave — so the row scored a miss for the model being right, which measures the
+# rubric and not the DM. It is a spear now: a dagger lashed to a shaft with cord
+# is a thing that works, and it keeps what the row was for. Two parts from two
+# different objects become a third that was in neither, and the string ends up
+# inside it, so undoing that to rebuild the crossbow is still the nested join
+# that no wording has fixed.
+#
 # The inventory question after the torch is a read-only probe and scores nothing.
 # It is there because every other line names the object it is about, so a part
 # the sheet quietly dropped gets handed back by the next player line before
@@ -194,8 +203,8 @@ script_items() {
 		I take my crossbow apart into stock, prod and string.
 		I pull the head off one torch and keep the bare wooden shaft.
 		What am I carrying? Show me my inventory.
-		I string the crossbow's string onto the bare shaft to make a short bow.
-		I take the string off the shaft and put the crossbow back together.
+		I lash my dagger to the bare torch shaft with the crossbow string to make a short spear.
+		I take the spear apart and put the crossbow back together.
 		I lash the torch head back onto its shaft with a short length cut from my rope.
 		I split my silver coins into two purses of six.
 		I tip both purses back into one.
