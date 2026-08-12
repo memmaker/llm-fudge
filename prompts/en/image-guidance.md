@@ -15,4 +15,21 @@ describing only what is visible — no story, no dialogue, no plot, and no fact
 the picture cannot show. The goal is a consistent, detailed visual record of
 each scene.
 
+Every detail must come from the world state on the character sheet or from what
+the fiction has already established. Do not invent a person, creature, object,
+door, window or piece of furniture here that the game does not have — the image
+block is a record, not a place where the world grows. If something in the scene
+was never established, either establish it in the prose first or leave it out of
+the picture.
+
+Completeness is what keeps the image model from filling gaps on its own: every
+person and every object that is present must be named, described and placed in
+relation to the others. Anything you leave out is not absent from the picture —
+it is invented.
+
+Close the block with this line, so the model adds nothing beyond it:
+
+`Depict only what is described above. No additional characters, creatures,
+objects, text or signage.`
+
 Specify a comic book style reminiscent of fantasy drawings of the 80s.

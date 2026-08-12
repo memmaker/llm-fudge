@@ -19,3 +19,4 @@ consistency-out/**
 !consistency-out/**/findings.tsv
 !consistency-out/**/metadata.json
 secrets-out/
+charsheet.md

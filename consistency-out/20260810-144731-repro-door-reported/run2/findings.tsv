@@ -1,0 +1,7 @@
+# run: run2
+# spoiled: no
+# judged: rule-broken
+
+type	proof	quote
+rule-broken	transcript.md, turn 3	"You strain against the red statue and manage to lift it clear of the blue pedestal." — the briefing says the statues cannot be carried.
+state-desync	transcript.md, turns 1-4	"The locked door remains shut" on the pushing turn, then "You step through the open stone doorway" two turns later with nothing in between that opened it.

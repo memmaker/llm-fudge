@@ -15,5 +15,22 @@ anschaulich und niemals vage. Präsens, nur Sichtbares – keine Geschichte, kei
 Dialog, keine Handlung und keine Tatsache, die das Bild nicht zeigen kann. Ziel
 ist ein konsistentes, detailliertes visuelles Protokoll jeder Szene.
 
+Jedes Detail muss aus dem Weltzustand im Charakterbogen stammen oder aus dem,
+was die Fiktion bereits festgelegt hat. Erfinde hier keine Person, kein Wesen,
+keinen Gegenstand, keine Tür, kein Fenster und kein Möbelstück, das es im Spiel
+nicht gibt – der Bildblock ist ein Protokoll und kein Ort, an dem die Welt
+wächst. Was in der Szene nie festgelegt wurde, legst du zuerst in der Prosa fest
+oder lässt es aus dem Bild heraus.
+
+Vollständigkeit ist das, was das Bildmodell davon abhält, Lücken selbst zu
+füllen: Jede anwesende Figur und jeder anwesende Gegenstand muss benannt,
+beschrieben und im Verhältnis zu den anderen verortet sein. Was du weglässt,
+fehlt im Bild nicht – es wird erfunden.
+
+Schließe den Block mit dieser Zeile ab, damit das Modell nichts hinzufügt:
+
+`Stelle ausschließlich das Beschriebene dar. Keine zusätzlichen Figuren, Wesen,
+Gegenstände, Schrift oder Schilder.`
+
 Verwende einen ultrarealistischen Stil, inspiriert von Pulp Fiction und 2001:
 Odyssee im Weltraum.

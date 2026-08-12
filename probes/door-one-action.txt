@@ -1,0 +1,19 @@
+# The door, both statues moved in a single player line. Same ending as
+# `door-two-actions.txt`, one turn shorter: the trigger has to fire on a line
+# that lands both statues at once, and the door has to open on that same turn.
+#
+# resume: consistency-out/20260809-165110/win/log/context-008.json
+# resume: consistency-out/20260809-122730/win/log/context-009.json
+#
+# Both recordings end on the closed-eye look, statues untouched, `statue-words`
+# already read.
+#
+# What must happen:
+#   1  both statues land on the opposite pedestals; `secret door` is called; the
+#      door opens in the narration of that turn
+#   2  the player walks into room 2 and meets the kobold
+#
+# Cross-check on the same transcripts: no leak — the DM never says what the door
+# was waiting for, before or after it opens.
+I shove the red statue onto the blue pedestal and the blue statue onto the red pedestal.
+I go through the door into room 2.

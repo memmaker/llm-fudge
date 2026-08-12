@@ -22,11 +22,27 @@ cd "$(dirname "$0")"
 
 TYPE=${1:?type — one of: $(ls repro/*.txt | xargs -n1 basename | sed 's/\.txt//' | tr '\n' ' ')}
 RUNS=${2:-3}
-SCRIPT="repro/$TYPE.txt"
-[ -f "$SCRIPT" ] || { echo "no script for '$TYPE'"; exit 1; }
-grep -qxF "$TYPE" consistency-types.txt || { echo "'$TYPE' is not in consistency-types.txt"; exit 1; }
+# The third argument is the language, for a probe written in one: it reaches the
+# binary as -lang and picks the prompt and settings tree with it.
+LANG_ARG=${3:-}
+# A path instead of a type runs that file as it stands: the probes under probes/
+# ask one question each and are not a finding vocabulary, so they are not gated
+# on consistency-types.txt and their findings.tsv is left for the judge to name.
+if [ -f "$TYPE" ]; then
+	SCRIPT="$TYPE"
+	TYPE=$(basename "$SCRIPT" .txt)
+	JUDGED=""
+else
+	SCRIPT="repro/$TYPE.txt"
+	JUDGED="$TYPE"
+	[ -f "$SCRIPT" ] || { echo "no script for '$TYPE'"; exit 1; }
+	grep -qxF "$TYPE" consistency-types.txt || { echo "'$TYPE' is not in consistency-types.txt"; exit 1; }
+fi
 
-RESUME=$(sed -n 's|^# resume: ||p' "$SCRIPT" | head -1)
+# A script may name more than one recording to resume into, and they differ in
+# ways that turn out to matter (probes/join.txt). Runs take them in turn, so a
+# fix that only works from one history shows up as half the runs.
+RESUMES=($(sed -n 's|^# resume: ||p' "$SCRIPT"))
 OUT="consistency-out/$(date +%Y%m%d-%H%M%S)-repro-$TYPE"
 mkdir -p "$OUT"
 
@@ -36,9 +52,12 @@ mkdir -p "$OUT"
 go build -o fudge .
 for i in $(seq 1 "$RUNS"); do
 	args=(-debug -script "$OUT/$TYPE.txt")
-	if [ -n "$RESUME" ]; then
+	if [ -n "$LANG_ARG" ]; then args+=(-lang "$LANG_ARG"); fi
+	if [ ${#RESUMES[@]} -gt 0 ]; then
+		RESUME=${RESUMES[$(( (i - 1) % ${#RESUMES[@]} ))]}
 		[ -f "$RESUME" ] || { echo "resume point missing: $RESUME"; exit 1; }
 		args+=(-resume "$RESUME")
+		echo "run $i: resuming from $RESUME"
 	else
 		args+=(-setting medieval-fantasy -adventure The-Hall-of-Colors)
 	fi
@@ -51,13 +70,13 @@ for i in $(seq 1 "$RUNS"); do
 	cp -R "saves/$session" "$OUT/run$i"
 
 	if grep -q 'API 429' "$OUT/run$i-terminal.log" || grep -q 'did not narrate this turn' "$OUT/run$i-terminal.log"; then
-		printf '# run: run%s\n# spoiled: yes\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$TYPE" >"$OUT/run$i/findings.tsv"
+		printf '# run: run%s\n# spoiled: yes\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$JUDGED" >"$OUT/run$i/findings.tsv"
 		echo "run $i: SPOILED (backend), verdict pre-filled"
 	else
 		# The header is pre-filled because the denominator is not the judge's to
 		# choose: this script exists to read one type, and a run of it that found
 		# nothing still counts as a run that looked.
-		printf '# run: run%s\n# spoiled: no\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$TYPE" >"$OUT/run$i/findings.tsv"
+		printf '# run: run%s\n# spoiled: no\n# judged: %s\n\ntype\tproof\tquote\n' "$i" "$JUDGED" >"$OUT/run$i/findings.tsv"
 		echo "run $i: done — read it and add a row to $OUT/run$i/findings.tsv if it occurred"
 	fi
 done

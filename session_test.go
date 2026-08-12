@@ -415,6 +415,52 @@ func TestTheBranchIsFoundFromAWorktree(t *testing.T) {
 	}
 }
 
+// The provider record used to be read by the library; it is read here now. A
+// config beside the run wins over the one in the home directory, and a run with
+// neither still gets a map it can read defaults out of.
+func TestTheProviderConfigIsReadFromTheRunThenFromHome(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".config", "gollum"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".config", "gollum", "config.rec"),
+		[]byte("provider: gemini\nmodel: from-home\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("the run's own config wins", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		t.Setenv("HOME", home)
+		if err := os.WriteFile("llm_model.rec",
+			[]byte("provider: openai\nmodel: from-the-run\nbase_url: http://localhost:20128/v1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg := modelConfig()
+		if got := cfg.GetStringOrDefault("model", ""); got != "from-the-run" {
+			t.Errorf("model = %q, want from-the-run", got)
+		}
+		if got := cfg.GetStringOrDefault("base_url", ""); got != "http://localhost:20128/v1" {
+			t.Errorf("base_url = %q, want the local gateway", got)
+		}
+	})
+
+	t.Run("home is the fallback", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		t.Setenv("HOME", home)
+		if got := modelConfig().GetStringOrDefault("model", ""); got != "from-home" {
+			t.Errorf("model = %q, want from-home", got)
+		}
+	})
+
+	t.Run("neither, and the defaults stand", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		t.Setenv("HOME", t.TempDir())
+		if got := modelConfig().GetStringOrDefault("provider", "openai"); got != "openai" {
+			t.Errorf("provider = %q, want the default openai", got)
+		}
+	})
+}
+
 // The tier is optional and its absence has to mean today's request: a config
 // that does not mention it, or is not there at all, asks for no tier.
 func TestServiceTierIsReadFromTheConfigAndOptional(t *testing.T) {
@@ -428,13 +474,18 @@ func TestServiceTierIsReadFromTheConfigAndOptional(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
+			// A home of its own: with no config in the working directory the read
+			// falls back to ~/.config/gollum/config.rec, and this machine's own
+			// config is not what the case is about.
+			t.Setenv("HOME", t.TempDir())
 			if c.config != "" {
 				if err := os.WriteFile("llm_model.rec", []byte(c.config), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if got := serviceTierFromConfig(); got != c.want {
-				t.Errorf("serviceTierFromConfig() = %q, want %q", got, c.want)
+			got := llm.ServiceTier(modelConfig().GetStringOrDefault("service_tier", ""))
+			if got != c.want {
+				t.Errorf("service tier = %q, want %q", got, c.want)
 			}
 		})
 	}

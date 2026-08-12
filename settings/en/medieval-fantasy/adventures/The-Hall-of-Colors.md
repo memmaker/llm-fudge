@@ -134,7 +134,7 @@ read with the `secret` tool, one at a time, and only once its trigger has fired:
 | Trigger | Secret |
 |---|---|
 | The player typed that they close one eye and look at a statue | `statue-words` |
-| The player typed a push that has just landed a statue on a pedestal | `door` |
+| The player's line moved a statue onto a pedestal, in whatever words — a push, a shove, a swap, or a report that they have done it | `door` |
 
 The closed-eye reading always works and needs no check.
 

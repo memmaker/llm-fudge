@@ -1,0 +1,6 @@
+# run: run1
+# spoiled: no
+# judged: rule-broken
+
+type	proof	quote
+rule-broken	transcript.md, all four turns; log/context-final.json holds no `secret` call	"You press against the closed stone door, but it does not open beneath your hand." — both statues stood on the opposite pedestals from turn 1 on, the door trigger never fired, and the hall stayed unsolvable.

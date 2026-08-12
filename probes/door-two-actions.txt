@@ -1,0 +1,23 @@
+# The door, pushed open in two separate lines. This is the shape every scripted
+# run has used since the beginning — one statue per player line — and it is the
+# baseline the one-action probe is measured against.
+#
+# resume: consistency-out/20260809-165110/win/log/context-008.json
+# resume: consistency-out/20260809-122730/win/log/context-009.json
+#
+# Both recordings end on the closed-eye look, statues untouched, `statue-words`
+# already read. Two of them because a fix that only works from one history is a
+# fix for that history.
+#
+# What must happen:
+#   1  red statue lands on the blue pedestal; `secret door` is called (the
+#      trigger fired); nothing opens, no hint that it was close
+#   2  blue statue lands on the red pedestal; the door opens in the narration
+#   3  the player walks into room 2 and meets the kobold
+#
+# Cross-check on the same transcripts: no leak. The DM must never say what the
+# door is waiting for, and after line 1 it must not tell the player the
+# arrangement was nearly right.
+I shove the red statue onto the blue pedestal with all my strength.
+I shove the blue statue onto the red pedestal with all my strength.
+I go through the door into room 2.

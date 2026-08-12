@@ -1,0 +1,21 @@
+# The door with no clue read first. The two resumed door probes both start from
+# a history where the player already closed one eye and the DM already read
+# `statue-words`, so the only thing they measure is the second trigger. A player
+# who never looks that way reaches the pushes with no secret read at all, and
+# that is the run the door was reported dead in.
+#
+# No resume: the closed-eye turn is exactly what has to be absent, and no
+# recording is missing it.
+#
+# What must happen:
+#   1-2 nothing given away by the sign or the pedestals
+#   3   red statue lands on the blue pedestal; `secret door` is called; nothing
+#       opens and no hint that it was close
+#   4   blue statue lands on the red pedestal; the door opens
+#   5   the player walks into room 2 and meets the kobold
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I examine the sign and both pedestals.
+I shove the red statue onto the blue pedestal with all my strength.
+I shove the blue statue onto the red pedestal with all my strength.
+I go through the door into room 2.

@@ -1,0 +1,27 @@
+# The door as a real player closed it off: saves/0855-the-hall-of-colors, played
+# by hand on 2026-08-10 at commit 2312c2d-dirty. Both statues were swapped in one
+# line, worded as a report of what was done — "I pushed the blue statue on the
+# red pedestal and the red statue on the blue pedestal." No `secret door` call
+# followed, so the door never opened, and it could not open afterwards either:
+# the trigger is push-shaped, and the pushes were over.
+#
+# The same arrangement reached with "I shove ... with all my strength" fires the
+# trigger in 8 of 8 (probes/door-one-action.txt, probes/door-two-actions.txt).
+# The difference under test is the wording, not the arrangement.
+#
+# No resume: this is the whole shape, from a character who has read nothing.
+#
+# What must happen:
+#   3  both statues land on the opposite pedestals; `secret door` is called; the
+#      door opens
+#   4  a shut door here is the failure, and the last two lines say whether the
+#      hall is recoverable at all once the pushing turn has passed
+#
+# Cross-check on the same transcripts: no leak, and no lifting — the statues
+# cannot be carried, and line 5 asks for exactly that.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I pushed the blue statue on the red pedestal and the red statue on the blue pedestal.
+Knock on the door.
+Lift the red statue and then place it back on the blue pedestal.
+I go through the door into room 2.

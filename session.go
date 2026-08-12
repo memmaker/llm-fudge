@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	rec_files "github.com/memmaker/gollum/rec-files"
+	recfile "github.com/memmaker/rec-files"
 
 	"fudge/prompts"
 
@@ -95,6 +95,9 @@ type session struct {
 	// spoken is everything the player has read this turn, in the order they
 	// read it. A turn can speak more than once, and the scene is all of it.
 	spoken []string
+	// imgHandedOver records that this turn's picture arrived as a tool call
+	// rather than as an <img> block, so the coverage marker counts both.
+	imgHandedOver bool
 	// requests numbers every call made to the model, for the debug log.
 	requests int
 	// pendingLogs holds debug transcripts made before the session directory
@@ -159,38 +162,78 @@ func newSession() *session {
 // from newSession so a test can build a session without reaching for a
 // provider config that is not there.
 func (s *session) connect() error {
-	client, model, _, err := llm.InitClientFromHome()
+	cfg := modelConfig()
+	provider := cfg.GetStringOrDefault("provider", "openai")
+	apiKey := providerAPIKey(provider)
+	// LM Studio is local and wants no key; every other provider without one is a
+	// run that would fail on its first request instead of here.
+	if apiKey == "" && provider != "lmstudio" {
+		return fmt.Errorf("no API key found for provider %s; set it in the environment or write it into .apikey", provider)
+	}
+	model := cfg.GetStringOrDefault("model", "")
+	client, err := llm.New(llm.Config{
+		Provider: provider,
+		APIKey:   apiKey,
+		Model:    model,
+		BaseURL:  cfg.GetStringOrDefault("base_url", ""),
+	})
 	if err != nil {
 		return err
 	}
 	s.client, s.model = client, model
-	s.serviceTier = serviceTierFromConfig()
+	// OpenAI's own parameter name and its own values, so a run asks for flex
+	// processing by writing `service_tier: flex` beside the model. Providers that
+	// are not OpenAI drop the field in transport, so passing it always is safe,
+	// and a config silent about it asks for today's default tier.
+	s.serviceTier = llm.ServiceTier(cfg.GetStringOrDefault("service_tier", ""))
 	return nil
 }
 
-// serviceTierFromConfig reads the optional `service_tier` field out of the same
-// llm_model.rec the client was built from — OpenAI's own parameter name and its
-// own values, so a run asks for flex processing by writing `service_tier: flex`
-// beside the model.
-//
-// Read here rather than in InitClientFromHome because that returns a fixed four
-// values to every program that uses the library, and one project wanting a
-// cheaper tier is not a reason to change what all of them are handed. Providers
-// that are not OpenAI drop the field in transport, so passing it always is safe.
-//
-// A config that is missing, unreadable or silent about the tier means no tier,
-// which is exactly today's request.
-func serviceTierFromConfig() llm.ServiceTier {
-	f, err := os.Open("llm_model.rec")
-	if err != nil {
-		return ""
+// modelConfig is the provider record the run is played against: llm_model.rec in
+// the working directory, or ~/.config/gollum/config.rec when there is none — the
+// same two places gollum's own bootstrap looked before the library dropped it.
+// A missing or unreadable config is an empty map, so every caller reads defaults
+// rather than an error it cannot act on.
+func modelConfig() recfile.DataMap {
+	paths := []string{"llm_model.rec"}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".config", "gollum", "config.rec"))
 	}
-	defer f.Close()
-	recs := rec_files.Read(f)
-	if len(recs) == 0 {
-		return ""
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		recs := recfile.Read(f)
+		f.Close()
+		if len(recs) == 0 {
+			continue
+		}
+		return recs[0].ToMap(",")
 	}
-	return llm.ServiceTier(recs[0].ToMap()["service_tier"])
+	return recfile.DataMap{}
+}
+
+// providerAPIKey is the key for a provider: its own environment variables first,
+// then a .apikey file beside the run.
+func providerAPIKey(provider string) string {
+	envNames := map[string][]string{
+		"openai":      {"OPENAI_API_KEY", "OPENAI_API_TOKEN"},
+		"huggingface": {"HUGGINGFACE_API_KEY", "HF_API_KEY"},
+		"copilot":     {"GITHUB_TOKEN", "COPILOT_TOKEN"},
+		"gemini":      {"GEMINI_API_KEY", "GOOGLE_API_KEY"},
+		"lmstudio":    {"LMSTUDIO_API_KEY"},
+	}[provider]
+	if envNames == nil {
+		envNames = []string{"OPENAI_API_KEY", "OPENAI_API_TOKEN"}
+	}
+	for _, name := range envNames {
+		if key := os.Getenv(name); key != "" {
+			return key
+		}
+	}
+	key, _ := os.ReadFile(".apikey")
+	return strings.TrimSpace(string(key))
 }
 
 // sessionMeta is what a session knows about itself before a word is played. It
@@ -441,6 +484,12 @@ func (s *session) flushLogs() {
 // without trace.
 func (s *session) writeCharsheet(sheet string) error {
 	if err := os.WriteFile(s.charsheetPath(), []byte(sheet+"\n"), 0644); err != nil {
+		return err
+	}
+	// A second copy beside savesRoot, always at the same path, so a watcher has
+	// one file to follow instead of a new one per session. The session copy stays
+	// the one that is read back.
+	if err := os.WriteFile(charsheetFile, []byte(sheet+"\n"), 0644); err != nil {
 		return err
 	}
 	// Set here rather than at the call sites: this is the sheet's only writer, so

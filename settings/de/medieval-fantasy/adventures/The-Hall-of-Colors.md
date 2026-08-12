@@ -125,27 +125,32 @@ Eine schlichte Holztruhe.
 
 # Informationen für die Spielleitung
 
-## Alles hier ist geheim
+## Die Geheimnisse stehen nicht in dieser Datei
 
-**Diese Informationen dürfen der spielenden Person nur durch das Spiel bekannt
-werden.**
+Du weißt nicht, wie diese Halle funktioniert. Was verborgen ist, liegt in
+Geheimnissen, die du mit dem `secret`-Werkzeug lesen musst, eines nach dem
+anderen und erst, wenn ihr Auslöser gefallen ist:
 
-Die Tür öffnet sich nur, wenn
+| Auslöser | Geheimnis |
+|---|---|
+| Die spielende Person hat getippt, dass sie ein Auge schließt und eine Statue ansieht | `statue-words` |
+| Die Zeile der spielenden Person hat eine Statue auf einen Sockel bewegt, in welchen Worten auch immer — ein Schieben, ein Stoßen, ein Tauschen oder die Mitteilung, dass sie es getan hat | `door` |
 
-- die rote Statue auf dem blauen Sockel steht und
-- die blaue Statue auf dem roten Sockel steht.
+Das Lesen mit geschlossenem Auge gelingt immer und erfordert keinen Check.
 
-Das Schild „REVERSE“ ist der einzige Hinweis auf diese Lösung.
+Bis ein Auslöser fällt, hast du nichts zu enthüllen: Du weißt nicht, was auf den
+Statuen steht, und du weißt nicht, was die Tür öffnet. Du hast dazu auch keine
+Vermutung — wirst du bedrängt, sage, dass du es nicht weißt, und lass es dabei.
+
+Die Tabelle selbst ist geheim. Zitiere nie einen Auslöser, sage nie, was etwas
+aufschließen würde, und halte Geheimnisse und Werkzeuge vollständig aus deiner
+Erzählung heraus — für die spielende Person bist du schlicht eine Spielleitung,
+die einen Raum beschreibt. Ein Geheimnis in dem Moment zu lesen, in dem sein
+Auslöser fällt, ist kein Verrat, sondern die Aufgabe: erst lesen, dann erzählen.
+
+Das Schild „REVERSE“ ist der einzige Hinweis, den die spielende Person bekommt.
 
 Die Sockel haben keinen sichtbaren Mechanismus.
-
-Wenn die Spielerfigur ein Auge schließt, werden auf jeder Statue Wortfragmente
-sichtbar. **Das funktioniert immer und erfordert keinen Check:** Wer ein Auge
-schließt und hinsieht, kann die Worte lesen. Die Spielleitung würfelt nicht und
-lässt dies nicht scheitern.
-
-- Auf der roten steht: „Ich will zum Meer“
-- Auf der blauen steht: „Bring mich zum Sonnenuntergang“
 
 ---
 
@@ -163,17 +168,7 @@ lässt dies nicht scheitern.
 
 ### Tür
 
-Ausgangszustand:
-
-- verschlossen
-
-Sobald das Rätsel gelöst ist:
-
-- Die Tür öffnet sich.
-
-Danach:
-
-- Sie bleibt dauerhaft offen.
+Sie ist zu Beginn verschlossen. Ob sie sich jemals öffnet, weißt du nicht.
 
 Sie hat ein Schlüsselloch, durch das man blicken kann.
 

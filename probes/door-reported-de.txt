@@ -1,0 +1,19 @@
+# probes/door-reported.txt auf Deutsch. Die deutsche Fassung des Abenteuers hatte
+# bis 2026-08-10 gar keine Geheimnisse: Türbedingung und Statuenworte standen
+# offen im Briefing. Dieser Probe misst die Portierung — feuert der Auslöser, und
+# öffnet sich die Tür in demselben Zug?
+#
+# Kein Resume: es gibt keine deutsche Aufzeichnung, in die man springen könnte.
+#
+# Was passieren muss:
+#   3  beide Statuen stehen über Kreuz; `secret door` wird gerufen; die Tür geht auf
+#   5  das Anheben scheitert — die Statuen können nicht getragen werden
+#
+# Gegenprobe auf denselben Transkripten: kein Verrat. Die Spielleitung sagt nie,
+# worauf die Tür wartet.
+Eine vorsichtige Söldnerin namens Testa. Wähle ihre Eigenschaften selbst und beginne dann die erste Szene.
+Ja, das passt.
+Ich habe die blaue Statue auf den roten Sockel und die rote Statue auf den blauen Sockel geschoben.
+Ich klopfe an die Tür.
+Hebe die rote Statue hoch und stelle sie wieder auf den blauen Sockel.
+Ich gehe durch die Tür in Raum 2.
