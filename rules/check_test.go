@@ -6,15 +6,21 @@ import (
 	"testing"
 )
 
-func TestLevelRoundTrips(t *testing.T) {
-	for _, name := range []string{"Terrible", "Poor", "Mediocre", "Fair", "Good", "Great", "Superb"} {
+func TestLadderIsSevenLevelsInOrder(t *testing.T) {
+	// The names in order, and the values they have to carry: a check reads the
+	// difficulty off the same scale, so a level worth the wrong number silently
+	// moves every roll made against it.
+	for want, name := range []string{"Terrible", "Poor", "Mediocre", "Fair", "Good", "Great", "Superb"} {
 		v, ok := LevelValue(name)
 		if !ok {
 			t.Fatalf("LevelValue(%q) not recognised", name)
 		}
-		if got := LevelName(v); got != name {
-			t.Fatalf("LevelName(LevelValue(%q)) = %q", name, got)
+		if v != want-3 {
+			t.Fatalf("LevelValue(%q) = %d, want %d", name, v, want-3)
 		}
+	}
+	if len(ladder) != 7 {
+		t.Fatalf("the ladder holds %d levels, not 7", len(ladder))
 	}
 	if _, ok := LevelValue("Splendid"); ok {
 		t.Fatal("invented level accepted")

@@ -22,8 +22,9 @@ What to use instead, in order of preference:
    question is genuinely about meaning ("did the DM give away the solution?").
    A model reads prose; a regex does not.
 
-This applies to `consistency-check.sh` and `secrets-check.sh` as they stand —
-both currently grep, and both are wrong for it. See the TODO below.
+This applies to `consistency-check.sh`, which plays the scripts under `checks/`
+and renders no verdict on any of them: the artifacts go to a judge. See the
+TODO below for what its older, grep-based numbers are worth.
 
 **HARD RULE: NEVER EVER GREP THE CHARSHEET.** Not with `grep`, not with a `sed`
 range, not "just to pull out the Inventory section" — no pattern over
@@ -77,7 +78,7 @@ recur at some rate. The loop is therefore: reproduce, count, fix, count again.
    distinct player actions, not the same action three times — one phrasing that
    happens not to trigger it would otherwise read as a fix. Keep the script as
    short as the issue allows: every turn before the interesting one is latency
-   and money. Model it on `secrets-check.sh`, which asks after the statues, the
+   and money. Model it on `checks/secrets.txt`, which asks after the statues, the
    sign, the solution and the GM's notes — four ways into one secret.
 
 3. **Resume into the failing turn instead of playing up to it.** A full pass is
@@ -459,12 +460,13 @@ produces exactly this, and it is the honest reading.
   trigger and its miss was unrepairable by construction — the 4 of 5
   handover-missing measured on `bb/…nemotron-3-super-120b` were all the last
   turn.
-- **Both check scripts grade by grepping prose, which the rule above forbids.**
-  `secrets-check.sh` matches leak phrases against the terminal capture;
-  `consistency-check.sh` has a red-flags grep over the same. Every number either
-  has produced — including the 0/8 → 20/22 secret-keeping result recorded in ADR
-  008 — is only as good as a pattern list, and must be treated as indicative
-  rather than measured until they are rebuilt.
+- **The check scripts used to grade by grepping prose, which the rule above
+  forbids.** `secrets-check.sh` matched leak phrases against the terminal
+  capture; `consistency-check.sh` had a red-flags grep over the same. Both greps
+  are gone — the first script with them, folded into `checks/secrets.txt` — but
+  every number they produced, including the 0/8 → 20/22 secret-keeping result
+  recorded in ADR 008, is only as good as a pattern list and stays indicative
+  rather than measured.
   - For secret-keeping specifically there is a structural answer that needs no
     prose at all: since ADR 008 the real secret text can only reach the DM
     through a `secret` tool call, and every tool call is recorded in

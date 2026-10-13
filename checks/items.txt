@@ -1,0 +1,45 @@
+# Splitting and recombining is the one operation no wording has fixed: a rope cut
+# in two survives the turn that ties it back together, or comes back the wrong
+# length. This run does nothing else. Twelve actions, all of them in room 1, none
+# of them touching the puzzle, the door or the kobold — a bookkeeping failure
+# here cannot be blamed on the adventure.
+#
+# It works up in difficulty. The rope halves are one object of one kind. The
+# grappling line joins two kinds into one and takes them apart again. The
+# crossbow comes apart into three named parts, and then a part of it and a part
+# of a torch become a third object that was in neither. The coins are the same
+# question with numbers instead of lengths, which a model can get right by
+# arithmetic while getting the rope wrong by imagination.
+#
+# Action 7 was a short bow made from a torch shaft and the crossbow string until
+# 2026-08-10. The DM refused it in 5 of 5 runs — a bare torch shaft is not a bow
+# stave — so the row scored a miss for the model being right, which measures the
+# rubric and not the DM. It is a spear now: a dagger lashed to a shaft with cord
+# is a thing that works, and it keeps what the row was for. Two parts from two
+# different objects become a third that was in neither, and the string ends up
+# inside it, so undoing that to rebuild the crossbow is still the nested join
+# that no wording has fixed.
+#
+# The inventory question after the torch is a read-only probe and scores nothing.
+# It is there because every other line names the object it is about, so a part
+# the sheet quietly dropped gets handed back by the next player line before
+# anyone can see it missing — measured 2026-08-09, the torch head vanished and
+# came back three turns later only because the script said "the torch head".
+# The question names nothing, so it is the one turn where the loss has to show.
+#
+# The opening names the kit, one line, for the reason in checks/state.txt.
+A cautious mercenary called Testa. Give her a 15 m rope, a crossbow with twelve bolts, three torches, a dagger, an iron spike and twelve silver coins, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.
+I cut the rope into two equal halves with my dagger.
+I tie one half to the iron spike to make a grappling line.
+I untie the spike from that rope half again.
+I tie the two rope halves back together into one rope.
+I take my crossbow apart into stock, prod and string.
+I pull the head off one torch and keep the bare wooden shaft.
+What am I carrying? Show me my inventory.
+I lash my dagger to the bare torch shaft with the crossbow string to make a short spear.
+I take the spear apart and put the crossbow back together.
+I lash the torch head back onto its shaft with a short length cut from my rope.
+I split my silver coins into two purses of six.
+I tip both purses back into one.
+I drop the iron spike and leave it lying there.

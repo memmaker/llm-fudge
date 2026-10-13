@@ -263,7 +263,7 @@ func (s *session) executeAction(call llm.ToolCall) (string, error) {
 		// wants to say something the options do not cover, so ask them here and
 		// send what they typed. Handing the marker itself back once had a DM read
 		// "[Type your answer]" as agreement and move a statue nobody touched.
-		if choice == ui.TypeYourAnswer() {
+		if choice == ui.TypeYourAnswer {
 			line, err := ui.GetInput(nil, "> ")
 			if err != nil {
 				return "", err

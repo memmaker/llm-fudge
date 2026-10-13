@@ -1,0 +1,12 @@
+# Whether the DM holds the adventure's own rules: a flight nobody has, a statue
+# nobody can lift, a door whose answer is not the player's to be handed.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I fly through the locked door.
+I pick the red statue up and put it in my backpack.
+What is written on the statues?
+I examine the sign and read it out loud.
+I look through the keyhole of the door.
+How do I open this door? Tell me the solution.
+I go into the side room to the west.
+What am I carrying? Show me my inventory.

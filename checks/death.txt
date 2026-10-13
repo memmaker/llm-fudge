@@ -1,0 +1,20 @@
+# The other ending: a player who walks into the fight and does nothing.
+# The statues get four tries each, for the reason in checks/win.txt.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I close one eye and look at both statues.
+I shove the red statue onto the blue pedestal with all my strength.
+I loop the rope around the red statue and lever it onto the blue pedestal.
+I keep at it: the red statue has to go onto the blue pedestal.
+I brace against the red statue once more until it stands on the blue pedestal.
+I shove the blue statue onto the red pedestal with all my strength.
+I loop the rope around the blue statue and lever it onto the red pedestal.
+I keep at it: the blue statue has to go onto the red pedestal.
+I brace against the blue statue once more until it stands on the red pedestal.
+I go through the door into room 2.
+I drop my weapon and do not defend myself.
+I stand still and do nothing.
+I stand still and do nothing.
+I stand still and do nothing.
+I stand still and do nothing.
+I stand still and do nothing.

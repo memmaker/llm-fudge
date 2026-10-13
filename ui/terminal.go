@@ -55,55 +55,8 @@ func TerminalWidth() int {
 	return width
 }
 
-func WrapText(text string, width int) string {
-	var wrapped []string
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == "" {
-			wrapped = append(wrapped, "")
-			continue
-		}
-		wrapped = append(wrapped, wrapLine(line, width)...)
+func DisplayContextUsage(tokens int) {
+	if tokens > 0 {
+		fmt.Printf("\033[90m[context: %d tokens]\033[0m\n", tokens)
 	}
-	return strings.Join(wrapped, "\n")
-}
-
-func wrapLine(line string, width int) []string {
-	if width <= 0 {
-		return []string{line}
-	}
-
-	var wrapped []string
-	var current string
-	for _, word := range strings.Fields(line) {
-		for len([]rune(word)) > width {
-			if current != "" {
-				wrapped = append(wrapped, current)
-				current = ""
-			}
-			runes := []rune(word)
-			wrapped = append(wrapped, string(runes[:width]))
-			word = string(runes[width:])
-		}
-		if current == "" {
-			current = word
-			continue
-		}
-		if len([]rune(current))+1+len([]rune(word)) <= width {
-			current += " " + word
-			continue
-		}
-		wrapped = append(wrapped, current)
-		current = word
-	}
-	if current != "" {
-		wrapped = append(wrapped, current)
-	}
-	return wrapped
-}
-
-func DisplayContextUsage(tokens int, debug bool) {
-	if !debug || tokens <= 0 {
-		return
-	}
-	fmt.Printf("\033[90m[context: %d tokens]\033[0m\n", tokens)
 }

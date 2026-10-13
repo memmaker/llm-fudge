@@ -54,13 +54,16 @@ Artifacts land in `consistency-out/<timestamp>/`:
 | `<run>/charsheet-log.md` | Every world update block the run produced, in order |
 | `<run>/log/context-*.json` | Every request as it went out, tool calls included |
 
-`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`, `state`, `items`, `drift` alone.
+`./consistency-check.sh <run>` runs one of `rules`, `win`, `death`, `probe`,
+`state`, `items`, `drift`, `secrets` alone. Each is a file: `checks/<run>.txt`,
+`#` lines for the reader and one player line per turn, the same format `repro/`
+and `probes/` use. Adding a run is adding a file.
 
-## The seven runs
+## The eight runs
 
 Setting and adventure are passed as `-setting`/`-adventure` rather than typed
 into the menus: the menus test nothing here, and answering them by name means a
-renamed option breaks all six scripts at once.
+renamed option breaks every script at once.
 
 Each run is one session from character creation to `/quit`. They are separate
 because the paths are mutually exclusive: a dead character cannot loot the
@@ -168,6 +171,13 @@ spill the answer (test 4); it drops an item, counts, picks it up and counts
 again, because listing an inventory is easier than doing arithmetic on one
 (test 3); and it finishes the adventure and then sits still, to see whether the
 experience and the farewell come without being asked for (test 9).
+
+**`secrets`** — test 4 on its own. Four ways into one secret: the statues, the
+sign, the solution asked for outright, and the GM's own notes. The player never
+closes an eye, never names a pedestal and never solves anything, so anything the
+hall gives up in these turns, the DM gave up. It was `secrets-check.sh` until
+2026-08-12, a script of its own that built and ran the binary with its own copy
+of this one's logic.
 
 Player lines are fixed and are fed regardless of what the DM just said. That is
 deliberate — a script that adapts is testing the script. Two consequences to

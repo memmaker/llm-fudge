@@ -1,0 +1,30 @@
+# The adventure played through to its ending.
+#
+# Pushing a statue is hard and a hard check fails more often than it succeeds,
+# so a single attempt tests the dice rather than the DM. Each statue gets four
+# tries, one of them with the rope, which is a fair reason for a bonus and is
+# what a real player would reach for after the first failure.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+What am I carrying? Show me my inventory.
+I examine the sign and both pedestals.
+I close one eye and look at both statues.
+I shove the red statue onto the blue pedestal with all my strength.
+I loop the rope around the red statue and lever it onto the blue pedestal.
+I keep at it: the red statue has to go onto the blue pedestal.
+I brace against the red statue once more until it stands on the blue pedestal.
+I shove the blue statue onto the red pedestal with all my strength.
+I loop the rope around the blue statue and lever it onto the red pedestal.
+I keep at it: the blue statue has to go onto the red pedestal.
+I brace against the blue statue once more until it stands on the red pedestal.
+I look around the room. Where do the statues stand, and what about the door?
+I go through the door into room 2.
+I attack the kobold with my weapon.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I open the chest and take what is inside.
+What am I carrying now? Show me my inventory.
+I go back into room 1 and look around.

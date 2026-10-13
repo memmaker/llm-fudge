@@ -49,25 +49,15 @@ const (
 // without waiting out a backoff written for a network.
 var requestRetryDelay = 2 * time.Second
 
-// requestTokens is what a request cost, for the debug line. The provider's own
-// count is preferred; a reply that omits one is estimated from the text at the
-// usual four characters per token, which is close enough for a number nobody
-// bills against.
-func requestTokens(messages []llm.Message, response llm.Response) int {
+// requestTokens is what a request cost, for the debug line: the provider's own
+// count, or nothing when it reported none. The estimate that used to stand in
+// for a silent provider was a guess printed beside real numbers with no mark
+// saying which was which.
+func requestTokens(response llm.Response) int {
 	if total := response.Usage.TotalTokens; total > 0 {
 		return total
 	}
-	if reported := response.Usage.InputTokens + response.Usage.OutputTokens; reported > 0 {
-		return reported
-	}
-	estimate := 0
-	for _, msg := range append(messages, response.Message) {
-		estimate += len(msg.Content) / 4
-		for _, call := range msg.ToolCalls {
-			estimate += len(call.Function.Arguments) / 4
-		}
-	}
-	return estimate
+	return response.Usage.InputTokens + response.Usage.OutputTokens
 }
 
 func main() {
@@ -286,7 +276,7 @@ func setupSetting(s *session, rl *readline.Instance) error {
 		if err != nil {
 			return err
 		}
-		if choice != ui.TypeYourAnswer() {
+		if choice != ui.TypeYourAnswer {
 			return loadSetting(s, choice)
 		}
 	}
@@ -317,7 +307,7 @@ func setupSetting(s *session, rl *readline.Instance) error {
 
 	fmt.Println()
 	for {
-		response, err := s.chat(messages, settingCreationTools())
+		response, err := s.chatInternal(messages, settingCreationTools(), true)
 		if err != nil {
 			return err
 		}
@@ -344,7 +334,7 @@ func setupAdventure(s *session, rl *readline.Instance) error {
 		if err != nil {
 			return err
 		}
-		if choice != ui.TypeYourAnswer() {
+		if choice != ui.TypeYourAnswer {
 			// The name is kept for the session directory, which the harness
 			// builds out of it and the character's name from the first block.
 			return loadWorld(s, s.settingName, choice)
@@ -1050,21 +1040,17 @@ func (s *session) recordSheet(told scene) {
 // dropped spike filed under a heading the model made up on the spot. Both were
 // caught only by a human reading the whole sheet.
 func headingNames(md string) []string {
-	var names []string
-	for _, raw := range strings.Split(md, "\n") {
-		line := strings.TrimSpace(raw)
-		if !strings.HasPrefix(line, "#") {
-			continue
-		}
-		if name := strings.TrimSpace(strings.TrimLeft(line, "#")); name != "" {
-			names = append(names, name)
-		}
+	lines := headingLines(md)
+	names := make([]string, 0, len(lines))
+	for _, line := range lines {
+		names = append(names, strings.TrimSpace(strings.TrimLeft(line, "#")))
 	}
 	return names
 }
 
 // headingLines are the heading lines as written, `#` and all, in order. This is
-// what a sheet is checked against, and what it is shown when it fails.
+// what a sheet is checked against, and what it is shown when it fails. A `#`
+// with nothing after it names no heading and is not one.
 func headingLines(md string) []string {
 	var lines []string
 	for _, raw := range strings.Split(md, "\n") {
@@ -1446,15 +1432,10 @@ func retryDelay(failures int) time.Duration {
 // discover that its next call does not exist.
 const llmRequestTimeout = time.Minute
 
-// chat sends one request and prints the reply's text. It is for the setup
-// phases, where the LLM is talking to the user as itself. Gameplay prints its
-// own prose.
-func (s *session) chat(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
-	return s.chatInternal(messages, tools, true)
-}
-
 // chatSilent sends one request and prints nothing: the caller decides what, if
-// anything, reaches the player.
+// anything, reaches the player. Setup calls chatInternal directly with the
+// printing on, because it is the one phase where the LLM talks to the user as
+// itself.
 func (s *session) chatSilent(messages []llm.Message, tools []llm.Tool) (llm.Response, error) {
 	return s.chatInternal(messages, tools, false)
 }
@@ -1513,7 +1494,9 @@ func (s *session) chatInternal(messages []llm.Message, tools []llm.Tool, printOu
 		fmt.Println(markterm.RenderMarkdown(response.Message.Content, ui.TerminalWidth()))
 	}
 
-	ui.DisplayContextUsage(requestTokens(messages, response), debug)
+	if debug {
+		ui.DisplayContextUsage(requestTokens(response))
+	}
 
 	return response, nil
 }

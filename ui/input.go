@@ -8,14 +8,13 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+	markterm "github.com/memmaker/gollum/mark-term"
 	"golang.org/x/term"
 )
 
-const typeYourAnswer = "[Type your answer]"
-
-func TypeYourAnswer() string {
-	return typeYourAnswer
-}
+// TypeYourAnswer is the menu's last entry: an opt-out, not an option. Picking
+// it means the player wants to say something the options do not cover.
+const TypeYourAnswer = "[Type your answer]"
 
 // script is the queue a -script run answers every prompt from: one line per
 // answer, in the order the game asks for them. It is nil in an interactive
@@ -73,7 +72,7 @@ func logInput(line string) {
 // the free text that follows is what selects it, and the prompt asking for that
 // text logs the line itself.
 func chose(opt string) string {
-	if opt != typeYourAnswer {
+	if opt != TypeYourAnswer {
 		logInput(opt)
 	}
 	return opt
@@ -163,7 +162,7 @@ func readKey() (string, error) {
 }
 
 func ShowChoiceMenu(options []string) (string, error) {
-	allOptions := append(options, typeYourAnswer)
+	allOptions := append(options, TypeYourAnswer)
 	selected := 0
 
 	// A scripted run picks by naming the option. A line that names none of them
@@ -181,8 +180,8 @@ func ShowChoiceMenu(options []string) (string, error) {
 			}
 		}
 		script = append([]string{line}, script...)
-		fmt.Printf("[menu] %s\n", typeYourAnswer)
-		return typeYourAnswer, nil
+		fmt.Printf("[menu] %s\n", TypeYourAnswer)
+		return TypeYourAnswer, nil
 	}
 
 	rl, err := readline.New("")
@@ -199,7 +198,7 @@ func ShowChoiceMenu(options []string) (string, error) {
 			// Calculate total lines to clear (each option may wrap)
 			totalLines := 2 // 1 for blank line before, 1 for help text at end
 			for _, opt := range allOptions {
-				wrapped := WrapText(opt, TerminalWidth()-4)
+				wrapped := markterm.Wrap(opt, TerminalWidth()-4)
 				lineCount := strings.Count(wrapped, "\n") + 1
 				totalLines += lineCount
 			}
@@ -207,7 +206,7 @@ func ShowChoiceMenu(options []string) (string, error) {
 		}
 
 		for i, opt := range allOptions {
-			wrapped := WrapText(opt, TerminalWidth()-4)
+			wrapped := markterm.Wrap(opt, TerminalWidth()-4)
 			lines := strings.Split(wrapped, "\n")
 
 			for j, line := range lines {

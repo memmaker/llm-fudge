@@ -1,8 +1,0 @@
-#provider: openai
-#model: gpt-5-mini
-# This is not obviously bad at consistency..
-#model: gpt-5.3-chat-latest
-
-provider: openai
-model: oc/deepseek-v4-flash-free
-base_url: http://localhost:20128/v1

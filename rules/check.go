@@ -40,22 +40,6 @@ func LevelValue(name string) (int, bool) {
 	return v, ok
 }
 
-// LevelName maps a value back onto the ladder.
-func LevelName(v int) string {
-	switch {
-	case v > 3:
-		return "Legendary"
-	case v < -3:
-		return "Abysmal"
-	}
-	for name, val := range ladder {
-		if val == v {
-			return strings.ToUpper(name[:1]) + name[1:]
-		}
-	}
-	return "Fair"
-}
-
 // Result is one resolved check.
 type Result struct {
 	Actor        string // the actor's level, as named

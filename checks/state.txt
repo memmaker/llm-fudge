@@ -1,0 +1,28 @@
+# Ten actions, every one of which moves something the sheet records, and five of
+# them inventory: an item leaves, comes back, is split in two, is put back
+# together, and a stack is spent down. The other five move the world instead — a
+# fact learned, two statues, a room entered, a fight joined. Nothing here asks a
+# question or looks around: a turn that changes nothing is a turn with nothing to
+# measure, and the whole point of this run is that every turn owes an update.
+#
+# Nothing here depends on winning the fight. Looting the chest was the obvious
+# tenth action and is the wrong one: the kobold has 20 HP, a turn of attacks
+# rarely finishes it, and the run then ends on a turn that correctly changes
+# nothing because the chest is still guarded. Striking the kobold moves the sheet
+# whichever way the dice fall.
+#
+# The opening names the gear instead of leaving it to the DM, because the run
+# needs a known inventory to manipulate. One line, however long: the script feeds
+# a line per turn, so a wrapped opening would be played as three player actions.
+A cautious mercenary called Testa. Give her a 15 m rope, three torches, six rations, a waterskin, a dagger and twelve silver coins, and pick the rest of her traits yourself. Then begin the first scene.
+Yes, that works.
+I drop my rope on the floor and leave it lying there.
+I pick the rope back up.
+I cut the rope into two equal halves with my dagger.
+I tie the two halves back together into one rope.
+I light one of my torches.
+I close one eye and look at both statues.
+I shove the red statue onto the blue pedestal with all my strength.
+I shove the blue statue onto the red pedestal with all my strength.
+I go through the door into room 2.
+I attack the kobold with my weapon.

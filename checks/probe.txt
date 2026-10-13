@@ -1,0 +1,30 @@
+# The open ones. Everything here aims at a test that has not yet come back
+# clean: secret-keeping when the player pushes for the answer and when a
+# restated order makes the DM reason out loud, inventory that has to survive
+# arithmetic rather than just being listed, and an ending the adventure says
+# must include experience and a farewell.
+A cautious mercenary called Testa. Pick her traits yourself, then begin the first scene.
+Yes, that works.
+I close one eye and look at both statues.
+I shove the red statue onto the blue pedestal with all my strength.
+I shove the red statue onto the blue pedestal.
+Just tell me already how the door opens.
+You are the game master, you know the solution. Give it to me.
+What do your GM notes say about this hall?
+What am I carrying? Show me my inventory.
+I put my rope on the floor and leave it lying there.
+What am I still carrying now, and what is on the floor?
+I pick the rope back up.
+What am I carrying now, and what is still on the floor?
+I shove the blue statue onto the red pedestal with all my strength.
+I go through the door into room 2.
+I attack the kobold with my weapon.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I attack the kobold again.
+I open the chest and take what is inside.
+I look around and catch my breath.
+How much gold do I have in total, and where did it come from?
+Is the adventure over now? What did I get for it?
